@@ -25,7 +25,7 @@ const [loading, setLoading] = useState(!location.state);
       const token = localStorage.getItem("token");
 
       const res = await axios.get(
-        "http://localhost:5000/api/trip/latest",
+        "https://asan-driverapp.onrender.com/api/trip/latest",
         {
           headers: {
             Authorization: `Bearer ${token}`,
