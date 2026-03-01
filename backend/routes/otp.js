@@ -43,6 +43,8 @@ router.post("/send-otp", async (req, res) => {
 
     // ✅ Then log it
     console.log("Generated OTP:", otp);
+    console.log("SID:", process.env.TWILIO_ACCOUNT_SID);
+    console.log("TOKEN:", process.env.TWILIO_AUTH_TOKEN);
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
