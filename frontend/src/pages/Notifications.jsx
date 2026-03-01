@@ -12,7 +12,7 @@ function Notifications() {
         const token = localStorage.getItem("token");
 
         const res = await axios.get(
-          "http://localhost:5000/api/notifications",
+          "https://asan-driverapp.onrender.com/api/notifications",
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -35,7 +35,7 @@ function Notifications() {
       const token = localStorage.getItem("token");
 
       await axios.put(
-        `http://localhost:5000/api/notifications/${id}/read`,
+        `https://asan-driverapp.onrender.com/api/notifications/${id}/read`,
         {},
         {
           headers: {
