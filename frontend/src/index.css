@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* ===== DASHBOARD COMPACT CALENDAR ===== */
+
+.dashboard-calendar {
+  width: 100% !important;
+  border: none !important;
+  font-size: 10px !important;
+}
+
+/* Remove extra spacing */
+.dashboard-calendar .react-calendar__navigation {
+  margin-bottom: 4px;
+}
+
+.dashboard-calendar .react-calendar__navigation button {
+  min-width: 28px;
+  font-size: 11px;
+  padding: 2px;
+}
+
+/* Weekday labels */
+.dashboard-calendar .react-calendar__month-view__days {
+  row-gap: 2px;
+}
+
+/* Each day tile */
+.dashboard-calendar .react-calendar__tile {
+  padding: 5px 0 !important;
+  height: 28px !important;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+/* Remove hover expansion */
+.dashboard-calendar button {
+  max-width: 100%;
+}
+
+/* Today highlight */
+.dashboard-calendar .react-calendar__tile--now {
+  background: #e5e7eb !important;
+}
+
+/* Booked dates */
+.booked-date {
+  background: #facc15 !important;
+  color: white !important;
+  border-radius: 6px;
+}
