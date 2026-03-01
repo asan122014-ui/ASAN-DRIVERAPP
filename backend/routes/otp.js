@@ -9,7 +9,7 @@ dotenv.config();
 const router = express.Router();
 
 const client = twilio(
-  process.env.TWILIO_SID,
+  process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
@@ -48,7 +48,7 @@ router.post("/send-otp", async (req, res) => {
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
-      from: process.env.TWILIO_PHONE,
+      from: process.env.TWILIO_PHONE_NUMBER,
       to: `+91${phone}`,
     });
 
