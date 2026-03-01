@@ -28,7 +28,7 @@ function DriverDashboard() {
     const token = localStorage.getItem("token");
 
     await axios.post(
-      "http://localhost:5000/api/trip/start",
+      "https://asan-driverapp.onrender.com/api/trip/start",
       { tripType },
       {
         headers: {
@@ -50,7 +50,7 @@ function DriverDashboard() {
     const token = localStorage.getItem("token");
 
     const res = await axios.get(
-      "http://localhost:5000/api/driver/dashboard",
+      "https://asan-driverapp.onrender.com/api/driver/dashboard",
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -73,7 +73,7 @@ useEffect(() => {
       const token = localStorage.getItem("token");
 
       const res = await axios.get(
-        "http://localhost:5000/api/notifications",
+        "https://asan-driverapp.onrender.com/api/notifications",
         {
           headers: {
             Authorization: `Bearer ${token}`,
