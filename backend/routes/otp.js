@@ -48,7 +48,7 @@ router.post("/send-otp", async (req, res) => {
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
-      from: process.env.TWILIO_PHONE_NUMBER,
+      from: process.env.TWILIO_PHONE,
       to: `+91${phone}`,
     });
 
