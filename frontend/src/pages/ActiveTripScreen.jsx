@@ -16,7 +16,7 @@ function ActiveTripScreen() {
       const token = localStorage.getItem("token");
 
       const res = await axios.get(
-        "http://localhost:5000/api/students/active",
+        "https://asan-driverapp.onrender.com/api/students/active",
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -43,7 +43,7 @@ const progress = total === 0 ? 0 : (dropped / total) * 100;
     const token = localStorage.getItem("token");
 
     await axios.put(
-      `http://localhost:5000/api/students/${id}/pickup`,
+      `https://asan-driverapp.onrender.com/api/students/${id}/pickup`,
       {},
       {
         headers: {
@@ -68,7 +68,7 @@ const progress = total === 0 ? 0 : (dropped / total) * 100;
     const token = localStorage.getItem("token");
 
     await axios.put(
-      `http://localhost:5000/api/students/${id}/drop`,
+      `https://asan-driverapp.onrender.com/api/students/${id}/drop`,
       {},
       {
         headers: {
