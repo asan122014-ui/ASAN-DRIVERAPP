@@ -83,7 +83,7 @@ const sendOtp = async () => {
   try {
     setLoading(true);
 
-    await axios.post("http://localhost:5000/api/otp/send-otp", {
+    await axios.post("https://asan-driverapp.onrender.com/api/otp/send-otp", {
   phone,
   type: "login"
 });
@@ -127,7 +127,7 @@ const verifyOtp = async () => {
     const enteredOtp = otp.join("");
 
     const res = await axios.post(
-      "http://localhost:5000/api/otp/verify-otp",
+      "https://asan-driverapp.onrender.com/api/otp/verify-otp",
       {
         phone,
         otp: enteredOtp,
@@ -150,7 +150,7 @@ const sendSignupOtp = async () => {
   try {
     setLoading(true);
 
-    await axios.post("http://localhost:5000/api/otp/send-otp", {
+    await axios.post("https://asan-driverapp.onrender.com/api/otp/send-otp", {
   phone,
   type: "signup"
 });
@@ -172,7 +172,7 @@ const verifySignupOtp = async () => {
 
     const enteredOtp = signupOtp.join("");
 
-    await axios.post("http://localhost:5000/api/otp/verify-otp", {
+    await axios.post("https://asan-driverapp.onrender.com/api/otp/verify-otp", {
   phone,
   otp: enteredOtp,
   type: "signup"   // ✅ ADD THIS
@@ -247,7 +247,7 @@ const handleSignup = async () => {
     formData.append("licenseNumber", licenseNumber);
 
     const res = await axios.post(
-      "http://localhost:5000/api/auth/signup",
+      "https://asan-driverapp.onrender.com/api/auth/signup",
       formData
     );
 
