@@ -11,6 +11,7 @@ import tripRoutes from "./routes/trip.js";
 import studentRoutes from "./routes/student.js";
 import verifyToken from "./middleware/auth.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -24,7 +25,7 @@ app.use(
   })
 );
 app.use(express.json());
-
+app.use("/api/admin", adminRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/driver", dashboardRoutes);
 app.use("/api/otp", otpRoutes);
