@@ -3,7 +3,7 @@ import Driver from "../models/Driver.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import twilio from "twilio";
-import upload from "../middleware/upload.js";
+import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -16,10 +16,10 @@ const client = twilio(
 router.post(
   "/signup",
   upload.fields([
-    { name: "license" },
-    { name: "rc" },
-    { name: "insurance" },
-    { name: "idImage" },
+    { name: "license", maxCount: 1 },
+    { name: "rc", maxCount: 1 },
+    { name: "insurance", maxCount: 1 },
+    { name: "idImage", maxCount: 1 },
   ]),
   async (req, res) => {
     try {
@@ -34,55 +34,63 @@ router.post(
         licenseNumber,
       } = req.body;
 
-      console.log("REQ BODY:", req.body); // 🔥 Add this for debugging
-
+      // Check existing driver
       const existingDriver = await Driver.findOne({ email });
       if (existingDriver) {
         return res.status(400).json({ message: "Driver already exists" });
       }
 
+      // Check required files
+      if (
+        !req.files?.license ||
+        !req.files?.rc ||
+        !req.files?.insurance ||
+        !req.files?.idImage
+      ) {
+        return res.status(400).json({ message: "All documents are required" });
+      }
+
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      const driverId = `ASAN-${Math.floor(
-        100000 + Math.random() * 900000
-      )}`;
-
       const driver = new Driver({
-  name,
-  phone,
-  email,
-  password: hashedPassword,
-  address,
-  license: req.files?.license?.[0]?.path,
-  rc: req.files?.rc?.[0]?.path,
-  insurance: req.files?.insurance?.[0]?.path,
-  idImage: req.files?.idImage?.[0]?.path,
-  vehicleNumber,
-  vehicleType,
-  licenseNumber,
-});
+        name,
+        phone,
+        email,
+        password: hashedPassword,
+        address,
+        vehicleNumber,
+        vehicleType,
+        licenseNumber,
 
-const shortId = driver._id.toString().slice(-6).toUpperCase();
-driver.driverId = `ASAN-${shortId}`;
+        // Cloudinary URLs
+        license: req.files.license[0].path,
+        rc: req.files.rc[0].path,
+        insurance: req.files.insurance[0].path,
+        idImage: req.files.idImage[0].path,
 
-await driver.save();
+        status: "pending"
+      });
 
-console.log("Generated Driver ID:", driver.driverId);
+      // Generate readable Driver ID
+      const shortId = driver._id.toString().slice(-6).toUpperCase();
+      driver.driverId = `ASAN-${shortId}`;
 
-const token = jwt.sign(
-  { id: driver._id },
-  process.env.JWT_SECRET,
-  { expiresIn: "7d" }
-);
+      await driver.save();
 
-res.status(201).json({
-  message: "Signup successful",
-  token,
-  driver,
-});
+      const token = jwt.sign(
+        { id: driver._id },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      res.status(201).json({
+        message: "Signup successful",
+        token,
+        driver,
+      });
 
     } catch (error) {
-      console.error(error);
+      console.error("Signup Error:", error);
       res.status(500).json({ message: "Server Error" });
     }
   }
