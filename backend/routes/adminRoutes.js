@@ -34,9 +34,7 @@ router.post("/login", async (req, res) => {
 });
 router.get("/drivers", verifyAdmin, async (req, res) => {
   try {
-    const drivers = await Driver.find().select(
-      "name driverId status"
-    );
+    const drivers = await Driver.find().select("name driverId status vehicleType vehicleNumber");
 
     res.json(drivers);
   } catch (error) {
