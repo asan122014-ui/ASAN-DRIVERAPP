@@ -12,7 +12,7 @@ const verifyAdmin = (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (decoded.role !== "admin") {
+    if (decoded.role !== "superadmin" && decoded.role !== "reviewer") {
       return res.status(403).json({ message: "Access denied" });
     }
 
