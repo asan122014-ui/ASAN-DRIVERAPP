@@ -37,7 +37,9 @@ router.post("/login", async (req, res) => {
 });
 router.get("/drivers", verifyAdmin, async (req, res) => {
   try {
-    const drivers = await Driver.find().select("name driverId status vehicleType vehicleNumber");
+    const drivers = await Driver.find().sort({ createdAt: -1 });
+
+    console.log("Drivers found:", drivers);
 
     res.json(drivers);
   } catch (error) {
