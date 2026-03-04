@@ -168,6 +168,30 @@ router.get("/logs", verifyAdmin, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+router.post("/register", async (req, res) => {
+
+  try {
+
+    const driver = await Driver.create(req.body);
+
+    // 🔥 REAL TIME UPDATE
+    const io = req.app.get("io");
+
+    io.emit("new_driver", driver);
+
+    res.json(driver);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Driver registration failed"
+    });
+
+  }
+
+});
 
 
 export default router;
