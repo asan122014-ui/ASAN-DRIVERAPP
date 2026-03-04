@@ -1,19 +1,14 @@
 import mongoose from "mongoose";
 
-const adminSchema = new mongoose.Schema(
-  {
-    username: {
-      type: String,
-      required: true,
-      unique: true
-    },
+const adminSchema = new mongoose.Schema({
+  username: String,
+  password: String,
 
-    password: {
-      type: String,
-      required: true
-    }
-  },
-  { timestamps: true }
-);
+  role: {
+    type: String,
+    enum: ["superadmin", "reviewer"],
+    default: "reviewer"
+  }
+});
 
 export default mongoose.model("Admin", adminSchema);
