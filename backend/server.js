@@ -12,6 +12,7 @@ import studentRoutes from "./routes/student.js";
 import verifyToken from "./middleware/auth.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 
 dotenv.config();
 connectDB();
@@ -20,7 +21,10 @@ const app = express();
 
 app.use(
   cors({
-    origin: true,
+    origin: [
+      "http://localhost:5173",
+      "https://asan-driverapp.vercel.app"
+    ],
     credentials: true
   })
 );
@@ -33,6 +37,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/trip", tripRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminAnalyticsRoutes);
 
 app.get("/api/protected", verifyToken, (req, res) => {
   res.json({ message: "This is a protected route", user: req.user });
