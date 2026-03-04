@@ -52,7 +52,23 @@ res.json({
     res.status(500).json({ message: "Server error" });
   }
 });
+// ================= ADMIN LOGOUT =================
+router.post("/logout", verifyAdmin, async (req, res) => {
+  try {
 
+    await AdminLog.create({
+      adminId: req.adminId,
+      action: "admin_logout",
+      message: "Admin logged out"
+    });
+
+    res.json({ message: "Logged out successfully" });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // ================= GET ALL DRIVERS =================
 router.get("/drivers", verifyAdmin, async (req, res) => {
