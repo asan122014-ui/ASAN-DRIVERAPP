@@ -40,7 +40,7 @@ router.post("/login", async (req, res) => {
 await AdminLog.create({
   adminId: admin._id,
   action: "admin_login",
-  message: `${admin.username} logged in`
+  message: `Admin ${req.adminId} logged in`
 });
 
 res.json({
@@ -57,10 +57,10 @@ router.post("/logout", verifyAdmin, async (req, res) => {
   try {
 
     await AdminLog.create({
-      adminId: req.adminId,
-      action: "admin_logout",
-      message: "Admin logged out"
-    });
+  adminId: req.adminId,
+  action: "admin_logout",
+  message: `Admin ${req.adminId} logged out`
+});
 
     res.json({ message: "Logged out successfully" });
 
