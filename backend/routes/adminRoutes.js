@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
 import Driver from "../models/Driver.js";
+import AdminLog from "../models/AdminLog.js";
 const router = express.Router();
 
 router.post("/login", async (req, res) => {
@@ -61,26 +62,60 @@ router.get("/drivers/:id", verifyAdmin, async (req, res) => {
 });
 router.put("/drivers/:id/approve", verifyAdmin, async (req, res) => {
   try {
-    await Driver.findByIdAndUpdate(req.params.id, {
-      status: "approved",
-      rejectionReason: null
+
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      { status: "approved", rejectionReason: null },
+      { new: true }
+    );
+
+    await AdminLog.create({
+      adminId: req.adminId,
+      action: "approve_driver",
+      driverId: driver._id,
+      message: `Driver ${driver.name} approved`
     });
 
     res.json({ message: "Driver approved" });
+
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
 router.put("/drivers/:id/reject", verifyAdmin, async (req, res) => {
   try {
+
     const { reason } = req.body;
 
-    await Driver.findByIdAndUpdate(req.params.id, {
-      status: "rejected",
-      rejectionReason: reason
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      { status: "rejected", rejectionReason: reason },
+      { new: true }
+    );
+
+    await AdminLog.create({
+      adminId: req.adminId,
+      action: "reject_driver",
+      driverId: driver._id,
+      message: `Driver ${driver.name} rejected`
     });
 
     res.json({ message: "Driver rejected" });
+
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+router.get("/logs", verifyAdmin, async (req, res) => {
+  try {
+
+    const logs = await AdminLog.find()
+      .populate("adminId", "username")
+      .populate("driverId", "name driverId")
+      .sort({ createdAt: -1 });
+
+    res.json(logs);
+
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
