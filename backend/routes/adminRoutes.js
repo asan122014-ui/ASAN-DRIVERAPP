@@ -28,19 +28,25 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      {
-        id: admin._id,
-        role: admin.role
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+  {
+    id: admin._id,
+    role: admin.role
+  },
+  process.env.JWT_SECRET,
+  { expiresIn: "7d" }
+);
 
-    res.json({
-      token,
-      role: admin.role
-    });
+// 🔥 ADD LOGIN LOG
+await AdminLog.create({
+  adminId: admin._id,
+  action: "admin_login",
+  message: `${admin.username} logged in`
+});
 
+res.json({
+  token,
+  role: admin.role
+});
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
