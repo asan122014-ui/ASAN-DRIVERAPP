@@ -16,11 +16,14 @@ const client = twilio(
 router.post(
   "/signup",
   upload.fields([
-    { name: "license", maxCount: 1 },
-    { name: "rc", maxCount: 1 },
-    { name: "insurance", maxCount: 1 },
-    { name: "idImage", maxCount: 1 },
-  ]),
+  { name: "licenseFront", maxCount: 1 },
+  { name: "licenseBack", maxCount: 1 },
+  { name: "rcFront", maxCount: 1 },
+  { name: "rcBack", maxCount: 1 },
+  { name: "insurance", maxCount: 1 },
+  { name: "idFront", maxCount: 1 },
+  { name: "idBack", maxCount: 1 }
+]),
   async (req, res) => {
     try {
       const {
@@ -42,13 +45,16 @@ router.post(
 
       // Check required files
       if (
-        !req.files?.license ||
-        !req.files?.rc ||
-        !req.files?.insurance ||
-        !req.files?.idImage
-      ) {
-        return res.status(400).json({ message: "All documents are required" });
-      }
+  !req.files?.licenseFront ||
+  !req.files?.licenseBack ||
+  !req.files?.rcFront ||
+  !req.files?.rcBack ||
+  !req.files?.insurance ||
+  !req.files?.idFront ||
+  !req.files?.idBack
+) {
+  return res.status(400).json({ message: "All documents are required" });
+}
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -63,10 +69,16 @@ router.post(
         licenseNumber,
 
         // Cloudinary URLs
-        license: req.files.license[0].path,
-        rc: req.files.rc[0].path,
-        insurance: req.files.insurance[0].path,
-        idImage: req.files.idImage[0].path,
+        licenseFront: req.files.licenseFront[0].path,
+licenseBack: req.files.licenseBack[0].path,
+
+rcFront: req.files.rcFront[0].path,
+rcBack: req.files.rcBack[0].path,
+
+insurance: req.files.insurance[0].path,
+
+idFront: req.files.idFront[0].path,
+idBack: req.files.idBack[0].path,
 
         status: "pending"
       });
