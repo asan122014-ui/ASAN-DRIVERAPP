@@ -11,14 +11,14 @@ router.get("/dashboard", verifyToken, async (req, res) => {
   try {
 
     // Validate token payload
-    if (!req.user || !req.user.id) {
+    if (!req.user?.id) {
       return res.status(401).json({
         success: false,
         message: "Invalid authentication token"
       });
     }
 
-    // Get only required fields (faster)
+    // Fetch driver with only required fields (better performance)
     const driver = await Driver.findById(req.user.id).select(
       "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
     );
@@ -30,33 +30,35 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    // Prevent unapproved drivers
+    // Block dashboard access until admin approval
     if (driver.status !== "approved") {
       return res.status(403).json({
         success: false,
-        message: "Your account is under review by admin"
+        status: driver.status,
+        message: "Your account is currently under verification. Please wait for admin approval."
       });
     }
 
-    res.status(200).json({
+    // Return dashboard data
+    return res.status(200).json({
       success: true,
       data: {
         name: driver.name,
         vehicleNumber: driver.vehicleNumber || "-",
         vehicleType: driver.vehicleType || "-",
-        rating: driver.rating || 0,
-        totalTrips: driver.totalTrips || 0,
-        todayTrips: driver.todayTrips || 0,
-        studentsAssigned: driver.studentsAssigned || 0
+        rating: driver.rating ?? 0,
+        totalTrips: driver.totalTrips ?? 0,
+        todayTrips: driver.todayTrips ?? 0,
+        studentsAssigned: driver.studentsAssigned ?? 0
       }
     });
 
   } catch (error) {
     console.error("Dashboard Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Server Error"
+      message: "Internal server error"
     });
   }
 });
@@ -66,7 +68,7 @@ router.get("/dashboard", verifyToken, async (req, res) => {
 router.get("/profile", verifyToken, async (req, res) => {
   try {
 
-    if (!req.user || !req.user.id) {
+    if (!req.user?.id) {
       return res.status(401).json({
         success: false,
         message: "Invalid authentication token"
@@ -82,17 +84,17 @@ router.get("/profile", verifyToken, async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      driver
+      data: driver
     });
 
   } catch (error) {
     console.error("Profile Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Server Error"
+      message: "Internal server error"
     });
   }
 });
