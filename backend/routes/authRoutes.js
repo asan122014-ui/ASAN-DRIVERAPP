@@ -39,7 +39,15 @@ router.post(
         licenseNumber
       } = req.body;
 
-      const existingDriver = await Driver.findOne({ email });
+      const existingDriver = await Driver.findOne({
+  $or: [{ email }, { phone }]
+});
+
+if (existingDriver) {
+  return res.status(400).json({
+    message: "Driver already registered"
+  });
+}
 
       if (existingDriver) {
         return res.status(400).json({ message: "Driver already exists" });
