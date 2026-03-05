@@ -1,100 +1,138 @@
-import express from "express";
-import Driver from "../models/Driver.js";
-import verifyToken from "../middleware/auth.js";
+import mongoose from "mongoose";
 
-const router = express.Router();
+const driverSchema = new mongoose.Schema(
+  {
+    // ===== PERSONAL DETAILS =====
+    name: {
+      type: String,
+      required: true
+    },
 
-console.log("Driver dashboard routes loaded");
+    phone: {
+      type: String,
+      required: true,
+      unique: true
+    },
 
-// ================= DRIVER DASHBOARD =================
-router.get("/dashboard", verifyToken, async (req, res) => {
-  try {
+    email: {
+      type: String,
+      required: true,
+      unique: true
+    },
 
-    // Validate token payload
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid authentication token"
-      });
+    password: {
+      type: String,
+      required: true
+    },
+
+    address: {
+      type: String,
+      required: true
+    },
+
+    // ===== VEHICLE DETAILS =====
+    vehicleNumber: {
+      type: String,
+      required: true
+    },
+
+    vehicleType: {
+      type: String,
+      required: true
+    },
+
+    licenseNumber: {
+      type: String,
+      required: true
+    },
+
+    // ===== DOCUMENTS =====
+
+    // Driving License
+    licenseFront: {
+      type: String,
+      required: true
+    },
+
+    licenseBack: {
+      type: String,
+      required: true
+    },
+
+    // Vehicle RC
+    rcFront: {
+      type: String,
+      required: true
+    },
+
+    rcBack: {
+      type: String,
+      required: true
+    },
+
+    // Insurance
+    insurance: {
+      type: String,
+      required: true
+    },
+
+    // Government ID
+    idFront: {
+      type: String,
+      required: true
+    },
+
+    idBack: {
+      type: String,
+      required: true
+    },
+
+    // Selfie verification photo
+    profilePhoto: {
+      type: String,
+      required: true
+    },
+
+    // ===== DRIVER SYSTEM =====
+
+    driverId: {
+      type: String,
+      unique: true
+    },
+
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending"
+    },
+
+    rejectionReason: {
+      type: String
+    },
+
+    // ===== PERFORMANCE =====
+
+    rating: {
+      type: Number,
+      default: 0
+    },
+
+    totalTrips: {
+      type: Number,
+      default: 0
+    },
+
+    todayTrips: {
+      type: Number,
+      default: 0
+    },
+
+    studentsAssigned: {
+      type: Number,
+      default: 0
     }
+  },
+  { timestamps: true }
+);
 
-    // Get only required fields (faster)
-    const driver = await Driver.findById(req.user.id).select(
-      "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
-    );
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found"
-      });
-    }
-
-    // Prevent unapproved drivers
-    if (driver.status !== "approved") {
-      return res.status(403).json({
-        success: false,
-        message: "Your account is under review by admin"
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        name: driver.name,
-        vehicleNumber: driver.vehicleNumber || "-",
-        vehicleType: driver.vehicleType || "-",
-        rating: driver.rating || 0,
-        totalTrips: driver.totalTrips || 0,
-        todayTrips: driver.todayTrips || 0,
-        studentsAssigned: driver.studentsAssigned || 0
-      }
-    });
-
-  } catch (error) {
-    console.error("Dashboard Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server Error"
-    });
-  }
-});
-
-
-// ================= DRIVER PROFILE =================
-router.get("/profile", verifyToken, async (req, res) => {
-  try {
-
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid authentication token"
-      });
-    }
-
-    const driver = await Driver.findById(req.user.id);
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found"
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      driver
-    });
-
-  } catch (error) {
-    console.error("Profile Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server Error"
-    });
-  }
-});
-
-export default router;
+export default mongoose.model("Driver", driverSchema);
