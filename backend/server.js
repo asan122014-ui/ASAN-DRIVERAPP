@@ -27,16 +27,13 @@ connectDB();
 /* ---------------- EXPRESS ---------------- */
 const app = express();
 
-/* ---------------- SERVER (FOR SOCKET.IO) ---------------- */
+/* ---------------- HTTP SERVER ---------------- */
 const server = http.createServer(app);
 
 /* ---------------- SOCKET.IO ---------------- */
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "https://asan-driverapp.vercel.app"
-    ],
+    origin: "*",   // allow any frontend
     methods: ["GET", "POST"]
   }
 });
@@ -44,26 +41,18 @@ const io = new Server(server, {
 /* Make io accessible in routes */
 app.set("io", io);
 
+/* Socket connection */
 io.on("connection", (socket) => {
-  console.log("⚡ Admin connected:", socket.id);
+  console.log("⚡ Client connected:", socket.id);
 
   socket.on("disconnect", () => {
-    console.log("❌ Admin disconnected:", socket.id);
+    console.log("❌ Client disconnected:", socket.id);
   });
 });
 
 /* ---------------- MIDDLEWARE ---------------- */
 
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://asan-driverapp.vercel.app"
-    ],
-    credentials: true
-  })
-);
-
+app.use(cors());   // allow any origin
 app.use(express.json());
 
 /* ---------------- ROUTES ---------------- */
