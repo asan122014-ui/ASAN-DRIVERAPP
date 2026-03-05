@@ -3,49 +3,97 @@ import Driver from "../models/Driver.js";
 import verifyToken from "../middleware/auth.js";
 
 const router = express.Router();
+
 console.log("Driver dashboard routes loaded");
 
-// Get Driver Dashboard Data
+// ================= DRIVER DASHBOARD =================
 router.get("/dashboard", verifyToken, async (req, res) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ message: "Invalid token payload" });
+
+    // Validate token payload
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication token"
+      });
     }
 
-    const driver = await Driver.findById(req.user.id);
+    // Get only required fields (faster)
+    const driver = await Driver.findById(req.user.id).select(
+      "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
+    );
 
     if (!driver) {
-      return res.status(404).json({ message: "Driver not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
     }
 
-    res.json({
-      name: driver.name,
-      vehicleNumber: driver.vehicleNumber || "-",
-      vehicleType: driver.vehicleType || "-",
-      rating: driver.rating || 0,
-      totalTrips: driver.totalTrips || 0,
-      todayTrips: driver.todayTrips || 0,
-      studentsAssigned: driver.studentsAssigned || 0,
+    // Prevent unapproved drivers
+    if (driver.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is under review by admin"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        name: driver.name,
+        vehicleNumber: driver.vehicleNumber || "-",
+        vehicleType: driver.vehicleType || "-",
+        rating: driver.rating || 0,
+        totalTrips: driver.totalTrips || 0,
+        todayTrips: driver.todayTrips || 0,
+        studentsAssigned: driver.studentsAssigned || 0
+      }
     });
 
-  } catch (err) {
-    console.error("Dashboard Error:", err);
-    res.status(500).json({ message: "Server Error" });
+  } catch (error) {
+    console.error("Dashboard Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server Error"
+    });
   }
 });
-// Get Driver Profile
+
+
+// ================= DRIVER PROFILE =================
 router.get("/profile", verifyToken, async (req, res) => {
   try {
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication token"
+      });
+    }
+
     const driver = await Driver.findById(req.user.id);
 
     if (!driver) {
-      return res.status(404).json({ message: "Driver not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
     }
 
-    res.json(driver);
+    res.status(200).json({
+      success: true,
+      driver
+    });
 
-  } catch (err) {
-    res.status(500).json({ message: "Server Error" });
+  } catch (error) {
+    console.error("Profile Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server Error"
+    });
   }
 });
 
