@@ -21,32 +21,30 @@ router.post("/send-otp", async (req, res) => {
   try {
     const { phone, type } = req.body;
 
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number required" });
+    }
+
     const existingDriver = await Driver.findOne({ phone });
 
-    // LOGIN FLOW
     if (type === "login" && !existingDriver) {
       return res.status(404).json({
         message: "Account not found. Please sign up.",
       });
     }
 
-    // SIGNUP FLOW
     if (type === "signup" && existingDriver) {
       return res.status(400).json({
         message: "Phone already registered. Please login.",
       });
     }
 
-    // ✅ Generate OTP FIRST
     const otp = Math.floor(1000 + Math.random() * 9000);
-    otpStore[phone] = {
-  otp,
-  expires: Date.now() + 5 * 60 * 1000
-};
 
-    // ✅ Then log it
-    console.log("Generated OTP:", otp);
-    console.log("Twilio initialized");
+    otpStore[phone] = {
+      otp,
+      expires: Date.now() + 5 * 60 * 1000,
+    };
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
@@ -57,7 +55,7 @@ router.post("/send-otp", async (req, res) => {
     res.json({ success: true });
 
   } catch (error) {
-    console.error(error);
+    console.error("OTP Error:", error); // IMPORTANT
     res.status(500).json({ message: "Failed to send OTP" });
   }
 });
