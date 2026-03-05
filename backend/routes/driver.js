@@ -11,7 +11,7 @@ router.get("/dashboard", verifyToken, async (req, res) => {
   try {
 
     // Validate token payload
-    if (!req.user?.id) {
+    if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
         message: "Invalid authentication token"
@@ -68,14 +68,16 @@ router.get("/dashboard", verifyToken, async (req, res) => {
 router.get("/profile", verifyToken, async (req, res) => {
   try {
 
-    if (!req.user?.id) {
+    if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
         message: "Invalid authentication token"
       });
     }
 
-    const driver = await Driver.findById(req.user.id);
+    const driver = await Driver
+      .findById(req.user.id)
+      .select("-password");
 
     if (!driver) {
       return res.status(404).json({
