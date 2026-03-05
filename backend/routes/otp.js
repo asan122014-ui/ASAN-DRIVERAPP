@@ -39,12 +39,14 @@ router.post("/send-otp", async (req, res) => {
 
     // ✅ Generate OTP FIRST
     const otp = Math.floor(1000 + Math.random() * 9000);
-    otpStore[phone] = otp;
+    otpStore[phone] = {
+  otp,
+  expires: Date.now() + 5 * 60 * 1000
+};
 
     // ✅ Then log it
     console.log("Generated OTP:", otp);
-    console.log("SID:", process.env.TWILIO_ACCOUNT_SID);
-    console.log("TOKEN:", process.env.TWILIO_AUTH_TOKEN);
+    console.log("Twilio initialized");
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
@@ -66,12 +68,18 @@ router.post("/verify-otp", async (req, res) => {
     const { phone, otp, type } = req.body;
     console.log("Stored OTP:", otpStore[phone]);
     console.log("Entered OTP:", otp);
+    
 
     if (!otpStore[phone]) {
-  return res.status(400).json({ message: "OTP expired or already used" });
+  return res.status(400).json({ message: "OTP expired or not found" });
 }
 
-if (otpStore[phone] != otp) {
+if (otpStore[phone].expires < Date.now()) {
+  delete otpStore[phone];
+  return res.status(400).json({ message: "OTP expired" });
+}
+
+if (otpStore[phone].otp != otp) {
   return res.status(400).json({ message: "Invalid OTP" });
 }
 
@@ -91,7 +99,12 @@ if (otpStore[phone] != otp) {
         { expiresIn: "7d" }
       );
 
-      return res.json({ token, driver });
+      const { password, ...driverData } = driver.toObject();
+
+return res.json({
+  token,
+  driver: driverData
+});
     }
 
     // SIGNUP FLOW
