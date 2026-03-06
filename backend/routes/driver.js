@@ -4,20 +4,21 @@ import verifyToken from "../middleware/auth.js";
 
 const router = express.Router();
 
-console.log("Driver dashboard routes loaded");
+/* ================= DRIVER DASHBOARD ================= */
 
-// ================= DRIVER DASHBOARD =================
 router.get("/dashboard", verifyToken, async (req, res) => {
   try {
 
-    if (!req.user || !req.user.id) {
+    const driverId = req.user?.id;
+
+    if (!driverId) {
       return res.status(401).json({
         success: false,
-        message: "Invalid authentication token"
+        message: "Unauthorized access"
       });
     }
 
-    const driver = await Driver.findById(req.user.id).select(
+    const driver = await Driver.findById(driverId).select(
       "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
     );
 
@@ -28,7 +29,7 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    return res.status(200).json({
+    res.json({
       success: true,
       data: {
         name: driver.name,
@@ -38,33 +39,38 @@ router.get("/dashboard", verifyToken, async (req, res) => {
         totalTrips: driver.totalTrips ?? 0,
         todayTrips: driver.todayTrips ?? 0,
         studentsAssigned: driver.studentsAssigned ?? 0,
-        status: driver.status   // ⭐ ALWAYS RETURN STATUS
+        status: driver.status
       }
     });
 
   } catch (error) {
-    console.error("Dashboard Error:", error);
 
-    return res.status(500).json({
+    console.error("Driver dashboard error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Internal server error"
+      message: "Failed to load dashboard"
     });
+
   }
 });
 
-// ================= DRIVER PROFILE =================
+/* ================= DRIVER PROFILE ================= */
+
 router.get("/profile", verifyToken, async (req, res) => {
   try {
 
-    if (!req.user || !req.user.id) {
+    const driverId = req.user?.id;
+
+    if (!driverId) {
       return res.status(401).json({
         success: false,
-        message: "Invalid authentication token"
+        message: "Unauthorized access"
       });
     }
 
     const driver = await Driver
-      .findById(req.user.id)
+      .findById(driverId)
       .select("-password");
 
     if (!driver) {
@@ -74,18 +80,20 @@ router.get("/profile", verifyToken, async (req, res) => {
       });
     }
 
-    return res.status(200).json({
+    res.json({
       success: true,
       data: driver
     });
 
   } catch (error) {
-    console.error("Profile Error:", error);
 
-    return res.status(500).json({
+    console.error("Driver profile error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Internal server error"
+      message: "Failed to load profile"
     });
+
   }
 });
 
