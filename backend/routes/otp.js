@@ -1,118 +1,172 @@
 import express from "express";
 import twilio from "twilio";
 import dotenv from "dotenv";
-import Driver from "../models/Driver.js";
 import jwt from "jsonwebtoken";
+
+import Driver from "../models/Driver.js";
 
 dotenv.config();
 
 const router = express.Router();
+
+/* ================= TWILIO CLIENT ================= */
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// Temporary OTP store
-const otpStore = {};
+/* ================= OTP STORE ================= */
 
-// ================= SEND OTP =================
+const otpStore = new Map();
+
+/* ================= SEND OTP ================= */
+
 router.post("/send-otp", async (req, res) => {
   try {
+
     const { phone, type } = req.body;
 
     if (!phone) {
-      return res.status(400).json({ message: "Phone number required" });
+      return res.status(400).json({
+        success: false,
+        message: "Phone number required"
+      });
     }
 
     const existingDriver = await Driver.findOne({ phone });
 
     if (type === "login" && !existingDriver) {
       return res.status(404).json({
-        message: "Account not found. Please sign up.",
+        success: false,
+        message: "Account not found. Please sign up."
       });
     }
 
     if (type === "signup" && existingDriver) {
       return res.status(400).json({
-        message: "Phone already registered. Please login.",
+        success: false,
+        message: "Phone already registered. Please login."
       });
     }
 
     const otp = Math.floor(1000 + Math.random() * 9000);
 
-    otpStore[phone] = {
+    otpStore.set(phone, {
       otp,
-      expires: Date.now() + 5 * 60 * 1000,
-    };
+      expires: Date.now() + 5 * 60 * 1000
+    });
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
       from: process.env.TWILIO_PHONE,
-      to: `+91${phone}`,
+      to: `+91${phone}`
     });
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      message: "OTP sent successfully"
+    });
 
   } catch (error) {
-    console.error("OTP Error:", error); // IMPORTANT
-    res.status(500).json({ message: "Failed to send OTP" });
+
+    console.error("Send OTP error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to send OTP"
+    });
+
   }
 });
 
-// ================= VERIFY OTP =================
+/* ================= VERIFY OTP ================= */
+
 router.post("/verify-otp", async (req, res) => {
   try {
+
     const { phone, otp, type } = req.body;
-    console.log("Stored OTP:", otpStore[phone]);
-    console.log("Entered OTP:", otp);
-    
 
-    if (!otpStore[phone]) {
-  return res.status(400).json({ message: "OTP expired or not found" });
-}
+    const storedOtp = otpStore.get(phone);
 
-if (otpStore[phone].expires < Date.now()) {
-  delete otpStore[phone];
-  return res.status(400).json({ message: "OTP expired" });
-}
+    if (!storedOtp) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired or not found"
+      });
+    }
 
-if (otpStore[phone].otp != otp) {
-  return res.status(400).json({ message: "Invalid OTP" });
-}
+    if (storedOtp.expires < Date.now()) {
 
-    delete otpStore[phone];
+      otpStore.delete(phone);
 
-    // LOGIN FLOW
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired"
+      });
+    }
+
+    if (storedOtp.otp != otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP"
+      });
+    }
+
+    otpStore.delete(phone);
+
+    /* ================= LOGIN FLOW ================= */
+
     if (type === "login") {
+
       const driver = await Driver.findOne({ phone });
 
       if (!driver) {
-        return res.status(404).json({ message: "Driver not found" });
+        return res.status(404).json({
+          success: false,
+          message: "Driver not found"
+        });
       }
 
       const token = jwt.sign(
-        { id: driver._id },
+        {
+          id: driver._id,
+          role: "driver"
+        },
         process.env.JWT_SECRET,
         { expiresIn: "7d" }
       );
 
-      const { password, ...driverData } = driver.toObject();
+      const driverData = driver.toObject();
+      delete driverData.password;
 
-return res.json({
-  token,
-  driver: driverData
-});
+      return res.json({
+        success: true,
+        token,
+        driver: driverData
+      });
     }
 
-    // SIGNUP FLOW
+    /* ================= SIGNUP FLOW ================= */
+
     if (type === "signup") {
-      return res.json({ success: true });
+
+      return res.json({
+        success: true,
+        message: "OTP verified"
+      });
+
     }
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+
+    console.error("Verify OTP error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+
   }
 });
 
