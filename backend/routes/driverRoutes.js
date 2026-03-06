@@ -6,8 +6,6 @@ import {
   getDriverDashboard,
   getAssignedStudents,
   updateDriverLocation,
-  startTrip,
-  endTrip,
   getDriverNotifications
 } from "../controllers/driverController.js";
 
@@ -28,11 +26,6 @@ router.get("/students", verifyToken, getAssignedStudents);
 /* ================= LOCATION UPDATE ================= */
 
 router.post("/location/update", verifyToken, updateDriverLocation);
-
-/* ================= TRIP MANAGEMENT ================= */
-
-router.post("/trip/start", verifyToken, startTrip);
-router.post("/trip/end", verifyToken, endTrip);
 
 /* ================= NOTIFICATIONS ================= */
 
