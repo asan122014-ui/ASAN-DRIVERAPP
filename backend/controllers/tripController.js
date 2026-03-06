@@ -1,21 +1,75 @@
-import express from "express";
-import verifyToken from "../middleware/auth.js";
-
 import {
-  startTrip,
-  endTrip,
-  getTripHistory,
-  getActiveTrip
-} from "../controllers/tripController.js";
+  startTripService,
+  endTripService,
+  getDriverTripsService,
+  getActiveTripService
+} from "../services/tripService.js";
 
-const router = express.Router();
+export const startTrip = async (req, res) => {
+  try {
 
-router.post("/start", verifyToken, startTrip);
+    const driverId = req.user.id;
+    const { tripType } = req.body;
 
-router.post("/end", verifyToken, endTrip);
+    const trip = await startTripService(driverId, tripType, req.io);
 
-router.get("/history", verifyToken, getTripHistory);
+    res.json({
+      success: true,
+      data: trip
+    });
 
-router.get("/active", verifyToken, getActiveTrip);
+  } catch (error) {
 
-export default router;
+    console.error("Start trip error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+export const endTrip = async (req, res) => {
+  try {
+
+    const driverId = req.user.id;
+
+    const trip = await endTripService(driverId, req.io);
+
+    res.json({
+      success: true,
+      data: trip
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+};
+
+export const getTripHistory = async (req, res) => {
+
+  const trips = await getDriverTripsService(req.user.id);
+
+  res.json({
+    success: true,
+    data: trips
+  });
+
+};
+
+export const getActiveTrip = async (req, res) => {
+
+  const trip = await getActiveTripService(req.user.id);
+
+  res.json({
+    success: true,
+    data: trip
+  });
+
+};
