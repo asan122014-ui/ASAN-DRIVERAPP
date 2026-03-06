@@ -1,18 +1,41 @@
 import express from "express";
-import Driver from "../models/Driver.js";
+import verifyToken from "../middleware/auth.js";
+
+import {
+  getDriverProfile,
+  getDriverDashboard,
+  getAssignedStudents,
+  updateDriverLocation,
+  startTrip,
+  endTrip,
+  getDriverNotifications
+} from "../controllers/driverController.js";
 
 const router = express.Router();
 
-// Create Driver
-router.post("/", async (req, res) => {
-  const driver = await Driver.create(req.body);
-  res.json(driver);
-});
+/* ================= DRIVER PROFILE ================= */
 
-// Get Driver
-router.get("/:id", async (req, res) => {
-  const driver = await Driver.findById(req.params.id);
-  res.json(driver);
-});
+router.get("/profile", verifyToken, getDriverProfile);
+
+/* ================= DRIVER DASHBOARD ================= */
+
+router.get("/dashboard", verifyToken, getDriverDashboard);
+
+/* ================= STUDENTS ================= */
+
+router.get("/students", verifyToken, getAssignedStudents);
+
+/* ================= LOCATION UPDATE ================= */
+
+router.post("/location/update", verifyToken, updateDriverLocation);
+
+/* ================= TRIP MANAGEMENT ================= */
+
+router.post("/trip/start", verifyToken, startTrip);
+router.post("/trip/end", verifyToken, endTrip);
+
+/* ================= NOTIFICATIONS ================= */
+
+router.get("/notifications", verifyToken, getDriverNotifications);
 
 export default router;
