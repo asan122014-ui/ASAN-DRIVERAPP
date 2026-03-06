@@ -13,7 +13,26 @@ export const startTripService = async (driverId, tripType, io) => {
     throw new Error("Driver not found");
   }
 
-  const students = await Students.find({ driver: driverId });
+  /* prevent multiple active trips */
+
+  const existingTrip = await Trips.findOne({
+    driver: driverId,
+    status: "active"
+  });
+
+  if (existingTrip) {
+    throw new Error("Driver already has an active trip");
+  }
+
+  /* get assigned students */
+
+  const students = await Students.find({ driver: driverId }).select("_id");
+
+  if (!students.length) {
+    throw new Error("No students assigned to this driver");
+  }
+
+  /* create trip */
 
   const trip = await Trips.create({
     driver: driverId,
@@ -57,16 +76,20 @@ export const endTripService = async (driverId, io) => {
 
   await trip.save();
 
+  /* update driver stats */
+
+  await Driver.findByIdAndUpdate(driverId, {
+    $inc: {
+      totalTrips: 1,
+      todayTrips: 1
+    }
+  });
+
   const driver = await Driver.findById(driverId);
-
-  driver.totalTrips += 1;
-  driver.todayTrips += 1;
-
-  await driver.save();
 
   /* notify driver */
 
-  if (driver.fcmToken) {
+  if (driver?.fcmToken) {
     await sendNotification({
       driverId: driver._id,
       title: "Trip Completed",
@@ -117,7 +140,9 @@ export const getDriverTripsService = async (driverId) => {
 
   const trips = await Trips.find({
     driver: driverId
-  }).sort({ createdAt: -1 });
+  })
+  .sort({ createdAt: -1 })
+  .lean();
 
   return trips;
 };
