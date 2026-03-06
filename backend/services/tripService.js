@@ -1,148 +1,99 @@
-import Trips from "../models/Trips.js";
-import Students from "../models/Students.js";
-import Driver from "../models/Driver.js";
-import { sendNotification } from "../utils/sendNotification.js";
+import mongoose from "mongoose";
 
-/* ================= START TRIP ================= */
+const tripSchema = new mongoose.Schema(
+  {
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      required: true,
+      index: true
+    },
 
-export const startTripService = async (driverId, tripType, io) => {
+    tripType: {
+      type: String,
+      enum: ["morning", "afternoon"],
+      required: true
+    },
 
-  const driver = await Driver.findById(driverId);
+    /* Students in this trip */
 
-  if (!driver) {
-    throw new Error("Driver not found");
-  }
+    students: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Student"
+      }
+    ],
 
-  /* prevent multiple active trips */
+    totalStudents: {
+      type: Number,
+      default: 0
+    },
 
-  const existingTrip = await Trips.findOne({
-    driver: driverId,
-    status: "active"
-  });
+    /* Financial */
 
-  if (existingTrip) {
-    throw new Error("Driver already has an active trip");
-  }
+    amount: {
+      type: Number,
+      default: 0
+    },
 
-  /* get assigned students */
+    rating: {
+      type: Number,
+      min: 0,
+      max: 5
+    },
 
-  const students = await Students.find({ driver: driverId }).select("_id");
+    /* Trip Status */
 
-  if (!students.length) {
-    throw new Error("No students assigned to this driver");
-  }
+    status: {
+      type: String,
+      enum: ["active", "completed", "cancelled"],
+      default: "active",
+      index: true
+    },
 
-  /* create trip */
+    /* Trip Timing */
 
-  const trip = await Trips.create({
-    driver: driverId,
-    tripType,
-    status: "active",
-    students: students.map(s => s._id),
-    startedAt: new Date()
-  });
+    startTime: {
+      type: Date
+    },
 
-  /* notify driver */
+    endTime: {
+      type: Date
+    },
 
-  if (driver.fcmToken) {
-    await sendNotification({
-      driverId: driver._id,
-      title: "Trip Started",
-      message: `Your ${tripType} trip has started`,
-      fcmToken: driver.fcmToken,
-      io
-    });
-  }
+    duration: {
+      type: Number // minutes
+    },
 
-  return trip;
-};
+    /* Distance Tracking */
 
+    distance: {
+      type: Number, // kilometers
+      default: 0
+    },
 
-/* ================= END TRIP ================= */
+    /* Start Location */
 
-export const endTripService = async (driverId, io) => {
+    startLocation: {
+      latitude: Number,
+      longitude: Number,
+      address: String
+    },
 
-  const trip = await Trips.findOne({
-    driver: driverId,
-    status: "active"
-  });
+    /* End Location */
 
-  if (!trip) {
-    throw new Error("Active trip not found");
-  }
-
-  trip.status = "completed";
-  trip.endedAt = new Date();
-
-  await trip.save();
-
-  /* update driver stats */
-
-  await Driver.findByIdAndUpdate(driverId, {
-    $inc: {
-      totalTrips: 1,
-      todayTrips: 1
+    endLocation: {
+      latitude: Number,
+      longitude: Number,
+      address: String
     }
-  });
+  },
+  { timestamps: true }
+);
 
-  const driver = await Driver.findById(driverId);
+/* Index for fast queries */
 
-  /* notify driver */
+tripSchema.index({ driver: 1, createdAt: -1 });
 
-  if (driver?.fcmToken) {
-    await sendNotification({
-      driverId: driver._id,
-      title: "Trip Completed",
-      message: "Your trip has been completed successfully",
-      fcmToken: driver.fcmToken,
-      io
-    });
-  }
-
-  return trip;
-};
-
-
-/* ================= GET ACTIVE TRIP ================= */
-
-export const getActiveTripService = async (driverId) => {
-
-  const trip = await Trips.findOne({
-    driver: driverId,
-    status: "active"
-  }).populate("students");
-
-  return trip;
-};
-
-
-/* ================= UPDATE STUDENT STATUS ================= */
-
-export const updateStudentStatusService = async (studentId, status) => {
-
-  const student = await Students.findById(studentId);
-
-  if (!student) {
-    throw new Error("Student not found");
-  }
-
-  student.status = status;
-
-  await student.save();
-
-  return student;
-};
-
-
-/* ================= GET DRIVER TRIPS ================= */
-
-export const getDriverTripsService = async (driverId) => {
-
-  const trips = await Trips.find({
-    driver: driverId
-  })
-  .sort({ createdAt: -1 })
-  .lean();
-
-  return trips;
-};
+const Trips = mongoose.model("Trips", tripSchema);
+export default Trips;
