@@ -29,7 +29,9 @@ const verifyToken = (req, res, next) => {
 
     /* attach user data to request */
 
-    req.user = decoded;
+    req.user = {
+  id: decoded.id || decoded.userId
+};
 
     next();
 
