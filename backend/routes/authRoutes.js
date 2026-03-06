@@ -1,18 +1,26 @@
 import express from "express";
-import Driver from "../models/Driver.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import twilio from "twilio";
+
+import Driver from "../models/Driver.js";
 import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
+
+/* ================= TWILIO ================= */
 
 const client = twilio(
   process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ================= SIGNUP WITH FILE UPLOAD =================
+/* ================= TEMP OTP STORE ================= */
+
+const otpStore = new Map();
+
+/* ================= DRIVER SIGNUP ================= */
+
 router.post(
   "/signup",
   upload.fields([
@@ -39,34 +47,55 @@ router.post(
         licenseNumber
       } = req.body;
 
-      const existingDriver = await Driver.findOne({
-  $or: [{ email }, { phone }]
-});
+      /* ===== VALIDATION ===== */
 
-if (existingDriver) {
-  return res.status(400).json({
-    message: "Driver already registered"
-  });
-}
+      if (!name || !phone || !email || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required fields"
+        });
+      }
+
+      /* ===== CHECK EXISTING DRIVER ===== */
+
+      const existingDriver = await Driver.findOne({
+        $or: [{ email }, { phone }]
+      });
 
       if (existingDriver) {
-        return res.status(400).json({ message: "Driver already exists" });
+        return res.status(400).json({
+          success: false,
+          message: "Driver already registered"
+        });
       }
 
-      if (
-        !req.files?.licenseFront ||
-        !req.files?.licenseBack ||
-        !req.files?.rcFront ||
-        !req.files?.rcBack ||
-        !req.files?.insurance ||
-        !req.files?.idFront ||
-        !req.files?.idBack ||
-        !req.files?.profilePhoto
-      ) {
-        return res.status(400).json({ message: "All documents are required" });
+      /* ===== CHECK FILES ===== */
+
+      const requiredFiles = [
+        "licenseFront",
+        "licenseBack",
+        "rcFront",
+        "rcBack",
+        "insurance",
+        "idFront",
+        "idBack",
+        "profilePhoto"
+      ];
+
+      for (const file of requiredFiles) {
+        if (!req.files?.[file]) {
+          return res.status(400).json({
+            success: false,
+            message: `Missing document: ${file}`
+          });
+        }
       }
+
+      /* ===== HASH PASSWORD ===== */
 
       const hashedPassword = await bcrypt.hash(password, 10);
+
+      /* ===== CREATE DRIVER ===== */
 
       const driver = new Driver({
         name,
@@ -94,107 +123,199 @@ if (existingDriver) {
         status: "pending"
       });
 
+      /* ===== GENERATE DRIVER ID ===== */
+
       const shortId = driver._id.toString().slice(-6).toUpperCase();
       driver.driverId = `ASAN-${shortId}`;
 
       await driver.save();
 
+      /* ===== GENERATE TOKEN ===== */
+
       const token = jwt.sign(
-        { id: driver._id },
+        {
+          id: driver._id,
+          role: "driver"
+        },
         process.env.JWT_SECRET,
         { expiresIn: "7d" }
       );
 
+      const driverResponse = driver.toObject();
+      delete driverResponse.password;
+
       res.status(201).json({
-        message: "Signup successful",
+        success: true,
+        message: "Driver registered successfully",
         token,
-        driver
+        driver: driverResponse
       });
 
     } catch (error) {
-      console.error("Signup Error:", error);
-      res.status(500).json({ message: "Server Error" });
+
+      console.error("Driver signup error:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Driver registration failed"
+      });
+
     }
   }
 );
 
-// ================= LOGIN =================
+/* ================= DRIVER LOGIN ================= */
+
 router.post("/login", async (req, res) => {
+
   try {
+
     const { email, password } = req.body;
 
     const driver = await Driver.findOne({ email });
+
     if (!driver) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials"
+      });
     }
 
     const isMatch = await bcrypt.compare(password, driver.password);
+
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials"
+      });
     }
 
     const token = jwt.sign(
-      { id: driver._id },
+      {
+        id: driver._id,
+        role: "driver"
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.json({ token, driver });
+    const driverResponse = driver.toObject();
+    delete driverResponse.password;
+
+    res.json({
+      success: true,
+      token,
+      driver: driverResponse
+    });
 
   } catch (error) {
-    res.status(500).json({ message: "Server Error" });
+
+    console.error("Driver login error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Login failed"
+    });
+
   }
+
 });
 
-// ================= SEND OTP =================
+/* ================= SEND OTP ================= */
+
 router.post("/send-otp", async (req, res) => {
+
   try {
+
     const { phone } = req.body;
 
     const otp = Math.floor(1000 + Math.random() * 9000);
 
-    global.otpStore = { phone, otp }; // temporary storage
+    otpStore.set(phone, otp);
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
       from: process.env.TWILIO_PHONE,
-      to: `+91${phone}`,
+      to: `+91${phone}`
     });
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      message: "OTP sent"
+    });
 
   } catch (error) {
-    res.status(500).json({ message: "OTP Failed" });
+
+    console.error("OTP send error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "OTP send failed"
+    });
+
   }
+
 });
 
-// ================= VERIFY OTP =================
+/* ================= VERIFY OTP ================= */
+
 router.post("/verify-otp", (req, res) => {
+
   const { phone, otp } = req.body;
 
-  if (
-    global.otpStore &&
-    global.otpStore.phone === phone &&
-    global.otpStore.otp == otp
-  ) {
-    return res.json({ success: true });
+  const storedOtp = otpStore.get(phone);
+
+  if (storedOtp && storedOtp == otp) {
+
+    otpStore.delete(phone);
+
+    return res.json({
+      success: true,
+      message: "OTP verified"
+    });
+
   }
 
-  res.status(400).json({ message: "Invalid OTP" });
+  res.status(400).json({
+    success: false,
+    message: "Invalid OTP"
+  });
+
 });
+
+/* ================= GET DRIVER BY DRIVER ID ================= */
+
 router.get("/by-id/:driverId", async (req, res) => {
+
   try {
-    const driver = await Driver.findOne({ driverId: req.params.driverId });
+
+    const driver = await Driver
+      .findOne({ driverId: req.params.driverId })
+      .select("-password");
 
     if (!driver) {
-      return res.status(404).json({ message: "Driver not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
     }
 
-    res.json(driver);
+    res.json({
+      success: true,
+      driver
+    });
 
-  } catch (err) {
-    res.status(500).json({ message: "Server Error" });
+  } catch (error) {
+
+    console.error("Get driver error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+
   }
+
 });
 
 export default router;
