@@ -1,100 +1,46 @@
 import mongoose from "mongoose";
 
-const tripSchema = new mongoose.Schema(
+const userSchema = new mongoose.Schema(
   {
-    driver: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
+    name: {
+      type: String,
       required: true,
+      trim: true
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
       index: true
     },
 
-    tripType: {
+    password: {
       type: String,
-      enum: ["morning", "afternoon"],
-      required: true
+      required: true,
+      minlength: 6
     },
 
-    /* Students in this trip */
-
-    students: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Student"
-      }
-    ],
-
-    totalStudents: {
-      type: Number,
-      default: 0
-    },
-
-    /* Financial */
-
-    amount: {
-      type: Number,
-      default: 0
-    },
-
-    rating: {
-      type: Number,
-      min: 0,
-      max: 5
-    },
-
-    /* Trip Status */
-
-    status: {
+    role: {
       type: String,
-      enum: ["active", "completed", "cancelled"],
-      default: "active",
-      index: true
+      enum: ["user", "admin"],
+      default: "user"
     },
 
-    /* Trip Timing */
-
-    startTime: {
-      type: Date
-    },
-
-    endTime: {
-      type: Date
-    },
-
-    duration: {
-      type: Number // minutes
-    },
-
-    /* Distance Tracking */
-
-    distance: {
-      type: Number, // kilometers
-      default: 0
-    },
-
-    /* Start Location */
-
-    startLocation: {
-      latitude: Number,
-      longitude: Number,
-      address: String
-    },
-
-    /* End Location */
-
-    endLocation: {
-      latitude: Number,
-      longitude: Number,
-      address: String
+    isActive: {
+      type: Boolean,
+      default: true
     }
   },
   { timestamps: true }
 );
 
-/* Index for fast queries */
+/* Prevent duplicate email errors */
 
-tripSchema.index({ driver: 1, createdAt: -1 });
+userSchema.index({ email: 1 });
 
-const Trip = mongoose.model("Trip", tripSchema);
+const User = mongoose.model("User", userSchema);
 
-export default Trip;
+export default User;
