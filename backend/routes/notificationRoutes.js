@@ -1,42 +1,19 @@
 import express from "express";
-import Notification from "../models/Notification.js";
 import verifyToken from "../middleware/auth.js";
+
+import {
+  getNotifications,
+  markAsRead
+} from "../controllers/notificationController.js";
 
 const router = express.Router();
 
-// 🔔 Get all notifications
-router.get("/", verifyToken, async (req, res) => {
-  try {
-    const notifications = await Notification.find({
-      driver: req.user.id,
-    }).sort({ createdAt: -1 });
+/* ================= GET DRIVER NOTIFICATIONS ================= */
 
-    res.json(notifications);
-  } catch (err) {
-    res.status(500).json({ message: "Server Error" });
-  }
-});
+router.get("/", verifyToken, getNotifications);
 
-// 🔔 Mark as read
-router.put("/:id/read", verifyToken, async (req, res) => {
-  try {
-    const notification = await Notification.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        driver: req.user.id, // 🔐 security check
-      },
-      { read: true },
-      { new: true }
-    );
+/* ================= MARK NOTIFICATION AS READ ================= */
 
-    if (!notification) {
-      return res.status(404).json({ message: "Notification not found" });
-    }
-
-    res.json({ message: "Marked as read" });
-  } catch (err) {
-    res.status(500).json({ message: "Server Error" });
-  }
-});
+router.put("/:id/read", verifyToken, markAsRead);
 
 export default router;
