@@ -7,7 +7,6 @@ import Notification from "../models/Notification.js";
 
 export const getDriverProfile = async (req, res) => {
   try {
-
     const driver = await Driver.findById(req.user.id).select("-password");
 
     if (!driver) {
@@ -23,22 +22,18 @@ export const getDriverProfile = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Profile Error:", error);
 
     res.status(500).json({
       success: false,
       message: "Failed to fetch driver profile"
     });
-
   }
 };
-
 
 /* ================= DRIVER DASHBOARD ================= */
 
 export const getDriverDashboard = async (req, res) => {
-
   try {
 
     const driver = await Driver.findById(req.user.id);
@@ -50,6 +45,9 @@ export const getDriverDashboard = async (req, res) => {
       });
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const totalTrips = await Trips.countDocuments({
       driver: driver._id,
       status: "completed"
@@ -57,9 +55,7 @@ export const getDriverDashboard = async (req, res) => {
 
     const todayTrips = await Trips.countDocuments({
       driver: driver._id,
-      date: {
-        $gte: new Date().setHours(0,0,0,0)
-      }
+      createdAt: { $gte: today }
     });
 
     const studentsAssigned = await Students.countDocuments({
@@ -81,43 +77,41 @@ export const getDriverDashboard = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Dashboard Error:", error);
 
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard"
     });
-
   }
-
 };
-
 
 /* ================= GET ASSIGNED STUDENTS ================= */
 
 export const getAssignedStudents = async (req, res) => {
-
   try {
 
     const students = await Students.find({
-      driver: req.user.id
+      driver: req.user.id,
+      active: true
     });
 
-    res.json(students);
+    res.json({
+      success: true,
+      data: students
+    });
 
   } catch (error) {
 
-    console.error(error);
+    console.error("Students Error:", error);
 
     res.status(500).json({
-      message: "Failed to fetch students"
+      success: false,
+      message: "Failed to fetch assigned students"
     });
 
   }
-
 };
-
 
 /* ================= UPDATE DRIVER LOCATION ================= */
 
@@ -126,6 +120,13 @@ export const updateDriverLocation = async (req, res) => {
   try {
 
     const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and longitude are required"
+      });
+    }
 
     const driver = await Driver.findByIdAndUpdate(
       req.user.id,
@@ -145,91 +146,15 @@ export const updateDriverLocation = async (req, res) => {
 
   } catch (error) {
 
-    console.error(error);
+    console.error("Location Update Error:", error);
 
     res.status(500).json({
-      message: "Failed to update location"
+      success: false,
+      message: "Failed to update driver location"
     });
 
   }
-
 };
-
-
-/* ================= START TRIP ================= */
-
-export const startTrip = async (req, res) => {
-
-  try {
-
-    const { tripType } = req.body;
-
-    const trip = await Trips.create({
-      driver: req.user.id,
-      tripType,
-      status: "active",
-      startTime: new Date()
-    });
-
-    res.json({
-      success: true,
-      message: "Trip started",
-      trip
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to start trip"
-    });
-
-  }
-
-};
-
-
-/* ================= END TRIP ================= */
-
-export const endTrip = async (req, res) => {
-
-  try {
-
-    const trip = await Trips.findOne({
-      driver: req.user.id,
-      status: "active"
-    });
-
-    if (!trip) {
-      return res.status(404).json({
-        message: "No active trip found"
-      });
-    }
-
-    trip.status = "completed";
-    trip.endTime = new Date();
-
-    await trip.save();
-
-    res.json({
-      success: true,
-      message: "Trip completed",
-      trip
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to end trip"
-    });
-
-  }
-
-};
-
 
 /* ================= GET DRIVER NOTIFICATIONS ================= */
 
@@ -239,15 +164,21 @@ export const getDriverNotifications = async (req, res) => {
 
     const notifications = await Notification.find({
       driver: req.user.id
-    }).sort({ createdAt: -1 });
+    })
+    .sort({ createdAt: -1 })
+    .lean();
 
-    res.json(notifications);
+    res.json({
+      success: true,
+      data: notifications
+    });
 
   } catch (error) {
 
-    console.error(error);
+    console.error("Notification Error:", error);
 
     res.status(500).json({
+      success: false,
       message: "Failed to fetch notifications"
     });
 
