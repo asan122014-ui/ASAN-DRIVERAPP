@@ -1,28 +1,35 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const driverSchema = new mongoose.Schema(
   {
-    // ===== PERSONAL DETAILS =====
+    /* ================= PERSONAL DETAILS ================= */
+
     name: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
 
     phone: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
+      index: true
     },
 
     email: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
+      lowercase: true,
+      trim: true
     },
 
     password: {
       type: String,
-      required: true
+      required: true,
+      minlength: 6
     },
 
     address: {
@@ -30,10 +37,12 @@ const driverSchema = new mongoose.Schema(
       required: true
     },
 
-    // ===== VEHICLE DETAILS =====
+    /* ================= VEHICLE DETAILS ================= */
+
     vehicleNumber: {
       type: String,
-      required: true
+      required: true,
+      uppercase: true
     },
 
     vehicleType: {
@@ -46,9 +55,8 @@ const driverSchema = new mongoose.Schema(
       required: true
     },
 
-    // ===== DOCUMENTS =====
+    /* ================= DOCUMENTS ================= */
 
-    // Driving License
     licenseFront: {
       type: String,
       required: true
@@ -59,7 +67,6 @@ const driverSchema = new mongoose.Schema(
       required: true
     },
 
-    // Vehicle RC
     rcFront: {
       type: String,
       required: true
@@ -70,13 +77,11 @@ const driverSchema = new mongoose.Schema(
       required: true
     },
 
-    // Insurance
     insurance: {
       type: String,
       required: true
     },
 
-    // Government ID
     idFront: {
       type: String,
       required: true
@@ -87,17 +92,17 @@ const driverSchema = new mongoose.Schema(
       required: true
     },
 
-    // Selfie verification photo
     profilePhoto: {
       type: String,
       required: true
     },
 
-    // ===== DRIVER SYSTEM =====
+    /* ================= SYSTEM FIELDS ================= */
 
     driverId: {
       type: String,
-      unique: true
+      unique: true,
+      index: true
     },
 
     status: {
@@ -107,14 +112,22 @@ const driverSchema = new mongoose.Schema(
     },
 
     rejectionReason: {
-      type: String
+      type: String,
+      default: null
     },
 
-    // ===== PERFORMANCE =====
+    fcmToken: {
+      type: String,
+      default: null
+    },
+
+    /* ================= PERFORMANCE ================= */
 
     rating: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0,
+      max: 5
     },
 
     totalTrips: {
@@ -130,9 +143,50 @@ const driverSchema = new mongoose.Schema(
     studentsAssigned: {
       type: Number,
       default: 0
+    },
+
+    /* ================= DRIVER LOCATION ================= */
+
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point"
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: [0, 0]
+      }
     }
   },
   { timestamps: true }
 );
 
-export default mongoose.model("Driver", driverSchema);
+/* ================= GEO INDEX ================= */
+
+driverSchema.index({ location: "2dsphere" });
+
+/* ================= HASH PASSWORD ================= */
+
+driverSchema.pre("save", async function (next) {
+
+  if (!this.isModified("password")) return next();
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+
+  next();
+
+});
+
+/* ================= PASSWORD COMPARE ================= */
+
+driverSchema.methods.comparePassword = async function (enteredPassword) {
+
+  return await bcrypt.compare(enteredPassword, this.password);
+
+};
+
+const Driver = mongoose.model("Driver", driverSchema);
+
+export default Driver;
