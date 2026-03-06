@@ -10,7 +10,6 @@ console.log("Driver dashboard routes loaded");
 router.get("/dashboard", verifyToken, async (req, res) => {
   try {
 
-    // Validate token payload
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
@@ -18,7 +17,6 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    // Fetch driver with only required fields (better performance)
     const driver = await Driver.findById(req.user.id).select(
       "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
     );
@@ -30,16 +28,6 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    // Block dashboard access until admin approval
-    if (driver.status !== "approved") {
-      return res.status(403).json({
-        success: false,
-        status: driver.status,
-        message: "Your account is currently under verification. Please wait for admin approval."
-      });
-    }
-
-    // Return dashboard data
     return res.status(200).json({
       success: true,
       data: {
@@ -49,7 +37,8 @@ router.get("/dashboard", verifyToken, async (req, res) => {
         rating: driver.rating ?? 0,
         totalTrips: driver.totalTrips ?? 0,
         todayTrips: driver.todayTrips ?? 0,
-        studentsAssigned: driver.studentsAssigned ?? 0
+        studentsAssigned: driver.studentsAssigned ?? 0,
+        status: driver.status   // ⭐ ALWAYS RETURN STATUS
       }
     });
 
@@ -62,7 +51,6 @@ router.get("/dashboard", verifyToken, async (req, res) => {
     });
   }
 });
-
 
 // ================= DRIVER PROFILE =================
 router.get("/profile", verifyToken, async (req, res) => {
