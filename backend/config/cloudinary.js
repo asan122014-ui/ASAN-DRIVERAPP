@@ -17,7 +17,7 @@ const storage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: "asan-drivers",
-    allowed_formats: ["jpg", "png", "jpeg"],
+    resource_type: "auto",   // ⭐ IMPORTANT
   },
 });
 
