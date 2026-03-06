@@ -7,11 +7,17 @@ export const validateStartTrip = [
   body("tripType")
     .notEmpty()
     .withMessage("Trip type is required")
-    .isIn(["morning", "afternoon"])
-    .withMessage("Trip type must be either 'morning' or 'afternoon'")
+    .isString()
+    .withMessage("Trip type must be a string")
+    .custom(value => {
+      const allowed = ["morning", "afternoon", "Morning", "Afternoon"];
+      if (!allowed.includes(value)) {
+        throw new Error("Trip type must be Morning or Afternoon");
+      }
+      return true;
+    })
 
 ];
-
 
 /* ================= END TRIP VALIDATION ================= */
 
@@ -24,7 +30,6 @@ export const validateEndTrip = [
 
 ];
 
-
 /* ================= TRIP ID PARAM VALIDATION ================= */
 
 export const validateTripId = [
@@ -34,7 +39,6 @@ export const validateTripId = [
     .withMessage("Invalid trip ID")
 
 ];
-
 
 /* ================= VALIDATION RESULT HANDLER ================= */
 
