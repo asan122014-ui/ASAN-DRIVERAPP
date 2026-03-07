@@ -13,8 +13,6 @@ export const startTripService = async (driverId, tripType, io) => {
     throw new Error("Driver not found");
   }
 
-  /* prevent multiple active trips */
-
   const existingTrip = await Trips.findOne({
     driver: driverId,
     status: "active"
@@ -24,10 +22,9 @@ export const startTripService = async (driverId, tripType, io) => {
     throw new Error("Driver already has an active trip");
   }
 
-  /* get assigned students */
-
-  const students = await Students.find({ driver: driverId }).select("_id");
-  /* create trip */
+  const students = await Students
+    .find({ driver: driverId })
+    .select("_id");
 
   const trip = await Trips.create({
     driver: driverId,
@@ -37,10 +34,7 @@ export const startTripService = async (driverId, tripType, io) => {
     startTime: new Date()
   });
 
-  /* notify driver */
-
   if (driver.fcmToken) {
-
     await sendNotification({
       driverId: driver._id,
       title: "Trip Started",
@@ -48,13 +42,10 @@ export const startTripService = async (driverId, tripType, io) => {
       fcmToken: driver.fcmToken,
       io
     });
-
   }
 
   return trip;
-
 };
-
 
 /* ================= END TRIP ================= */
 
@@ -150,4 +141,5 @@ export const getDriverTripsService = async (driverId) => {
   return trips;
 
 };
+
 
