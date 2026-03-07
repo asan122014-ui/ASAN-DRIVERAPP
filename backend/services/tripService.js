@@ -27,11 +27,6 @@ export const startTripService = async (driverId, tripType, io) => {
   /* get assigned students */
 
   const students = await Students.find({ driver: driverId }).select("_id");
-
-  if (!students.length) {
-    throw new Error("No students assigned to this driver");
-  }
-
   /* create trip */
 
   const trip = await Trips.create({
@@ -155,3 +150,4 @@ export const getDriverTripsService = async (driverId) => {
   return trips;
 
 };
+
