@@ -33,7 +33,7 @@ export const startTrip = async (req, res) => {
 export const endTrip = async (req, res) => {
   try {
 
-    const driverId = req.user.id;
+    const driverId = req.Driver.id;
 
     const trip = await endTripService(driverId, req.io);
 
@@ -54,7 +54,7 @@ export const endTrip = async (req, res) => {
 
 export const getTripHistory = async (req, res) => {
 
-  const trips = await getDriverTripsService(req.user.id);
+  const trips = await getDriverTripsService(req.Driver.id);
 
   res.json({
     success: true,
@@ -65,7 +65,7 @@ export const getTripHistory = async (req, res) => {
 
 export const getActiveTrip = async (req, res) => {
 
-  const trip = await getActiveTripService(req.user.id);
+  const trip = await getActiveTripService(req.Driver.id);
 
   res.json({
     success: true,
@@ -73,3 +73,4 @@ export const getActiveTrip = async (req, res) => {
   });
 
 };
+
