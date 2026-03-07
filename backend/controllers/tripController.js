@@ -26,7 +26,7 @@ export const startTrip = async (req, res) => {
       req.app.get("io")
     );
 
-    res.json({
+    res.status(201).json({
       success: true,
       data: trip
     });
@@ -57,7 +57,10 @@ export const endTrip = async (req, res) => {
       });
     }
 
-    const trip = await endTripService(driverId, req.app.get("io"));
+    const trip = await endTripService(
+      driverId,
+      req.app.get("io")
+    );
 
     res.json({
       success: true,
@@ -127,4 +130,3 @@ export const getActiveTrip = async (req, res) => {
 
   }
 };
-
