@@ -4,7 +4,7 @@ const notificationSchema = new mongoose.Schema(
 {
   driver: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Driver",   // ✅ MUST be Driver
+    ref: "Driver",
     required: true
   },
 
