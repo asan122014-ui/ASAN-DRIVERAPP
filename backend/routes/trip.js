@@ -8,65 +8,7 @@ const router = express.Router();
 
 /* ================= START TRIP ================= */
 
-router.post("/start", verifyToken, async (req, res) => {
-
-  try {
-
-    const { tripType } = req.body;
-
-    if (!tripType || !["morning", "afternoon"].includes(tripType)) {
-      return res.status(400).json({
-        success: false,
-        message: "Trip type must be 'morning' or 'afternoon'"
-      });
-    }
-
-    const existingTrip = await Trip.findOne({
-      driver: req.user.id,
-      status: "active"
-    });
-
-    if (existingTrip) {
-      return res.status(400).json({
-        success: false,
-        message: "Trip already active"
-      });
-    }
-
-    const trip = await Trip.create({
-      driver: req.user.id,
-      tripType,
-      totalStudents: 0,
-      amount: 0,
-      startTime: new Date(),
-      status: "active"
-    });
-
-    await Notification.create({
-      driver: req.user.id,
-      title: "Trip Started",
-      message: `Your ${tripType} trip has started.`
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Trip started successfully",
-      trip
-    });
-
-  } catch (error) {
-
-    console.error("START TRIP ERROR:", error);
-
-    res.status(500).json({
-      success: false,
-      message: error.message || "Failed to start trip"
-    });
-
-  }
-
-});
-
+router.post("/start", verifyToken, startTrip);
 
 /* ================= END TRIP ================= */
 
