@@ -15,6 +15,7 @@ import studentRoutes from "./routes/student.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
+import locationRoutes from "./routes/location.js";
 
 /* MIDDLEWARE */
 import verifyToken from "./middleware/auth.js";
@@ -122,6 +123,7 @@ app.use("/api/otp", otpRoutes);
 app.use("/api/trip", tripRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/location", locationRoutes);
 
 /* ================= HEALTH CHECK ================= */
 
