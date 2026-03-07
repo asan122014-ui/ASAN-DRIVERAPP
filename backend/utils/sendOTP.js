@@ -16,10 +16,19 @@ export const sendOtp = async (phone, otp) => {
 
   try {
 
+    if (!phone || !otp) {
+      throw new Error("Phone number or OTP missing");
+    }
+
+    // normalize phone number
+    const formattedPhone = phone.startsWith("+")
+      ? phone
+      : `+91${phone}`;
+
     const message = await client.messages.create({
       body: `Your ASAN verification code is ${otp}. Do not share this code.`,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: `+91${phone}`
+      to: formattedPhone
     });
 
     console.log("OTP Sent:", message.sid);
@@ -28,7 +37,7 @@ export const sendOtp = async (phone, otp) => {
 
   } catch (error) {
 
-    console.error("OTP Send Error:", error);
+    console.error("OTP Send Error:", error.message);
 
     return false;
 
