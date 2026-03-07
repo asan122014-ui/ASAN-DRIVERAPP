@@ -1,5 +1,5 @@
 import express from "express";
-import Student from "../models/Students.js";
+import Student from "../models/Student.js";
 import Trip from "../models/Trips.js";
 import verifyToken from "../middleware/auth.js";
 
@@ -8,11 +8,12 @@ const router = express.Router();
 /* ================= GET ALL ASSIGNED STUDENTS ================= */
 
 router.get("/", verifyToken, async (req, res) => {
+
   try {
 
     const students = await Student.find({
       driver: req.user.id
-    });
+    }).lean();
 
     res.json({
       success: true,
@@ -29,17 +30,19 @@ router.get("/", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 /* ================= GET ACTIVE STUDENTS ================= */
 
 router.get("/active", verifyToken, async (req, res) => {
+
   try {
 
     const students = await Student.find({
       driver: req.user.id,
       status: { $ne: "dropped" }
-    });
+    }).lean();
 
     res.json({
       success: true,
@@ -56,17 +59,20 @@ router.get("/active", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 /* ================= PICKUP STUDENT ================= */
 
 router.put("/:id/pickup", verifyToken, async (req, res) => {
+
   try {
 
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: req.user.id
+        driver: req.user.id,
+        status: "waiting"
       },
       { status: "onboard" },
       { new: true }
@@ -75,7 +81,7 @@ router.put("/:id/pickup", verifyToken, async (req, res) => {
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: "Student not found"
+        message: "Student not found or already picked up"
       });
     }
 
@@ -95,17 +101,20 @@ router.put("/:id/pickup", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 /* ================= DROP STUDENT ================= */
 
 router.put("/:id/drop", verifyToken, async (req, res) => {
+
   try {
 
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: req.user.id
+        driver: req.user.id,
+        status: "onboard"
       },
       { status: "dropped" },
       { new: true }
@@ -114,7 +123,7 @@ router.put("/:id/drop", verifyToken, async (req, res) => {
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: "Student not found"
+        message: "Student not found or not onboard"
       });
     }
 
@@ -134,11 +143,13 @@ router.put("/:id/drop", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 /* ================= END TRIP ================= */
 
 router.post("/end", verifyToken, async (req, res) => {
+
   try {
 
     const trip = await Trip.findOne({
@@ -154,8 +165,9 @@ router.post("/end", verifyToken, async (req, res) => {
     }
 
     trip.endTime = new Date();
+
     trip.duration = Math.round(
-      (trip.endTime - trip.createdAt) / 60000
+      (trip.endTime - trip.startTime) / 60000
     );
 
     trip.status = "completed";
@@ -178,6 +190,7 @@ router.post("/end", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 export default router;
