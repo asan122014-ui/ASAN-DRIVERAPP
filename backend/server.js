@@ -15,7 +15,7 @@ import studentRoutes from "./routes/student.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
-import locationRoutes from "./routes/location.js";
+import locationRoutes from "./routes/locationRoutes.js";
 
 /* MIDDLEWARE */
 import verifyToken from "./middleware/auth.js";
