@@ -10,11 +10,14 @@ export const generateDriverId = async () => {
 
   const year = new Date().getFullYear();
 
-  const driverCount = await Driver.countDocuments({}) + 1;
+  const driverCount = await Driver.countDocuments();
 
-  const sequence = (driverCount + 1).toString().padStart(4, "0");
+  const sequence = (driverCount + 1)
+    .toString()
+    .padStart(4, "0");
 
   const driverId = `DRV-${year}-${sequence}`;
 
   return driverId;
+
 };
