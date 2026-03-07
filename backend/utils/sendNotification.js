@@ -7,10 +7,15 @@ export const sendNotification = async ({
 }) => {
   try {
 
+    if (!driverId || !title || !message) {
+      throw new Error("Missing notification fields");
+    }
+
     const notification = await Notification.create({
       driver: driverId,
       title,
-      message
+      message,
+      read: false
     });
 
     return notification;
@@ -18,6 +23,7 @@ export const sendNotification = async ({
   } catch (error) {
 
     console.error("Notification Error:", error);
+
     return null;
 
   }
