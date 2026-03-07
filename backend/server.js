@@ -3,7 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
-
 import connectDB from "./config/db.js";
 
 /* ROUTES */
@@ -14,7 +13,6 @@ import dashboardRoutes from "./routes/driver.js";
 import tripRoutes from "./routes/trip.js";
 import studentRoutes from "./routes/student.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
-
 import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 
@@ -24,7 +22,8 @@ import verifyToken from "./middleware/auth.js";
 /* FIREBASE */
 import admin from "firebase-admin";
 
-/* ENV CONFIG */
+/* ================= ENV CONFIG ================= */
+
 dotenv.config();
 
 /* ================= DATABASE ================= */
@@ -43,7 +42,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "",
     methods: ["GET", "POST"]
   }
 });
@@ -75,43 +74,51 @@ io.on("connection", (socket) => {
 
   console.log("Socket client connected:", socket.id);
 
-  /* Driver joins notification room */
-
   socket.on("joinDriverRoom", (driverId) => {
-    socket.join(driverId);
+
+    if (!driverId) return;
+
+    socket.join(driverId.toString());
+
     console.log(`Driver ${driverId} joined notification room`);
+
   });
 
-  /* Driver joins tracking room */
-
   socket.on("driver_join", (driverId) => {
+
+    if (!driverId) return;
+
     socket.join(`driver_${driverId}`);
+
     console.log(`Driver ${driverId} joined tracking room`);
+
   });
 
   socket.on("disconnect", () => {
+
     console.log("Socket client disconnected:", socket.id);
+
   });
 
 });
 
 /* ================= GLOBAL MIDDLEWARE ================= */
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*"
+}));
+
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ================= ROUTES ================= */
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
-
 app.use("/api/drivers", driverRoutes);
 app.use("/api/driver", dashboardRoutes);
-
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
-
 app.use("/api/trip", tripRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -119,21 +126,25 @@ app.use("/api/notifications", notificationRoutes);
 /* ================= HEALTH CHECK ================= */
 
 app.get("/api/health", (req, res) => {
+
   res.json({
     status: "OK",
     message: "ASAN backend running",
     timestamp: new Date()
   });
+
 });
 
 /* ================= TEST PROTECTED ROUTE ================= */
 
 app.get("/api/protected", verifyToken, (req, res) => {
+
   res.json({
     success: true,
     message: "Protected route working",
     user: req.user
   });
+
 });
 
 /* ================= GLOBAL ERROR HANDLER ================= */
@@ -152,10 +163,12 @@ app.use((err, req, res, next) => {
 /* ================= 404 HANDLER ================= */
 
 app.use((req, res) => {
+
   res.status(404).json({
     success: false,
     message: "API route not found"
   });
+
 });
 
 /* ================= START SERVER ================= */
