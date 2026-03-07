@@ -1,15 +1,23 @@
 import Notification from "../models/Notification.js";
-import Driver from "../models/Driver.js";
-import admin from "firebase-admin";
 
 /* ================= GET DRIVER NOTIFICATIONS ================= */
 
 export const getNotifications = async (req, res) => {
   try {
 
-    const notifications = await Notification.find({
-      driver: req.user.id
-    }).sort({ createdAt: -1 });
+    const driverId = req.user?.id;
+
+    if (!driverId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
+    }
+
+    const notifications = await Notification
+      .find({ driver: driverId })
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       success: true,
@@ -18,7 +26,7 @@ export const getNotifications = async (req, res) => {
 
   } catch (error) {
 
-    console.error("Notification fetch error:", error);
+    console.error("GET NOTIFICATIONS ERROR:", error);
 
     res.status(500).json({
       success: false,
@@ -29,19 +37,14 @@ export const getNotifications = async (req, res) => {
 };
 
 
-/* ================= MARK AS READ ================= */
+/* ================= MARK NOTIFICATION AS READ ================= */
 
 export const markAsRead = async (req, res) => {
   try {
 
-    const notification = await Notification.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        driver: req.user.id
-      },
-      { read: true },
-      { new: true }
-    );
+    const { id } = req.params;
+
+    const notification = await Notification.findById(id);
 
     if (!notification) {
       return res.status(404).json({
@@ -50,6 +53,10 @@ export const markAsRead = async (req, res) => {
       });
     }
 
+    notification.read = true;
+
+    await notification.save();
+
     res.json({
       success: true,
       message: "Notification marked as read"
@@ -57,7 +64,7 @@ export const markAsRead = async (req, res) => {
 
   } catch (error) {
 
-    console.error("Notification update error:", error);
+    console.error("MARK AS READ ERROR:", error);
 
     res.status(500).json({
       success: false,
@@ -65,56 +72,4 @@ export const markAsRead = async (req, res) => {
     });
 
   }
-};
-
-
-/* ================= CREATE NOTIFICATION ================= */
-
-export const createNotification = async (
-  driverId,
-  title,
-  message,
-  io
-) => {
-
-  try {
-
-    const notification = await Notification.create({
-      driver: driverId,
-      title,
-      message,
-      read: false
-    });
-
-    /* ================= SOCKET REALTIME ================= */
-
-    if (io) {
-      io.to(driverId).emit("newNotification", notification);
-    }
-
-    /* ================= FIREBASE PUSH ================= */
-
-    const driver = await Driver.findById(driverId);
-
-    if (driver?.fcmToken) {
-
-      const payload = {
-        notification: {
-          title: title,
-          body: message
-        },
-        token: driver.fcmToken
-      };
-
-      await admin.messaging().send(payload);
-    }
-
-    return notification;
-
-  } catch (error) {
-
-    console.error("Create notification error:", error);
-
-  }
-
 };
