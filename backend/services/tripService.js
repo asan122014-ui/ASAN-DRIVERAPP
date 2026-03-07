@@ -45,6 +45,7 @@ export const startTripService = async (driverId, tripType, io) => {
   /* notify driver */
 
   if (driver.fcmToken) {
+
     await sendNotification({
       driverId: driver._id,
       title: "Trip Started",
@@ -52,9 +53,11 @@ export const startTripService = async (driverId, tripType, io) => {
       fcmToken: driver.fcmToken,
       io
     });
+
   }
 
   return trip;
+
 };
 
 
@@ -85,21 +88,24 @@ export const endTripService = async (driverId, io) => {
     }
   });
 
-  const driver = await Driver.findById(driverId);
+  const driver = await Driver.findById(driverId).select("fcmToken");
 
   /* notify driver */
 
-if (driver.fcmToken) {
-  await sendNotification({
-    driverId: driver._id,
-    title: "Trip Started",
-    message: `Your ${tripType} trip has started`,
-    fcmToken: driver.fcmToken,
-    io
-  });
-}
+  if (driver?.fcmToken) {
+
+    await sendNotification({
+      driverId: driverId,
+      title: "Trip Completed",
+      message: "Your trip has been completed successfully",
+      fcmToken: driver.fcmToken,
+      io
+    });
+
+  }
 
   return trip;
+
 };
 
 
@@ -113,6 +119,7 @@ export const getActiveTripService = async (driverId) => {
   }).populate("students");
 
   return trip;
+
 };
 
 
@@ -131,6 +138,7 @@ export const updateStudentStatusService = async (studentId, status) => {
   await student.save();
 
   return student;
+
 };
 
 
@@ -145,4 +153,5 @@ export const getDriverTripsService = async (driverId) => {
   .lean();
 
   return trips;
+
 };
