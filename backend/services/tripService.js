@@ -89,15 +89,15 @@ export const endTripService = async (driverId, io) => {
 
   /* notify driver */
 
-  if (driver?.fcmToken) {
-    await sendNotification({
-      driverId: driver._id,
-      title: "Trip Completed",
-      message: "Your trip has been completed successfully",
-      fcmToken: driver.fcmToken,
-      io
-    });
-  }
+if (driver.fcmToken) {
+  await sendNotification({
+    driverId: driver._id,
+    title: "Trip Started",
+    message: `Your ${tripType} trip has started`,
+    fcmToken: driver.fcmToken,
+    io
+  });
+}
 
   return trip;
 };
