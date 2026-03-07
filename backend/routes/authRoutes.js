@@ -34,6 +34,7 @@ router.post(
     { name: "profilePhoto", maxCount: 1 }
   ]),
   async (req, res) => {
+
     try {
 
       const {
@@ -47,16 +48,12 @@ router.post(
         licenseNumber
       } = req.body;
 
-      /* ===== VALIDATION ===== */
-
-      if (!name || !phone || !email || !password) {
+      if (!name || !phone || !email || !password || !address || !vehicleNumber || !vehicleType || !licenseNumber) {
         return res.status(400).json({
           success: false,
-          message: "Missing required fields"
+          message: "All required fields must be filled"
         });
       }
-
-      /* ===== CHECK EXISTING DRIVER ===== */
 
       const existingDriver = await Driver.findOne({
         $or: [{ email }, { phone }]
@@ -91,46 +88,32 @@ router.post(
         }
       }
 
-      /* ===== HASH PASSWORD ===== */
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-
       /* ===== CREATE DRIVER ===== */
 
       const driver = new Driver({
         name,
         phone,
         email,
-        password: hashedPassword,
+        password,   // model will hash
         address,
         vehicleNumber,
         vehicleType,
         licenseNumber,
-
         licenseFront: req.files.licenseFront[0].path,
         licenseBack: req.files.licenseBack[0].path,
-
         rcFront: req.files.rcFront[0].path,
         rcBack: req.files.rcBack[0].path,
-
         insurance: req.files.insurance[0].path,
-
         idFront: req.files.idFront[0].path,
         idBack: req.files.idBack[0].path,
-
         profilePhoto: req.files.profilePhoto[0].path,
-
         status: "pending"
       });
-
-      /* ===== GENERATE DRIVER ID ===== */
 
       const shortId = driver._id.toString().slice(-6).toUpperCase();
       driver.driverId = `ASAN-${shortId}`;
 
       await driver.save();
-
-      /* ===== GENERATE TOKEN ===== */
 
       const token = jwt.sign(
         {
@@ -161,6 +144,7 @@ router.post(
       });
 
     }
+
   }
 );
 
@@ -178,6 +162,13 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Invalid credentials"
+      });
+    }
+
+    if (driver.status !== "approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is not approved yet"
       });
     }
 
@@ -231,7 +222,10 @@ router.post("/send-otp", async (req, res) => {
 
     const otp = Math.floor(1000 + Math.random() * 9000);
 
-    otpStore.set(phone, otp);
+    otpStore.set(phone, {
+      otp,
+      expires: Date.now() + 5 * 60 * 1000
+    });
 
     await client.messages.create({
       body: `Your ASAN OTP is ${otp}`,
@@ -263,9 +257,24 @@ router.post("/verify-otp", (req, res) => {
 
   const { phone, otp } = req.body;
 
-  const storedOtp = otpStore.get(phone);
+  const stored = otpStore.get(phone);
 
-  if (storedOtp && storedOtp == otp) {
+  if (!stored) {
+    return res.status(400).json({
+      success: false,
+      message: "OTP expired"
+    });
+  }
+
+  if (stored.expires < Date.now()) {
+    otpStore.delete(phone);
+    return res.status(400).json({
+      success: false,
+      message: "OTP expired"
+    });
+  }
+
+  if (stored.otp == otp) {
 
     otpStore.delete(phone);
 
