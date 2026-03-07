@@ -22,8 +22,8 @@ export const startTripService = async (driverId, tripType, io) => {
   });
 
   if (existingTrip) {
-    throw new Error("Driver already has an active trip");
-  }
+  return existingTrip;
+}
 
   const students = await Students
     .find({ driver: driverId })
@@ -129,4 +129,5 @@ export const getDriverTripsService = async (driverId) => {
     .lean();
 
 };
+
 
