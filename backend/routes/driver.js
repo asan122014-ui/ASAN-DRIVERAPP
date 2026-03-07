@@ -9,7 +9,7 @@ const router = express.Router();
 router.get("/dashboard", verifyToken, async (req, res) => {
 
   try {
-
+    console.log("Driver ID from token:", req.user.id);
     const driverId = req.user?.id;
 
     if (!driverId) {
