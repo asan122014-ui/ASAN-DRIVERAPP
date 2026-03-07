@@ -19,12 +19,14 @@ export const validateDriverRegistration = [
     .withMessage("Invalid Indian phone number"),
 
   body("email")
-    .trim()
     .optional()
+    .trim()
+    .normalizeEmail()
     .isEmail()
     .withMessage("Invalid email address"),
 
   body("vehicleType")
+    .trim()
     .notEmpty()
     .withMessage("Vehicle type is required"),
 
@@ -32,7 +34,7 @@ export const validateDriverRegistration = [
     .trim()
     .notEmpty()
     .withMessage("Vehicle number is required")
-    .matches(/^[A-Z]{2}-\d{2}-[A-Z]{1,2}-\d{4}$/)
+    .matches(/^[A-Z]{2}\s?-?\d{1,2}\s?-?[A-Z]{1,2}\s?-?\d{4}$/i)
     .withMessage("Invalid vehicle registration number"),
 
   body("licenseNumber")
@@ -41,13 +43,13 @@ export const validateDriverRegistration = [
     .withMessage("Driving license number is required"),
 
   body("password")
+    .trim()
     .notEmpty()
     .withMessage("Password is required")
     .isLength({ min: 6 })
     .withMessage("Password must be at least 6 characters")
 
 ];
-
 
 /* ================= VALIDATION RESULT HANDLER ================= */
 
@@ -65,4 +67,5 @@ export const validateRequest = (req, res, next) => {
   }
 
   next();
+
 };
