@@ -20,7 +20,11 @@ export const startTrip = async (req, res) => {
       });
     }
 
-    const trip = await startTripService(driverId, tripType, req.app.get("io"));
+    const trip = await startTripService(
+      driverId,
+      tripType,
+      req.app.get("io")
+    );
 
     res.json({
       success: true,
@@ -123,3 +127,4 @@ export const getActiveTrip = async (req, res) => {
 
   }
 };
+
