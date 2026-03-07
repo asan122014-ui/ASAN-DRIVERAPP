@@ -18,6 +18,7 @@ export const validateAddStudent = [
     .withMessage("Invalid Indian phone number"),
 
   body("address")
+    .trim()
     .notEmpty()
     .withMessage("Address is required"),
 
@@ -38,11 +39,13 @@ export const validateUpdateStudent = [
 
   body("name")
     .optional()
+    .trim()
     .isLength({ min: 3 })
     .withMessage("Name must be at least 3 characters"),
 
   body("phone")
     .optional()
+    .trim()
     .matches(/^[6-9]\d{9}$/)
     .withMessage("Invalid phone number")
 
@@ -65,12 +68,10 @@ export const validateRequest = (req, res, next) => {
   const errors = validationResult(req);
 
   if (!errors.isEmpty()) {
-
     return res.status(400).json({
       success: false,
       errors: errors.array()
     });
-
   }
 
   next();
