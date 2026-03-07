@@ -5,17 +5,12 @@ import { body, param, validationResult } from "express-validator";
 export const validateStartTrip = [
 
   body("tripType")
+    .trim()
     .notEmpty()
     .withMessage("Trip type is required")
-    .isString()
-    .withMessage("Trip type must be a string")
-    .custom(value => {
-      const allowed = ["morning", "afternoon", "Morning", "Afternoon"];
-      if (!allowed.includes(value)) {
-        throw new Error("Trip type must be Morning or Afternoon");
-      }
-      return true;
-    })
+    .toLowerCase()
+    .isIn(["morning", "afternoon"])
+    .withMessage("Trip type must be 'morning' or 'afternoon'")
 
 ];
 
