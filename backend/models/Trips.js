@@ -1,42 +1,54 @@
 import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema(
-{
-  name: {
-    type: String,
-    required: true,
-    trim: true
+const tripSchema = new mongoose.Schema(
+  {
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      required: true
+    },
+
+    tripType: {
+      type: String,
+      enum: ["morning", "afternoon"],
+      required: true
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "completed"],
+      default: "active"
+    },
+
+    students: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Students"
+      }
+    ],
+
+    totalStudents: {
+      type: Number,
+      default: 0
+    },
+
+    amount: {
+      type: Number,
+      default: 0
+    },
+
+    startTime: {
+      type: Date,
+      default: Date.now
+    },
+
+    endTime: {
+      type: Date
+    }
   },
-
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true
-  },
-
-  password: {
-    type: String,
-    required: true,
-    minlength: 6
-  },
-
-  role: {
-    type: String,
-    enum: ["user", "admin"],
-    default: "user"
-  },
-
-  isActive: {
-    type: Boolean,
-    default: true
-  }
-
-},
-{ timestamps: true }
+  { timestamps: true }
 );
 
-const User = mongoose.model("User", userSchema);
+const Trips = mongoose.model("Trips", tripSchema);
 
-export default User;
+export default Trips;
