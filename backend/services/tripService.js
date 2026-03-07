@@ -47,6 +47,11 @@ export const startTripService = async (driverId, tripType, io) => {
       fcmToken: driver.fcmToken,
       io
     });
+    await Notification.create({
+  driver: driverId,
+  title: "Trip Started",
+  message: `Your ${tripType} trip has started`
+});
 
   }
 
@@ -92,6 +97,11 @@ export const endTripService = async (driverId, io) => {
       fcmToken: driver.fcmToken,
       io
     });
+    await Notification.create({
+  driver: driverId,
+  title: "Trip Completed",
+  message: "Your trip has been completed successfully"
+});
 
     await sendNotification({
       driverId: driverId,
@@ -129,5 +139,6 @@ export const getDriverTripsService = async (driverId) => {
     .lean();
 
 };
+
 
 
