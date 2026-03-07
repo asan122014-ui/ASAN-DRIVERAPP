@@ -12,8 +12,14 @@ router.post("/start", verifyToken, async (req, res) => {
 
     const { tripType } = req.body;
 
-    const formattedTripType =
-      tripType === "morning" ? "morning" : "afternoon";
+    /* Validate trip type */
+
+    if (!tripType || !["morning", "afternoon"].includes(tripType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Trip type must be 'morning' or 'afternoon'"
+      });
+    }
 
     /* Prevent multiple active trips */
 
@@ -29,22 +35,23 @@ router.post("/start", verifyToken, async (req, res) => {
       });
     }
 
+    /* Create trip */
+
     const trip = await Trip.create({
       driver: req.user.id,
-      tripType: formattedTripType,
+      tripType,
       totalStudents: 0,
       amount: 0,
       startTime: new Date(),
       status: "active"
     });
 
-    /* Notification */
+    /* Save notification */
 
     await Notification.create({
       driver: req.user.id,
       title: "Trip Started",
-      message: `Your ${formattedTripType} trip has started.`,
-      type: "trip_started"
+      message: `Your ${tripType} trip has started.`
     });
 
     res.status(201).json({
@@ -55,15 +62,16 @@ router.post("/start", verifyToken, async (req, res) => {
 
   } catch (error) {
 
-    console.error("Start trip error:", error);
+    console.error("START TRIP ERROR:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to start trip"
+      message: error.message || "Failed to start trip"
     });
 
   }
 });
+
 
 /* ================= END TRIP ================= */
 
@@ -82,10 +90,12 @@ router.post("/end", verifyToken, async (req, res) => {
       });
     }
 
+    /* Complete trip */
+
     trip.status = "completed";
     trip.endTime = new Date();
 
-    /* Example earnings calculation */
+    /* Example earnings logic */
 
     trip.amount = trip.totalStudents * 50;
 
@@ -96,8 +106,7 @@ router.post("/end", verifyToken, async (req, res) => {
     await Notification.create({
       driver: req.user.id,
       title: "Trip Completed",
-      message: "Trip completed successfully",
-      type: "trip_completed"
+      message: "Your trip has been completed successfully"
     });
 
     /* Payment notification */
@@ -105,8 +114,7 @@ router.post("/end", verifyToken, async (req, res) => {
     await Notification.create({
       driver: req.user.id,
       title: "Payment Credited",
-      message: `₹${trip.amount} credited to your account`,
-      type: "payment"
+      message: `₹${trip.amount} credited to your account`
     });
 
     res.json({
@@ -117,15 +125,16 @@ router.post("/end", verifyToken, async (req, res) => {
 
   } catch (error) {
 
-    console.error("End trip error:", error);
+    console.error("END TRIP ERROR:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to end trip"
+      message: error.message || "Failed to end trip"
     });
 
   }
 });
+
 
 /* ================= TRIP HISTORY ================= */
 
@@ -143,7 +152,7 @@ router.get("/history", verifyToken, async (req, res) => {
 
   } catch (error) {
 
-    console.error("Trip history error:", error);
+    console.error("TRIP HISTORY ERROR:", error);
 
     res.status(500).json({
       success: false,
@@ -152,6 +161,35 @@ router.get("/history", verifyToken, async (req, res) => {
 
   }
 });
+
+
+/* ================= ACTIVE TRIP ================= */
+
+router.get("/active", verifyToken, async (req, res) => {
+  try {
+
+    const trip = await Trip.findOne({
+      driver: req.user.id,
+      status: "active"
+    });
+
+    res.json({
+      success: true,
+      trip
+    });
+
+  } catch (error) {
+
+    console.error("ACTIVE TRIP ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch active trip"
+    });
+
+  }
+});
+
 
 /* ================= LATEST TRIP ================= */
 
@@ -176,7 +214,7 @@ router.get("/latest", verifyToken, async (req, res) => {
 
   } catch (error) {
 
-    console.error("Latest trip error:", error);
+    console.error("LATEST TRIP ERROR:", error);
 
     res.status(500).json({
       success: false,
