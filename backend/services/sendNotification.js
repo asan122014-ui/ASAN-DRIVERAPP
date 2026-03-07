@@ -2,11 +2,12 @@ import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
 
 /*
-  Utility function to send notification
-  Used across the system:
-  - Admin approval
-  - New trip assigned
-  - Broadcast messages
+ Utility function to send notification
+
+ Used across system:
+ - Admin approval
+ - Trip events
+ - Broadcast notifications
 */
 
 export const sendNotification = async ({
@@ -16,9 +17,10 @@ export const sendNotification = async ({
   fcmToken,
   io
 }) => {
+
   try {
 
-    /* Save notification in database */
+    /* ================= SAVE TO DATABASE ================= */
 
     const notification = await Notification.create({
       driver: driverId,
@@ -27,33 +29,44 @@ export const sendNotification = async ({
       read: false
     });
 
-    /* Send realtime socket notification */
+    /* ================= REALTIME SOCKET ================= */
 
-    if (io) {
+    if (io && driverId) {
       io.to(driverId.toString()).emit("newNotification", notification);
     }
 
-    /* Send push notification via Firebase */
+    /* ================= FIREBASE PUSH ================= */
 
-    if (fcmToken) {
+    if (fcmToken && admin?.apps?.length) {
 
-      const payload = {
-        notification: {
-          title: title,
-          body: message
-        },
-        token: fcmToken
-      };
+      try {
 
-      await admin.messaging().send(payload);
+        const payload = {
+          notification: {
+            title,
+            body: message
+          },
+          token: fcmToken
+        };
+
+        await admin.messaging().send(payload);
+
+      } catch (firebaseError) {
+
+        console.error("Firebase push error:", firebaseError);
+
+      }
+
     }
 
     return notification;
 
   } catch (error) {
 
-    console.error("Notification Error:", error);
+    console.error("Send notification error:", error);
 
     return null;
+
   }
+
 };
