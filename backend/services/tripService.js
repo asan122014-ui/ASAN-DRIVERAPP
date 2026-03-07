@@ -7,12 +7,15 @@ import { sendNotification } from "../utils/sendNotification.js";
 
 export const startTripService = async (driverId, tripType, io) => {
 
+  console.log("Driver ID received:", driverId);
+
   const driver = await Driver.findById(driverId);
+
+  console.log("Driver found:", driver);
 
   if (!driver) {
     throw new Error("Driver not found");
   }
-
   const existingTrip = await Trips.findOne({
     driver: driverId,
     status: "active"
@@ -126,3 +129,4 @@ export const getDriverTripsService = async (driverId) => {
     .lean();
 
 };
+
