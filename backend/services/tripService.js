@@ -2,28 +2,25 @@ import Trips from "../models/Trips.js";
 import Students from "../models/Students.js";
 import Driver from "../models/Driver.js";
 import { sendNotification } from "../utils/sendNotification.js";
+import Notification from "../models/Notification.js";
 
 /* ================= START TRIP ================= */
 
 export const startTripService = async (driverId, tripType, io) => {
 
-  console.log("Driver ID received:", driverId);
-
   const driver = await Driver.findById(driverId);
-
-  console.log("Driver found:", driver);
-
   if (!driver) {
     throw new Error("Driver not found");
   }
+
   const existingTrip = await Trips.findOne({
     driver: driverId,
     status: "active"
   });
 
   if (existingTrip) {
-  return existingTrip;
-}
+    return existingTrip;
+  }
 
   const students = await Students
     .find({ driver: driverId })
@@ -34,30 +31,18 @@ export const startTripService = async (driverId, tripType, io) => {
     tripType,
     status: "active",
     students: students.map(s => s._id),
-    totalStudents: students.length,
     startTime: new Date()
   });
 
-  if (driver.fcmToken) {
-
-    await sendNotification({
-      driverId: driver._id,
-      title: "Trip Started",
-      message: `Your ${tripType} trip has started`,
-      fcmToken: driver.fcmToken,
-      io
-    });
-    await Notification.create({
-  driver: driverId,
-  title: "Trip Started",
-  message: `Your ${tripType} trip has started`
-});
-
-  }
+  /* CREATE NOTIFICATION */
+  await Notification.create({
+    driver: driverId,
+    title: "Trip Started",
+    message: `Your ${tripType} trip has started`
+  });
 
   return trip;
 };
-
 /* ================= END TRIP ================= */
 
 export const endTripService = async (driverId, io) => {
@@ -73,45 +58,15 @@ export const endTripService = async (driverId, io) => {
 
   trip.status = "completed";
   trip.endTime = new Date();
-  trip.amount = (trip.totalStudents || 0) * 50;
 
   await trip.save();
 
-  await Driver.findByIdAndUpdate(driverId, {
-    $inc: {
-      totalTrips: 1,
-      todayTrips: 1
-    }
+  /* CREATE NOTIFICATION */
+  await Notification.create({
+    driver: driverId,
+    title: "Trip Completed",
+    message: "Your trip has been completed successfully"
   });
-
-  const driver = await Driver
-    .findById(driverId)
-    .select("fcmToken");
-
-  if (driver?.fcmToken) {
-
-    await sendNotification({
-      driverId: driverId,
-      title: "Trip Completed",
-      message: "Your trip has been completed successfully",
-      fcmToken: driver.fcmToken,
-      io
-    });
-    await Notification.create({
-  driver: driverId,
-  title: "Trip Completed",
-  message: "Your trip has been completed successfully"
-});
-
-    await sendNotification({
-      driverId: driverId,
-      title: "Payment Credited",
-      message: `₹${trip.amount} credited to your account`,
-      fcmToken: driver.fcmToken,
-      io
-    });
-
-  }
 
   return trip;
 };
@@ -139,6 +94,7 @@ export const getDriverTripsService = async (driverId) => {
     .lean();
 
 };
+
 
 
 
