@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.get("/", verifyToken, getNotifications);
 
-/* ================= MARK NOTIFICATION AS READ ================= */
+/* ================= MARK AS READ ================= */
 
 router.put("/:id/read", verifyToken, markAsRead);
 
