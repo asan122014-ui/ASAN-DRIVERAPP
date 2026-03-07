@@ -6,7 +6,6 @@ import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 
 /* ROUTES */
-import driverRoutes from "./routes/driverRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import otpRoutes from "./routes/otp.js";
 import dashboardRoutes from "./routes/driver.js";
@@ -116,7 +115,6 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
-app.use("/api/drivers", driverRoutes);
 app.use("/api/driver", dashboardRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
