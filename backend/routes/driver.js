@@ -7,6 +7,7 @@ const router = express.Router();
 /* ================= DRIVER DASHBOARD ================= */
 
 router.get("/dashboard", verifyToken, async (req, res) => {
+
   try {
 
     const driverId = req.user?.id;
@@ -18,9 +19,10 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    const driver = await Driver.findById(driverId).select(
-      "name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status"
-    );
+    const driver = await Driver
+      .findById(driverId)
+      .select("name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status")
+      .lean();
 
     if (!driver) {
       return res.status(404).json({
@@ -29,7 +31,7 @@ router.get("/dashboard", verifyToken, async (req, res) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: {
         name: driver.name,
@@ -53,11 +55,13 @@ router.get("/dashboard", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 /* ================= DRIVER PROFILE ================= */
 
 router.get("/profile", verifyToken, async (req, res) => {
+
   try {
 
     const driverId = req.user?.id;
@@ -71,7 +75,8 @@ router.get("/profile", verifyToken, async (req, res) => {
 
     const driver = await Driver
       .findById(driverId)
-      .select("-password");
+      .select("-password")
+      .lean();
 
     if (!driver) {
       return res.status(404).json({
@@ -80,7 +85,7 @@ router.get("/profile", verifyToken, async (req, res) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: driver
     });
@@ -95,6 +100,7 @@ router.get("/profile", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 export default router;
