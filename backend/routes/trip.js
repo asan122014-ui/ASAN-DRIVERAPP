@@ -1,6 +1,7 @@
 import express from "express";
 import Trip from "../models/Trips.js";
 import Notification from "../models/Notification.js";
+import Driver from "../models/Driver.js";
 import verifyToken from "../middleware/auth.js";
 
 const router = express.Router();
@@ -8,11 +9,10 @@ const router = express.Router();
 /* ================= START TRIP ================= */
 
 router.post("/start", verifyToken, async (req, res) => {
+
   try {
 
     const { tripType } = req.body;
-
-    /* Validate trip type */
 
     if (!tripType || !["morning", "afternoon"].includes(tripType)) {
       return res.status(400).json({
@@ -20,8 +20,6 @@ router.post("/start", verifyToken, async (req, res) => {
         message: "Trip type must be 'morning' or 'afternoon'"
       });
     }
-
-    /* Prevent multiple active trips */
 
     const existingTrip = await Trip.findOne({
       driver: req.user.id,
@@ -35,8 +33,6 @@ router.post("/start", verifyToken, async (req, res) => {
       });
     }
 
-    /* Create trip */
-
     const trip = await Trip.create({
       driver: req.user.id,
       tripType,
@@ -45,8 +41,6 @@ router.post("/start", verifyToken, async (req, res) => {
       startTime: new Date(),
       status: "active"
     });
-
-    /* Save notification */
 
     await Notification.create({
       driver: req.user.id,
@@ -70,12 +64,14 @@ router.post("/start", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 
 /* ================= END TRIP ================= */
 
 router.post("/end", verifyToken, async (req, res) => {
+
   try {
 
     const trip = await Trip.findOne({
@@ -90,26 +86,27 @@ router.post("/end", verifyToken, async (req, res) => {
       });
     }
 
-    /* Complete trip */
-
     trip.status = "completed";
     trip.endTime = new Date();
-
-    /* Example earnings logic */
 
     trip.amount = trip.totalStudents * 50;
 
     await trip.save();
 
-    /* Trip completed notification */
+    /* Update driver stats */
+
+    await Driver.findByIdAndUpdate(req.user.id, {
+      $inc: {
+        totalTrips: 1,
+        todayTrips: 1
+      }
+    });
 
     await Notification.create({
       driver: req.user.id,
       title: "Trip Completed",
       message: "Your trip has been completed successfully"
     });
-
-    /* Payment notification */
 
     await Notification.create({
       driver: req.user.id,
@@ -133,17 +130,21 @@ router.post("/end", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 
 /* ================= TRIP HISTORY ================= */
 
 router.get("/history", verifyToken, async (req, res) => {
+
   try {
 
     const trips = await Trip.find({
       driver: req.user.id
-    }).sort({ createdAt: -1 });
+    })
+    .sort({ createdAt: -1 })
+    .lean();
 
     res.json({
       success: true,
@@ -160,18 +161,20 @@ router.get("/history", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 
 /* ================= ACTIVE TRIP ================= */
 
 router.get("/active", verifyToken, async (req, res) => {
+
   try {
 
     const trip = await Trip.findOne({
       driver: req.user.id,
       status: "active"
-    });
+    }).lean();
 
     res.json({
       success: true,
@@ -188,17 +191,21 @@ router.get("/active", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 
 /* ================= LATEST TRIP ================= */
 
 router.get("/latest", verifyToken, async (req, res) => {
+
   try {
 
     const trip = await Trip.findOne({
       driver: req.user.id
-    }).sort({ createdAt: -1 });
+    })
+    .sort({ createdAt: -1 })
+    .lean();
 
     if (!trip) {
       return res.status(404).json({
@@ -222,6 +229,7 @@ router.get("/latest", verifyToken, async (req, res) => {
     });
 
   }
+
 });
 
 export default router;
