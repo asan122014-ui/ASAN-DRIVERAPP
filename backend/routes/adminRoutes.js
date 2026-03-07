@@ -52,8 +52,6 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    /* Log admin login */
-
     await AdminLog.create({
       adminId: admin._id,
       action: "ADMIN_LOGIN",
@@ -302,7 +300,7 @@ router.get("/logs", verifyAdmin, async (req, res) => {
 
 /* ================= DRIVER REGISTRATION ================= */
 
-router.post("/register", async (req, res) => {
+router.post("/register", verifyAdmin, async (req, res) => {
 
   try {
 
