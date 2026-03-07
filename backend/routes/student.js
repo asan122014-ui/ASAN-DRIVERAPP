@@ -1,5 +1,5 @@
 import express from "express";
-import Student from "../models/Student.js";
+import Student from "../models/Students.js";
 import Trip from "../models/Trips.js";
 import verifyToken from "../middleware/auth.js";
 
