@@ -19,15 +19,15 @@ router.get("/profile", verifyToken, getDriverProfile);
 
 router.get("/dashboard", verifyToken, getDriverDashboard);
 
-/* ================= STUDENTS ================= */
+/* ================= ASSIGNED STUDENTS ================= */
 
 router.get("/students", verifyToken, getAssignedStudents);
 
-/* ================= LOCATION UPDATE ================= */
+/* ================= UPDATE DRIVER LOCATION ================= */
 
 router.post("/location/update", verifyToken, updateDriverLocation);
 
-/* ================= NOTIFICATIONS ================= */
+/* ================= DRIVER NOTIFICATIONS ================= */
 
 router.get("/notifications", verifyToken, getDriverNotifications);
 
