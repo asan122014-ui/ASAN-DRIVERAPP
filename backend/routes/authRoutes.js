@@ -181,23 +181,32 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
-      {
-        id: driver._id,
-        role: "driver"
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const accessToken = jwt.sign(
+{
+  id: driver._id,
+  role: "driver"
+},
+process.env.JWT_SECRET,
+{ expiresIn: "15m" }
+);
+
+const refreshToken = jwt.sign(
+{
+  id: driver._id
+},
+process.env.JWT_REFRESH_SECRET,
+{ expiresIn: "30d" }
+);
 
     const driverResponse = driver.toObject();
     delete driverResponse.password;
 
     res.json({
-      success: true,
-      token,
-      driver: driverResponse
-    });
+  success: true,
+  accessToken,
+  refreshToken,
+  driver: driverResponse
+});
 
   } catch (error) {
 
