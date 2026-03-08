@@ -221,6 +221,48 @@ process.env.JWT_REFRESH_SECRET,
 
 });
 
+/* ================= REFRESH TOKEN ================= */
+
+router.post("/refresh", (req, res) => {
+
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token required"
+    });
+  }
+
+  try {
+
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.JWT_REFRESH_SECRET
+    );
+
+    const newAccessToken = jwt.sign(
+      { id: decoded.id },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    res.json({
+      success: true,
+      accessToken: newAccessToken
+    });
+
+  } catch (error) {
+
+    res.status(401).json({
+      success: false,
+      message: "Invalid refresh token"
+    });
+
+  }
+
+});
+
 /* ================= SEND OTP ================= */
 
 router.post("/send-otp", async (req, res) => {
