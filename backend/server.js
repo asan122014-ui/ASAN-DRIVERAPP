@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
+
 import connectDB from "./config/db.js";
 
 /* ROUTES */
@@ -16,43 +17,32 @@ import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 import locationRoutes from "./routes/locationRoutes.js";
 
-/* MIDDLEWARE */
-import verifyToken from "./middleware/auth.js";
-
 /* FIREBASE */
 import admin from "firebase-admin";
 
-/* ================= ENV CONFIG ================= */
-
+/* ================= ENV ================= */
 dotenv.config();
 
-/* ================= DATABASE ================= */
-
+/* ================= DB ================= */
 connectDB();
 
-/* ================= EXPRESS APP ================= */
-
+/* ================= APP ================= */
 const app = express();
 
-/* ================= HTTP SERVER ================= */
-
+/* ================= SERVER ================= */
 const server = http.createServer(app);
 
-/* ================= SOCKET.IO ================= */
-
+/* ================= SOCKET ================= */
 const io = new Server(server, {
   cors: {
-    origin: "",
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
 
-/* Make socket available globally */
-
 app.set("io", io);
 
-/* ================= FIREBASE INIT ================= */
-
+/* ================= FIREBASE ================= */
 const firebaseServiceAccount = {
   type: "service_account",
   project_id: process.env.FIREBASE_PROJECT_ID,
@@ -69,41 +59,29 @@ if (!admin.apps.length) {
 }
 
 /* ================= SOCKET CONNECTION ================= */
-
 io.on("connection", (socket) => {
-
-  console.log("Socket client connected:", socket.id);
+  console.log("Socket connected:", socket.id);
 
   socket.on("joinDriverRoom", (driverId) => {
-
     if (!driverId) return;
 
     socket.join(driverId.toString());
-
     console.log(`Driver ${driverId} joined notification room`);
-
   });
 
   socket.on("driver_join", (driverId) => {
-
     if (!driverId) return;
 
     socket.join(`driver_${driverId}`);
-
     console.log(`Driver ${driverId} joined tracking room`);
-
   });
 
   socket.on("disconnect", () => {
-
-    console.log("Socket client disconnected:", socket.id);
-
+    console.log("Socket disconnected:", socket.id);
   });
-
 });
 
-/* ================= GLOBAL MIDDLEWARE ================= */
-
+/* ================= MIDDLEWARE ================= */
 app.use(cors({
   origin: process.env.FRONTEND_URL || "*"
 }));
@@ -112,74 +90,51 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ================= ROUTES ================= */
-
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
-app.use("/api/driver", dashboardRoutes);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
+
+app.use("/api/driver", dashboardRoutes);
 app.use("/api/trip", tripRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/location", locationRoutes);
 
-/* ================= HEALTH CHECK ================= */
-
+/* ================= HEALTH ================= */
 app.get("/api/health", (req, res) => {
-
   res.json({
     status: "OK",
     message: "ASAN backend running",
-    timestamp: new Date()
+    time: new Date()
   });
-
 });
 
-/* ================= TEST PROTECTED ROUTE ================= */
-
-app.get("/api/protected", verifyToken, (req, res) => {
-
-  res.json({
-    success: true,
-    message: "Protected route working",
-    user: req.user
-  });
-
-});
-
-/* ================= GLOBAL ERROR HANDLER ================= */
-
+/* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
-
-  console.error("Server Error:", err);
+  console.error("Server Error:", err.message);
 
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error"
   });
-
 });
 
-/* ================= 404 HANDLER ================= */
-
+/* ================= 404 ================= */
 app.use((req, res) => {
-
   res.status(404).json({
     success: false,
     message: "API route not found"
   });
-
 });
 
-/* ================= START SERVER ================= */
-
+/* ================= START ================= */
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
-
   console.log("=================================");
   console.log("ASAN BACKEND STARTED");
   console.log(`Server running on port ${PORT}`);
   console.log("=================================");
-
 });
