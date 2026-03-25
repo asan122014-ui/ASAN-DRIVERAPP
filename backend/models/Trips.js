@@ -5,7 +5,8 @@ const tripSchema = new mongoose.Schema(
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
-      required: true
+      required: true,
+      index: true
     },
 
     tripType: {
@@ -17,24 +18,27 @@ const tripSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["active", "completed"],
-      default: "active"
+      default: "active",
+      index: true
     },
 
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Students"
+        ref: "Student"
       }
     ],
 
     totalStudents: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
 
     amount: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
 
     startTime: {
@@ -43,11 +47,20 @@ const tripSchema = new mongoose.Schema(
     },
 
     endTime: {
-      type: Date
+      type: Date,
+      default: null
     }
   },
   { timestamps: true }
 );
+
+/* ================= INDEXES ================= */
+
+// Fast queries for active trip per driver
+tripSchema.index({ driver: 1, status: 1 });
+
+// Optional: history sorting
+tripSchema.index({ driver: 1, createdAt: -1 });
 
 const Trips = mongoose.model("Trips", tripSchema);
 
