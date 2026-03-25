@@ -12,7 +12,8 @@ const logSchema = new mongoose.Schema(
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
-      index: true
+      index: true,
+      default: null
     },
 
     action: {
@@ -30,23 +31,33 @@ const logSchema = new mongoose.Schema(
     },
 
     message: {
-      type: String
+      type: String,
+      default: ""
     },
 
     metadata: {
-      type: Object
+      type: mongoose.Schema.Types.Mixed, // 🔥 better than Object
+      default: {}
     },
 
     ipAddress: {
-      type: String
+      type: String,
+      default: null
     }
   },
   { timestamps: true }
 );
 
-/* Index for fast admin logs */
+/* ================= INDEXES ================= */
 
+// Latest logs (global)
 logSchema.index({ createdAt: -1 });
+
+// Admin activity tracking
+logSchema.index({ admin: 1, createdAt: -1 });
+
+// Driver-specific logs
+logSchema.index({ driver: 1, createdAt: -1 });
 
 const Log = mongoose.model("Log", logSchema);
 
