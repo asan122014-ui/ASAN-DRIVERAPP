@@ -1,9 +1,7 @@
 let ioInstance = null;
 
 /* ================= INITIALIZE SOCKET ================= */
-
 export const initSocket = (io) => {
-
   if (ioInstance) {
     console.warn("Socket already initialized");
     return;
@@ -12,57 +10,40 @@ export const initSocket = (io) => {
   ioInstance = io;
 
   io.on("connection", (socket) => {
+    console.log("Socket connected:", socket.id);
 
-    console.log("Socket client connected:", socket.id);
-
-    /* Driver joins personal notification room */
-
+    /* ===== JOIN DRIVER ROOM ===== */
     socket.on("joinDriverRoom", (driverId) => {
-
-      if (!driverId) return;
+      if (!driverId) {
+        console.warn("Missing driverId for socket join");
+        return;
+      }
 
       const room = driverId.toString();
-
       socket.join(room);
 
-      console.log(`Driver ${room} joined notification room`);
-
+      console.log(`Driver ${room} joined room`);
     });
 
     socket.on("disconnect", () => {
-
-      console.log("Socket client disconnected:", socket.id);
-
+      console.log("Socket disconnected:", socket.id);
     });
-
   });
-
 };
 
-/* ================= SEND REALTIME NOTIFICATION ================= */
-
+/* ================= SEND TO ONE DRIVER ================= */
 export const sendRealtimeNotification = (driverId, notification) => {
-
   if (!ioInstance || !driverId) return;
 
-  const room = driverId.toString();
-
-  ioInstance.to(room).emit("newNotification", notification);
-
+  ioInstance.to(driverId.toString()).emit("newNotification", notification);
 };
 
-/* ================= BROADCAST MESSAGE ================= */
-
+/* ================= BROADCAST ================= */
 export const broadcastMessage = (event, data) => {
-
   if (!ioInstance) return;
 
   ioInstance.emit(event, data);
-
 };
 
-/* ================= GET SOCKET INSTANCE ================= */
-
-export const getIO = () => {
-  return ioInstance;
-};
+/* ================= GET IO ================= */
+export const getIO = () => ioInstance;
