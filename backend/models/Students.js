@@ -10,48 +10,51 @@ const studentSchema = new mongoose.Schema(
 
     className: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
 
     schoolName: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
 
     parentName: {
-      type: String
+      type: String,
+      trim: true,
+      default: ""
     },
 
     parentPhone: {
-      type: String
+      type: String,
+      trim: true,
+      default: ""
     },
 
     /* ===== PICKUP LOCATION ===== */
-
     pickupLocation: {
-      latitude: Number,
-      longitude: Number,
-      address: String
+      latitude: { type: Number, required: true },
+      longitude: { type: Number, required: true },
+      address: { type: String, default: "" }
     },
 
     /* ===== DROP LOCATION ===== */
-
     dropLocation: {
-      latitude: Number,
-      longitude: Number,
-      address: String
+      latitude: { type: Number, required: true },
+      longitude: { type: Number, required: true },
+      address: { type: String, default: "" }
     },
 
     /* ===== DRIVER ASSIGNMENT ===== */
-
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
-      index: true
+      index: true,
+      default: null
     },
 
     /* ===== TRIP STATUS ===== */
-
     status: {
       type: String,
       enum: ["waiting", "onboard", "dropped"],
@@ -59,27 +62,40 @@ const studentSchema = new mongoose.Schema(
       index: true
     },
 
-    pickupTime: Date,
+    pickupTime: {
+      type: Date,
+      default: null
+    },
 
-    dropTime: Date,
+    dropTime: {
+      type: Date,
+      default: null
+    },
 
     /* ===== SAFETY ===== */
-
-    emergencyContact: String,
+    emergencyContact: {
+      type: String,
+      trim: true,
+      default: ""
+    },
 
     /* ===== SYSTEM ===== */
-
     active: {
       type: Boolean,
-      default: true
+      default: true,
+      index: true
     }
   },
   { timestamps: true }
 );
 
-/* Index for fast driver queries */
+/* ================= INDEXES ================= */
 
+// Driver + status (fast filtering during trips)
 studentSchema.index({ driver: 1, status: 1 });
+
+// Optional: active students per driver
+studentSchema.index({ driver: 1, active: 1 });
 
 const Student = mongoose.model("Student", studentSchema);
 
