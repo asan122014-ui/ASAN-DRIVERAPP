@@ -4,20 +4,17 @@ import bcrypt from "bcryptjs";
 const driverSchema = new mongoose.Schema(
   {
     /* ================= PERSONAL DETAILS ================= */
-
     name: {
       type: String,
       required: true,
       trim: true
     },
-
     phone: {
       type: String,
       required: true,
       unique: true,
       index: true
     },
-
     email: {
       type: String,
       required: true,
@@ -25,128 +22,86 @@ const driverSchema = new mongoose.Schema(
       lowercase: true,
       trim: true
     },
-
     password: {
       type: String,
       required: true,
-      minlength: 6
+      minlength: 6,
+      select: false // 🔥 hide password in queries
     },
-
     address: {
       type: String,
       required: true
     },
 
     /* ================= VEHICLE DETAILS ================= */
-
     vehicleNumber: {
       type: String,
       required: true,
-      uppercase: true
+      uppercase: true,
+      trim: true
     },
-
     vehicleType: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
-
     licenseNumber: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
 
     /* ================= DOCUMENTS ================= */
+    licenseFront: { type: String, required: true },
+    licenseBack: { type: String, required: true },
+    rcFront: { type: String, required: true },
+    rcBack: { type: String, required: true },
+    insurance: { type: String, required: true },
+    idFront: { type: String, required: true },
+    idBack: { type: String, required: true },
+    profilePhoto: { type: String, required: true },
 
-    licenseFront: {
-      type: String,
-      required: true
-    },
-
-    licenseBack: {
-      type: String,
-      required: true
-    },
-
-    rcFront: {
-      type: String,
-      required: true
-    },
-
-    rcBack: {
-      type: String,
-      required: true
-    },
-
-    insurance: {
-      type: String,
-      required: true
-    },
-
-    idFront: {
-      type: String,
-      required: true
-    },
-
-    idBack: {
-      type: String,
-      required: true
-    },
-
-    profilePhoto: {
-      type: String,
-      required: true
-    },
-
-    /* ================= SYSTEM FIELDS ================= */
-
+    /* ================= SYSTEM ================= */
     driverId: {
       type: String,
       unique: true,
       index: true
     },
-
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
       default: "pending"
     },
-
     rejectionReason: {
       type: String,
       default: null
     },
-
     fcmToken: {
       type: String,
       default: null
     },
 
     /* ================= PERFORMANCE ================= */
-
     rating: {
       type: Number,
       default: 0,
       min: 0,
       max: 5
     },
-
     totalTrips: {
       type: Number,
       default: 0
     },
-
     todayTrips: {
       type: Number,
       default: 0
     },
-
     studentsAssigned: {
       type: Number,
       default: 0
     },
 
-    /* ================= DRIVER LOCATION ================= */
-
+    /* ================= LOCATION ================= */
     location: {
       type: {
         type: String,
@@ -162,27 +117,25 @@ const driverSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ================= GEO INDEX ================= */
-
+/* ================= INDEX ================= */
 driverSchema.index({ location: "2dsphere" });
 
 /* ================= HASH PASSWORD ================= */
+driverSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
 
-/* ================= HASH PASSWORD ================= */
-
-driverSchema.pre("save", async function () {
-  if (!this.isModified("password")) return;
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
-/* ================= PASSWORD COMPARE ================= */
-
-driverSchema.methods.comparePassword = async function (enteredPassword) {
-
-  return await bcrypt.compare(enteredPassword, this.password);
-
+/* ================= COMPARE PASSWORD ================= */
+driverSchema.methods.comparePassword = function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
 };
 
 const Driver = mongoose.model("Driver", driverSchema);
