@@ -1,23 +1,14 @@
 import express from "express";
 import Driver from "../models/Driver.js";
-import verifyToken from "../middleware/auth.js";
 
 const router = express.Router();
 
 /* ================= DRIVER DASHBOARD ================= */
 
-router.get("/dashboard", verifyToken, async (req, res) => {
-
+router.get("/dashboard/:driverId", async (req, res) => {
   try {
-    console.log("Driver ID from token:", req.user.id);
-    const driverId = req.user?.id;
 
-    if (!driverId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized access"
-      });
-    }
+    const driverId = req.params.driverId;
 
     const driver = await Driver
       .findById(driverId)
@@ -46,25 +37,21 @@ router.get("/dashboard", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Driver dashboard error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to load dashboard"
     });
-
   }
-
 });
 
 /* ================= DRIVER PROFILE ================= */
 
-router.get("/profile", verifyToken, async (req, res) => {
+router.get("/profile/:driverId", async (req, res) => {
 
   try {
 
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
 
     if (!driverId) {
       return res.status(401).json({
