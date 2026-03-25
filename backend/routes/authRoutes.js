@@ -1,6 +1,5 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import twilio from "twilio";
 
 import Driver from "../models/Driver.js";
@@ -9,18 +8,15 @@ import { upload } from "../config/cloudinary.js";
 const router = express.Router();
 
 /* ================= TWILIO ================= */
-
 const client = twilio(
   process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-/* ================= TEMP OTP STORE ================= */
-
+/* ================= OTP STORE ================= */
 const otpStore = new Map();
 
 /* ================= DRIVER SIGNUP ================= */
-
 router.post(
   "/signup",
   upload.fields([
@@ -34,9 +30,7 @@ router.post(
     { name: "profilePhoto", maxCount: 1 }
   ]),
   async (req, res) => {
-
     try {
-
       const {
         name,
         phone,
@@ -51,50 +45,26 @@ router.post(
       if (!name || !phone || !email || !password || !address || !vehicleNumber || !vehicleType || !licenseNumber) {
         return res.status(400).json({
           success: false,
-          message: "All required fields must be filled"
+          message: "All fields required"
         });
       }
 
-      const existingDriver = await Driver.findOne({
+      const existing = await Driver.findOne({
         $or: [{ email }, { phone }]
       });
 
-      if (existingDriver) {
+      if (existing) {
         return res.status(400).json({
           success: false,
-          message: "Driver already registered"
+          message: "Driver already exists"
         });
       }
-
-      /* ===== CHECK FILES ===== */
-
-      const requiredFiles = [
-        "licenseFront",
-        "licenseBack",
-        "rcFront",
-        "rcBack",
-        "insurance",
-        "idFront",
-        "idBack",
-        "profilePhoto"
-      ];
-
-      for (const file of requiredFiles) {
-        if (!req.files?.[file]) {
-          return res.status(400).json({
-            success: false,
-            message: `Missing document: ${file}`
-          });
-        }
-      }
-
-      /* ===== CREATE DRIVER ===== */
 
       const driver = new Driver({
         name,
         phone,
         email,
-        password,   // model will hash
+        password,
         address,
         vehicleNumber,
         vehicleType,
@@ -110,53 +80,35 @@ router.post(
         status: "pending"
       });
 
-      const shortId = driver._id.toString().slice(-6).toUpperCase();
-      driver.driverId = `ASAN-${shortId}`;
+      driver.driverId = `ASAN-${driver._id.toString().slice(-6).toUpperCase()}`;
 
       await driver.save();
 
-      const token = jwt.sign(
-        {
-          id: driver._id,
-          role: "driver"
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      const driverResponse = driver.toObject();
-      delete driverResponse.password;
+      const data = driver.toObject();
+      delete data.password;
 
       res.status(201).json({
         success: true,
-        message: "Driver registered successfully",
-        token,
-        driver: driverResponse
+        message: "Signup successful",
+        driver: data
       });
 
     } catch (error) {
-
-      console.error("Driver signup error:", error);
-
+      console.error(error);
       res.status(500).json({
         success: false,
-        message: "Driver registration failed"
+        message: "Signup failed"
       });
-
     }
-
   }
 );
 
-/* ================= DRIVER LOGIN ================= */
-
+/* ================= LOGIN (NO TOKEN) ================= */
 router.post("/login", async (req, res) => {
-
   try {
-
     const { email, password } = req.body;
 
-    const driver = await Driver.findOne({ email });
+    const driver = await Driver.findOne({ email }).select("+password");
 
     if (!driver) {
       return res.status(400).json({
@@ -168,11 +120,11 @@ router.post("/login", async (req, res) => {
     if (driver.status !== "approved") {
       return res.status(403).json({
         success: false,
-        message: "Your account is not approved yet"
+        message: "Not approved yet"
       });
     }
 
-    const isMatch = await bcrypt.compare(password, driver.password);
+    const isMatch = await driver.comparePassword(password);
 
     if (!isMatch) {
       return res.status(400).json({
@@ -181,94 +133,26 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const accessToken = jwt.sign(
-{
-  id: driver._id,
-  role: "driver"
-},
-process.env.JWT_SECRET,
-{ expiresIn: "15m" }
-);
-
-const refreshToken = jwt.sign(
-{
-  id: driver._id
-},
-process.env.JWT_REFRESH_SECRET,
-{ expiresIn: "30d" }
-);
-
-    const driverResponse = driver.toObject();
-    delete driverResponse.password;
+    const data = driver.toObject();
+    delete data.password;
 
     res.json({
-  success: true,
-  accessToken,
-  refreshToken,
-  driver: driverResponse
-});
+      success: true,
+      driver: data
+    });
 
   } catch (error) {
-
-    console.error("Driver login error:", error);
-
+    console.error(error);
     res.status(500).json({
       success: false,
       message: "Login failed"
     });
-
   }
-
 });
 
-/* ================= REFRESH TOKEN ================= */
-
-router.post("/refresh", (req, res) => {
-
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    return res.status(401).json({
-      success: false,
-      message: "Refresh token required"
-    });
-  }
-
-  try {
-
-    const decoded = jwt.verify(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET
-    );
-
-    const newAccessToken = jwt.sign(
-      { id: decoded.id },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
-    );
-
-    res.json({
-      success: true,
-      accessToken: newAccessToken
-    });
-
-  } catch (error) {
-
-    res.status(401).json({
-      success: false,
-      message: "Invalid refresh token"
-    });
-
-  }
-
-});
-
-/* ================= SEND OTP ================= */
-
+/* ================= OTP ================= */
 router.post("/send-otp", async (req, res) => {
-
   try {
-
     const { phone } = req.body;
 
     const otp = Math.floor(1000 + Math.random() * 9000);
@@ -279,46 +163,27 @@ router.post("/send-otp", async (req, res) => {
     });
 
     await client.messages.create({
-      body: `Your ASAN OTP is ${otp}`,
+      body: `Your OTP is ${otp}`,
       from: process.env.TWILIO_PHONE,
       to: `+91${phone}`
     });
 
-    res.json({
-      success: true,
-      message: "OTP sent"
-    });
+    res.json({ success: true, message: "OTP sent" });
 
   } catch (error) {
-
-    console.error("OTP send error:", error);
-
     res.status(500).json({
       success: false,
-      message: "OTP send failed"
+      message: "OTP failed"
     });
-
   }
-
 });
 
-/* ================= VERIFY OTP ================= */
-
 router.post("/verify-otp", (req, res) => {
-
   const { phone, otp } = req.body;
 
   const stored = otpStore.get(phone);
 
-  if (!stored) {
-    return res.status(400).json({
-      success: false,
-      message: "OTP expired"
-    });
-  }
-
-  if (stored.expires < Date.now()) {
-    otpStore.delete(phone);
+  if (!stored || stored.expires < Date.now()) {
     return res.status(400).json({
       success: false,
       message: "OTP expired"
@@ -326,29 +191,19 @@ router.post("/verify-otp", (req, res) => {
   }
 
   if (stored.otp == otp) {
-
     otpStore.delete(phone);
-
-    return res.json({
-      success: true,
-      message: "OTP verified"
-    });
-
+    return res.json({ success: true });
   }
 
   res.status(400).json({
     success: false,
     message: "Invalid OTP"
   });
-
 });
 
-/* ================= GET DRIVER BY DRIVER ID ================= */
-
+/* ================= GET DRIVER ================= */
 router.get("/by-id/:driverId", async (req, res) => {
-
   try {
-
     const driver = await Driver
       .findOne({ driverId: req.params.driverId })
       .select("-password");
@@ -360,22 +215,14 @@ router.get("/by-id/:driverId", async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      driver
-    });
+    res.json({ success: true, driver });
 
   } catch (error) {
-
-    console.error("Get driver error:", error);
-
     res.status(500).json({
       success: false,
       message: "Server error"
     });
-
   }
-
 });
 
 export default router;
