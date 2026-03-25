@@ -10,13 +10,12 @@ const adminSchema = new mongoose.Schema(
       trim: true,
       minlength: 3
     },
-
     password: {
       type: String,
       required: true,
-      minlength: 6
+      minlength: 6,
+      select: false   // 🔥 hide password by default
     },
-
     role: {
       type: String,
       enum: ["superadmin", "reviewer"],
@@ -28,26 +27,22 @@ const adminSchema = new mongoose.Schema(
   }
 );
 
-/* ================= HASH PASSWORD BEFORE SAVE ================= */
-
+/* ================= HASH PASSWORD ================= */
 adminSchema.pre("save", async function (next) {
-
   if (!this.isModified("password")) return next();
 
-  const salt = await bcrypt.genSalt(10);
-
-  this.password = await bcrypt.hash(this.password, salt);
-
-  next();
-
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
-/* ================= PASSWORD COMPARISON ================= */
-
-adminSchema.methods.comparePassword = async function (enteredPassword) {
-
-  return await bcrypt.compare(enteredPassword, this.password);
-
+/* ================= COMPARE PASSWORD ================= */
+adminSchema.methods.comparePassword = function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
 };
 
 const Admin = mongoose.model("Admin", adminSchema);
