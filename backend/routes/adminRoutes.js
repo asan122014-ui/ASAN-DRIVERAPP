@@ -5,17 +5,13 @@ import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
 import Driver from "../models/Driver.js";
 import AdminLog from "../models/AdminLog.js";
-
 import verifyAdmin from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
 /* ================= ADMIN LOGIN ================= */
-
 router.post("/login", async (req, res) => {
-
   try {
-
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -26,7 +22,6 @@ router.post("/login", async (req, res) => {
     }
 
     const admin = await Admin.findOne({ username });
-
     if (!admin) {
       return res.status(401).json({
         success: false,
@@ -34,8 +29,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-
+    const isMatch = await admin.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -44,10 +38,7 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      {
-        id: admin._id,
-        role: admin.role
-      },
+      { id: admin._id, role: admin.role },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -65,24 +56,17 @@ router.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Admin login error:", error);
-
+    console.error("Admin login error:", error.message);
     res.status(500).json({
       success: false,
       message: "Login failed"
     });
-
   }
-
 });
 
 /* ================= ADMIN LOGOUT ================= */
-
 router.post("/logout", verifyAdmin, async (req, res) => {
-
   try {
-
     await AdminLog.create({
       adminId: req.admin.id,
       action: "ADMIN_LOGOUT",
@@ -95,24 +79,17 @@ router.post("/logout", verifyAdmin, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Admin logout error:", error);
-
+    console.error("Admin logout error:", error.message);
     res.status(500).json({
       success: false,
       message: "Logout failed"
     });
-
   }
-
 });
 
 /* ================= GET ALL DRIVERS ================= */
-
 router.get("/drivers", verifyAdmin, async (req, res) => {
-
   try {
-
     const drivers = await Driver
       .find()
       .select("-password")
@@ -120,28 +97,21 @@ router.get("/drivers", verifyAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      drivers
+      data: drivers
     });
 
   } catch (error) {
-
-    console.error("Get drivers error:", error);
-
+    console.error("Get drivers error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch drivers"
     });
-
   }
-
 });
 
 /* ================= GET DRIVER DETAILS ================= */
-
 router.get("/drivers/:id", verifyAdmin, async (req, res) => {
-
   try {
-
     const driver = await Driver
       .findById(req.params.id)
       .select("-password");
@@ -155,34 +125,24 @@ router.get("/drivers/:id", verifyAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      driver
+      data: driver
     });
 
   } catch (error) {
-
-    console.error("Get driver error:", error);
-
+    console.error("Get driver error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch driver"
     });
-
   }
-
 });
 
 /* ================= APPROVE DRIVER ================= */
-
 router.put("/drivers/:id/approve", verifyAdmin, async (req, res) => {
-
   try {
-
     const driver = await Driver.findByIdAndUpdate(
       req.params.id,
-      {
-        status: "approved",
-        rejectionReason: null
-      },
+      { status: "approved", rejectionReason: null },
       { new: true }
     );
 
@@ -206,32 +166,22 @@ router.put("/drivers/:id/approve", verifyAdmin, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Approve driver error:", error);
-
+    console.error("Approve driver error:", error.message);
     res.status(500).json({
       success: false,
       message: "Driver approval failed"
     });
-
   }
-
 });
 
 /* ================= REJECT DRIVER ================= */
-
 router.put("/drivers/:id/reject", verifyAdmin, async (req, res) => {
-
   try {
-
     const { reason } = req.body;
 
     const driver = await Driver.findByIdAndUpdate(
       req.params.id,
-      {
-        status: "rejected",
-        rejectionReason: reason
-      },
+      { status: "rejected", rejectionReason: reason || "Rejected by admin" },
       { new: true }
     );
 
@@ -255,24 +205,17 @@ router.put("/drivers/:id/reject", verifyAdmin, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Reject driver error:", error);
-
+    console.error("Reject driver error:", error.message);
     res.status(500).json({
       success: false,
       message: "Driver rejection failed"
     });
-
   }
-
 });
 
 /* ================= ADMIN LOGS ================= */
-
 router.get("/logs", verifyAdmin, async (req, res) => {
-
   try {
-
     const logs = await AdminLog
       .find()
       .populate("adminId", "username")
@@ -282,52 +225,47 @@ router.get("/logs", verifyAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      logs
+      data: logs
     });
 
   } catch (error) {
-
-    console.error("Admin logs error:", error);
-
+    console.error("Admin logs error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch logs"
     });
-
   }
-
 });
 
-/* ================= DRIVER REGISTRATION ================= */
-
+/* ================= REGISTER DRIVER (ADMIN) ================= */
 router.post("/register", verifyAdmin, async (req, res) => {
-
   try {
-
     const driver = await Driver.create(req.body);
 
     const io = req.app.get("io");
-
     if (io) {
       io.emit("new_driver", driver);
     }
 
+    await AdminLog.create({
+      adminId: req.admin.id,
+      action: "DRIVER_CREATED",
+      driverId: driver._id,
+      message: `Driver ${driver.name} created`
+    });
+
     res.json({
       success: true,
-      driver
+      data: driver
     });
 
   } catch (error) {
-
-    console.error("Driver registration error:", error);
-
+    console.error("Driver registration error:", error.message);
     res.status(500).json({
       success: false,
       message: "Driver registration failed"
     });
-
   }
-
 });
 
 export default router;
