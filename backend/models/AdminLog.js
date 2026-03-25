@@ -8,22 +8,20 @@ const adminLogSchema = new mongoose.Schema(
       required: true,
       index: true
     },
-
     action: {
       type: String,
       required: true,
       trim: true
     },
-
     driverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
       default: null
     },
-
     message: {
       type: String,
-      trim: true
+      trim: true,
+      default: ""
     }
   },
   {
@@ -31,9 +29,13 @@ const adminLogSchema = new mongoose.Schema(
   }
 );
 
-/* Optional index for faster admin activity queries */
+/* ================= INDEXES ================= */
 
+// Fast queries for admin activity logs
 adminLogSchema.index({ adminId: 1, createdAt: -1 });
+
+// Optional: faster filtering by driver
+adminLogSchema.index({ driverId: 1 });
 
 const AdminLog = mongoose.model("AdminLog", adminLogSchema);
 
