@@ -6,17 +6,15 @@ import {
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
-
 export const startTrip = async (req, res) => {
   try {
-
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
     const { tripType } = req.body;
 
     if (!driverId) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
-        message: "Unauthorized"
+        message: "Driver ID is required"
       });
     }
 
@@ -32,28 +30,23 @@ export const startTrip = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Start trip error:", error);
-
     res.status(500).json({
       success: false,
       message: error.message
     });
-
   }
 };
 
 /* ================= END TRIP ================= */
-
 export const endTrip = async (req, res) => {
   try {
-
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
 
     if (!driverId) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
-        message: "Unauthorized"
+        message: "Driver ID is required"
       });
     }
 
@@ -68,23 +61,18 @@ export const endTrip = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("End trip error:", error);
-
     res.status(500).json({
       success: false,
       message: error.message
     });
-
   }
 };
 
 /* ================= TRIP HISTORY ================= */
-
 export const getTripHistory = async (req, res) => {
   try {
-
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
 
     const trips = await getDriverTripsService(driverId);
 
@@ -94,23 +82,18 @@ export const getTripHistory = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Trip history error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch trips"
     });
-
   }
 };
 
 /* ================= ACTIVE TRIP ================= */
-
 export const getActiveTrip = async (req, res) => {
   try {
-
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
 
     const trip = await getActiveTripService(driverId);
 
@@ -120,13 +103,10 @@ export const getActiveTrip = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("Active trip error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch active trip"
     });
-
   }
 };
