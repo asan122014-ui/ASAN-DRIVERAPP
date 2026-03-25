@@ -5,39 +5,28 @@ import Driver from "../models/Driver.js";
 const router = express.Router();
 
 /* ================= ADMIN ANALYTICS ================= */
-
 router.get("/analytics", verifyAdmin, async (req, res) => {
   try {
-
-    /* ===== DRIVER COUNTS ===== */
-
-    const totalDrivers = await Driver.countDocuments();
-
-    const pendingDrivers = await Driver.countDocuments({
-      status: "pending"
-    });
-
-    const approvedDrivers = await Driver.countDocuments({
-      status: "approved"
-    });
-
-    const rejectedDrivers = await Driver.countDocuments({
-      status: "rejected"
-    });
-
-    /* ===== LAST 7 DAYS DATE ===== */
-
+    /* ===== DATE RANGE ===== */
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    /* ===== DRIVER REGISTRATIONS ===== */
+    /* ===== DRIVER COUNTS (parallel for speed) ===== */
+    const [
+      totalDrivers,
+      pendingDrivers,
+      approvedDrivers,
+      rejectedDrivers
+    ] = await Promise.all([
+      Driver.countDocuments(),
+      Driver.countDocuments({ status: "pending" }),
+      Driver.countDocuments({ status: "approved" }),
+      Driver.countDocuments({ status: "rejected" })
+    ]);
 
+    /* ===== REGISTRATIONS (LAST 7 DAYS) ===== */
     const registrations = await Driver.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: sevenDaysAgo }
-        }
-      },
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
       {
         $group: {
           _id: {
@@ -52,8 +41,7 @@ router.get("/analytics", verifyAdmin, async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    /* ===== DRIVER APPROVALS ===== */
-
+    /* ===== APPROVALS (LAST 7 DAYS) ===== */
     const approvals = await Driver.aggregate([
       {
         $match: {
@@ -76,10 +64,9 @@ router.get("/analytics", verifyAdmin, async (req, res) => {
     ]);
 
     /* ===== RESPONSE ===== */
-
-    res.json({
+    res.status(200).json({
       success: true,
-      analytics: {
+      data: {
         drivers: {
           total: totalDrivers,
           pending: pendingDrivers,
@@ -92,14 +79,12 @@ router.get("/analytics", verifyAdmin, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Admin analytics error:", error);
+    console.error("Admin analytics error:", error.message);
 
     res.status(500).json({
       success: false,
       message: "Failed to fetch analytics"
     });
-
   }
 });
 
