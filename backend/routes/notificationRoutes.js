@@ -1,6 +1,4 @@
 import express from "express";
-import verifyToken from "../middleware/auth.js";
-
 import {
   getNotifications,
   markAsRead
@@ -9,11 +7,9 @@ import {
 const router = express.Router();
 
 /* ================= GET DRIVER NOTIFICATIONS ================= */
-
-router.get("/", verifyToken, getNotifications);
+router.get("/", getNotifications);
 
 /* ================= MARK AS READ ================= */
-
-router.put("/:id/read", verifyToken, markAsRead);
+router.put("/:id/read", markAsRead);
 
 export default router;
