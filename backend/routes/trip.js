@@ -1,6 +1,4 @@
 import express from "express";
-import verifyToken from "../middleware/auth.js";
-
 import {
   startTrip,
   endTrip,
@@ -11,19 +9,15 @@ import {
 const router = express.Router();
 
 /* ================= START TRIP ================= */
-
-router.post("/start", verifyToken, startTrip);
+router.post("/start", startTrip);
 
 /* ================= END TRIP ================= */
-
-router.post("/end", verifyToken, endTrip);
+router.post("/end", endTrip);
 
 /* ================= TRIP HISTORY ================= */
-
-router.get("/history", verifyToken, getTripHistory);
+router.get("/history", getTripHistory);
 
 /* ================= ACTIVE TRIP ================= */
-
-router.get("/active", verifyToken, getActiveTrip);
+router.get("/active", getActiveTrip);
 
 export default router;
