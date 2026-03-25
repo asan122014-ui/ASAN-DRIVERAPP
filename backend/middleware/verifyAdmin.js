@@ -1,13 +1,11 @@
 import jwt from "jsonwebtoken";
 
-/* ================= VERIFY ADMIN TOKEN ================= */
-
+/* ================= VERIFY ADMIN ================= */
 const verifyAdmin = (req, res, next) => {
-
   try {
-
     const authHeader = req.headers.authorization;
 
+    // Check token exists
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
@@ -17,19 +15,10 @@ const verifyAdmin = (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET not defined in environment variables");
-
-      return res.status(500).json({
-        success: false,
-        message: "Server configuration error"
-      });
-    }
-
+    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    /* Role validation */
-
+    // Check admin role
     if (!["superadmin", "reviewer"].includes(decoded.role)) {
       return res.status(403).json({
         success: false,
@@ -37,8 +26,7 @@ const verifyAdmin = (req, res, next) => {
       });
     }
 
-    /* Attach admin info to request */
-
+    // Attach admin to request
     req.admin = {
       id: decoded.id,
       role: decoded.role
@@ -47,21 +35,16 @@ const verifyAdmin = (req, res, next) => {
     next();
 
   } catch (error) {
-
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({
-        success: false,
-        message: "Token expired"
-      });
-    }
+    console.error("Admin Auth Error:", error.message);
 
     return res.status(401).json({
       success: false,
-      message: "Invalid authentication token"
+      message:
+        error.name === "TokenExpiredError"
+          ? "Token expired"
+          : "Invalid token"
     });
-
   }
-
 };
 
 export default verifyAdmin;
