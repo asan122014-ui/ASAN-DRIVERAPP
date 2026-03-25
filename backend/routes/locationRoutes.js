@@ -1,39 +1,33 @@
 import express from "express";
-import verifyToken from "../middleware/auth.js";
 import Location from "../models/Location.js";
 
 const router = express.Router();
 
 /* ================= UPDATE DRIVER LOCATION ================= */
-
-router.post("/update", verifyToken, async (req, res) => {
-
+router.post("/update", async (req, res) => {
   try {
+    const { driverId, lat, lng } = req.body;
 
-    const { lat, lng } = req.body;
-
-    if (!lat || !lng) {
+    if (!driverId || !lat || !lng) {
       return res.status(400).json({
         success: false,
-        message: "Latitude and longitude required"
+        message: "DriverId, latitude and longitude required"
       });
     }
 
     const location = await Location.create({
-      driver: req.user.id,
+      driver: driverId,
       location: {
         type: "Point",
-        coordinates: [lng, lat] // [longitude, latitude]
+        coordinates: [lng, lat]
       }
     });
 
     /* Emit location to admin dashboard */
-
     const io = req.app.get("io");
-
     if (io) {
       io.emit("driver_location", {
-        driverId: req.user.id,
+        driverId,
         lat,
         lng
       });
@@ -45,16 +39,13 @@ router.post("/update", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Location update error:", error);
+    console.error("Location update error:", error.message);
 
     res.status(500).json({
       success: false,
       message: "Location update failed"
     });
-
   }
-
 });
 
 export default router;
