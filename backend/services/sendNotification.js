@@ -2,12 +2,10 @@ import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
 
 /*
- Utility function to send notification
-
- Used across system:
- - Admin approval
- - Trip events
- - Broadcast notifications
+ Utility: Send Notification
+ - Saves to DB
+ - Emits via socket
+ - Sends Firebase push
 */
 
 export const sendNotification = async ({
@@ -17,11 +15,14 @@ export const sendNotification = async ({
   fcmToken,
   io
 }) => {
-
   try {
+    /* ===== VALIDATION ===== */
+    if (!driverId || !title || !message) {
+      console.warn("Missing notification fields");
+      return null;
+    }
 
     /* ================= SAVE TO DATABASE ================= */
-
     const notification = await Notification.create({
       driver: driverId,
       title,
@@ -29,44 +30,30 @@ export const sendNotification = async ({
       read: false
     });
 
-    /* ================= REALTIME SOCKET ================= */
-
-    if (io && driverId) {
+    /* ================= SOCKET.IO ================= */
+    if (io) {
       io.to(driverId.toString()).emit("newNotification", notification);
     }
 
     /* ================= FIREBASE PUSH ================= */
-
-    if (fcmToken && admin?.apps?.length) {
-
+    if (fcmToken && admin.apps.length) {
       try {
-
-        const payload = {
+        await admin.messaging().send({
           notification: {
             title,
             body: message
           },
           token: fcmToken
-        };
-
-        await admin.messaging().send(payload);
-
-      } catch (firebaseError) {
-
-        console.error("Firebase push error:", firebaseError);
-
+        });
+      } catch (err) {
+        console.error("Firebase push error:", err.message);
       }
-
     }
 
     return notification;
 
   } catch (error) {
-
-    console.error("Send notification error:", error);
-
+    console.error("Send notification error:", error.message);
     return null;
-
   }
-
 };
