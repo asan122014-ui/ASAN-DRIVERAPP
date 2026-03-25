@@ -1,16 +1,14 @@
 import Notification from "../models/Notification.js";
 
 /* ================= GET DRIVER NOTIFICATIONS ================= */
-
 export const getNotifications = async (req, res) => {
   try {
-
-    const driverId = req.user?.id;
+    const driverId = req.params.driverId;
 
     if (!driverId) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
-        message: "Unauthorized"
+        message: "Driver ID is required"
       });
     }
 
@@ -25,23 +23,17 @@ export const getNotifications = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("GET NOTIFICATIONS ERROR:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications"
     });
-
   }
 };
 
-
 /* ================= MARK NOTIFICATION AS READ ================= */
-
 export const markAsRead = async (req, res) => {
   try {
-
     const { id } = req.params;
 
     const notification = await Notification.findById(id);
@@ -54,7 +46,6 @@ export const markAsRead = async (req, res) => {
     }
 
     notification.read = true;
-
     await notification.save();
 
     res.json({
@@ -63,13 +54,10 @@ export const markAsRead = async (req, res) => {
     });
 
   } catch (error) {
-
     console.error("MARK AS READ ERROR:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to update notification"
     });
-
   }
 };
