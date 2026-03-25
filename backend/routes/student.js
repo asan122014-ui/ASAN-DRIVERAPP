@@ -1,18 +1,16 @@
 import express from "express";
 import Student from "../models/Students.js";
 import Trip from "../models/Trips.js";
-import verifyToken from "../middleware/auth.js";
 
 const router = express.Router();
 
 /* ================= GET ALL ASSIGNED STUDENTS ================= */
-
-router.get("/", verifyToken, async (req, res) => {
-
+router.get("/", async (req, res) => {
   try {
+    const { driverId } = req.query;
 
     const students = await Student.find({
-      driver: req.user.id
+      driver: driverId
     }).lean();
 
     res.json({
@@ -21,26 +19,21 @@ router.get("/", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Get students error:", error);
-
+    console.error("Get students error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch students"
     });
-
   }
-
 });
 
 /* ================= GET ACTIVE STUDENTS ================= */
-
-router.get("/active", verifyToken, async (req, res) => {
-
+router.get("/active", async (req, res) => {
   try {
+    const { driverId } = req.query;
 
     const students = await Student.find({
-      driver: req.user.id,
+      driver: driverId,
       status: { $ne: "dropped" }
     }).lean();
 
@@ -50,28 +43,23 @@ router.get("/active", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Active students error:", error);
-
+    console.error("Active students error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch active students"
     });
-
   }
-
 });
 
 /* ================= PICKUP STUDENT ================= */
-
-router.put("/:id/pickup", verifyToken, async (req, res) => {
-
+router.put("/:id/pickup", async (req, res) => {
   try {
+    const { driverId } = req.body;
 
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: req.user.id,
+        driver: driverId,
         status: "waiting"
       },
       { status: "onboard" },
@@ -92,28 +80,23 @@ router.put("/:id/pickup", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Pickup error:", error);
-
+    console.error("Pickup error:", error.message);
     res.status(500).json({
       success: false,
       message: "Pickup failed"
     });
-
   }
-
 });
 
 /* ================= DROP STUDENT ================= */
-
-router.put("/:id/drop", verifyToken, async (req, res) => {
-
+router.put("/:id/drop", async (req, res) => {
   try {
+    const { driverId } = req.body;
 
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: req.user.id,
+        driver: driverId,
         status: "onboard"
       },
       { status: "dropped" },
@@ -134,26 +117,21 @@ router.put("/:id/drop", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Drop error:", error);
-
+    console.error("Drop error:", error.message);
     res.status(500).json({
       success: false,
       message: "Drop failed"
     });
-
   }
-
 });
 
 /* ================= END TRIP ================= */
-
-router.post("/end", verifyToken, async (req, res) => {
-
+router.post("/end", async (req, res) => {
   try {
+    const { driverId } = req.body;
 
     const trip = await Trip.findOne({
-      driver: req.user.id,
+      driver: driverId,
       status: "active"
     }).sort({ createdAt: -1 });
 
@@ -165,11 +143,9 @@ router.post("/end", verifyToken, async (req, res) => {
     }
 
     trip.endTime = new Date();
-
     trip.duration = Math.round(
       (trip.endTime - trip.startTime) / 60000
     );
-
     trip.status = "completed";
 
     await trip.save();
@@ -181,16 +157,12 @@ router.post("/end", verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("End trip error:", error);
-
+    console.error("End trip error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to end trip"
     });
-
   }
-
 });
 
 export default router;
