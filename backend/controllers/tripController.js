@@ -4,13 +4,16 @@ import {
   getDriverTripsService,
   getActiveTripService
 } from "../services/tripService.js";
+import mongoose from "mongoose";
 
 /* ================= START TRIP ================= */
 export const getActiveTrip = async (req, res) => {
   try {
     const { driverId } = req.params;
 
-    // ✅ FIX 1: validate driverId
+    console.log("DriverId received:", driverId);
+
+    // ✅ FIX 1: check empty
     if (!driverId) {
       return res.status(400).json({
         success: false,
@@ -18,10 +21,17 @@ export const getActiveTrip = async (req, res) => {
       });
     }
 
-    // ✅ FIX 2: call service safely
+    // ✅ FIX 2: validate Mongo ObjectId (THIS IS YOUR ISSUE 🔥)
+    if (!mongoose.Types.ObjectId.isValid(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Driver ID"
+      });
+    }
+
     const trip = await getActiveTripService(driverId);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: trip || null
     });
@@ -29,7 +39,7 @@ export const getActiveTrip = async (req, res) => {
   } catch (error) {
     console.error("Active trip error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch active trip"
     });
