@@ -1,29 +1,28 @@
 import Notification from "../models/Notification.js";
 
-/* ================= GET DRIVER NOTIFICATIONS ================= */
+/* ================= GET NOTIFICATIONS ================= */
 export const getNotifications = async (req, res) => {
   try {
-    const driverId = req.params.driverId;
+    const { driverId } = req.query; // ✅ IMPORTANT FIX
 
     if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "Driver ID is required"
+        message: "driverId is required"
       });
     }
 
-    const notifications = await Notification
-      .find({ driver: driverId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const notifications = await Notification.find({ driverId })
+      .sort({ createdAt: -1 });
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: notifications
     });
 
   } catch (error) {
-    console.error("GET NOTIFICATIONS ERROR:", error);
+    console.error("Get notifications error:", error.message);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications"
@@ -31,12 +30,16 @@ export const getNotifications = async (req, res) => {
   }
 };
 
-/* ================= MARK NOTIFICATION AS READ ================= */
+/* ================= MARK AS READ ================= */
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const notification = await Notification.findById(id);
+    const notification = await Notification.findByIdAndUpdate(
+      id,
+      { read: true },
+      { new: true }
+    );
 
     if (!notification) {
       return res.status(404).json({
@@ -45,16 +48,14 @@ export const markAsRead = async (req, res) => {
       });
     }
 
-    notification.read = true;
-    await notification.save();
-
-    res.json({
+    res.status(200).json({
       success: true,
-      message: "Notification marked as read"
+      data: notification
     });
 
   } catch (error) {
-    console.error("MARK AS READ ERROR:", error);
+    console.error("Mark as read error:", error.message);
+
     res.status(500).json({
       success: false,
       message: "Failed to update notification"
