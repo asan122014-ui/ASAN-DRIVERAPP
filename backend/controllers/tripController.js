@@ -6,10 +6,11 @@ import {
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
-export const startTrip = async (req, res) => {
+export const getActiveTrip = async (req, res) => {
   try {
-    const { driverId, tripType } = req.body; // ✅ FIXED
+    const { driverId } = req.params;
 
+    // ✅ FIX 1: validate driverId
     if (!driverId) {
       return res.status(400).json({
         success: false,
@@ -17,26 +18,23 @@ export const startTrip = async (req, res) => {
       });
     }
 
-    const trip = await startTripService(
-      driverId,
-      tripType,
-      req.app.get("io")
-    );
+    // ✅ FIX 2: call service safely
+    const trip = await getActiveTripService(driverId);
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      data: trip
+      data: trip || null
     });
 
   } catch (error) {
-    console.error("Start trip error:", error);
+    console.error("Active trip error:", error);
+
     res.status(500).json({
       success: false,
-      message: error.message
+      message: "Failed to fetch active trip"
     });
   }
 };
-
 /* ================= END TRIP ================= */
 export const endTrip = async (req, res) => {
   try {
