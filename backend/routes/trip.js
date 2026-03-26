@@ -9,15 +9,15 @@ import {
 const router = express.Router();
 
 /* ================= START TRIP ================= */
-router.post("/start", startTrip);
+router.post("/start/:driverId", startTrip);
 
 /* ================= END TRIP ================= */
-router.post("/end", endTrip);
-
-/* ================= TRIP HISTORY ================= */
-router.get("/history", getTripHistory);
+router.post("/end/:driverId", endTrip);
 
 /* ================= ACTIVE TRIP ================= */
-router.get("/active", getActiveTrip);
+router.get("/active/:driverId", getActiveTrip);
+
+/* ================= TRIP HISTORY ================= */
+router.get("/history/:driverId", getTripHistory);
 
 export default router;
