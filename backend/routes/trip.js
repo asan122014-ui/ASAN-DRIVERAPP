@@ -9,10 +9,10 @@ import {
 const router = express.Router();
 
 /* ================= START TRIP ================= */
-router.post("/start/:driverId", startTrip);
+router.post("/start", startTrip);   // ✅ FIXED (removed :driverId)
 
 /* ================= END TRIP ================= */
-router.post("/end/:driverId", endTrip);
+router.post("/end", endTrip);       // ✅ FIXED (removed :driverId)
 
 /* ================= ACTIVE TRIP ================= */
 router.get("/active/:driverId", getActiveTrip);
