@@ -14,6 +14,7 @@ router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    // ✅ Validate input
     if (!username || !password) {
       return res.status(400).json({
         success: false,
@@ -21,15 +22,20 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const admin = await Admin.findOne({ username });
-    if (!admin) {
+    // ✅ IMPORTANT: include password
+    const admin = await Admin.findOne({ username }).select("+password");
+
+    // ✅ Safety check (prevents bcrypt crash)
+    if (!admin || !admin.password) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials"
       });
     }
 
+    // ✅ Compare password
     const isMatch = await admin.comparePassword(password);
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -37,18 +43,21 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // ✅ Generate token
     const token = jwt.sign(
       { id: admin._id, role: admin.role },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
+    // ✅ Log admin login
     await AdminLog.create({
       adminId: admin._id,
       action: "ADMIN_LOGIN",
       message: `${admin.username} logged in`
     });
 
+    // ✅ Response
     res.json({
       success: true,
       token,
@@ -63,7 +72,6 @@ router.post("/login", async (req, res) => {
     });
   }
 });
-
 /* ================= ADMIN LOGOUT ================= */
 router.post("/logout", verifyAdmin, async (req, res) => {
   try {
