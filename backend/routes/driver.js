@@ -5,15 +5,18 @@ const router = express.Router();
 
 /* ================= DRIVER DASHBOARD ================= */
 
-router.get("/dashboard/:driverId", async (req, res) => {
+router.get("/dashboard", async (req, res) => {
   try {
+    const { driverId } = req.query;
 
-    const driverId = req.params.driverId;
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID required"
+      });
+    }
 
-    const driver = await Driver
-      .findById(driverId)
-      .select("name vehicleNumber vehicleType rating totalTrips todayTrips studentsAssigned status")
-      .lean();
+    const driver = await Driver.findById(driverId).select("-password");
 
     if (!driver) {
       return res.status(404).json({
@@ -22,22 +25,13 @@ router.get("/dashboard/:driverId", async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
-      data: {
-        name: driver.name,
-        vehicleNumber: driver.vehicleNumber || "-",
-        vehicleType: driver.vehicleType || "-",
-        rating: driver.rating ?? 0,
-        totalTrips: driver.totalTrips ?? 0,
-        todayTrips: driver.todayTrips ?? 0,
-        studentsAssigned: driver.studentsAssigned ?? 0,
-        status: driver.status
-      }
+      data: driver
     });
 
   } catch (error) {
-    console.error("Driver dashboard error:", error);
+    console.error("Dashboard error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to load dashboard"
