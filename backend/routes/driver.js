@@ -1,10 +1,10 @@
 import express from "express";
 import Driver from "../models/Driver.js";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
 /* ================= DRIVER DASHBOARD ================= */
-
 router.get("/dashboard", async (req, res) => {
   try {
     const { driverId } = req.query;
@@ -13,6 +13,13 @@ router.get("/dashboard", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Driver ID required"
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid driverId"
       });
     }
 
@@ -32,6 +39,7 @@ router.get("/dashboard", async (req, res) => {
 
   } catch (error) {
     console.error("Dashboard error:", error.message);
+
     res.status(500).json({
       success: false,
       message: "Failed to load dashboard"
@@ -40,22 +48,25 @@ router.get("/dashboard", async (req, res) => {
 });
 
 /* ================= DRIVER PROFILE ================= */
-
-router.get("/profile/:driverId", async (req, res) => {
-
+router.get("/profile", async (req, res) => {
   try {
-
-    const driverId = req.params.driverId;
+    const { driverId } = req.query; // ✅ FIXED
 
     if (!driverId) {
-      return res.status(401).json({
+      return res.status(400).json({
         success: false,
-        message: "Unauthorized access"
+        message: "driverId required"
       });
     }
 
-    const driver = await Driver
-      .findById(driverId)
+    if (!mongoose.Types.ObjectId.isValid(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid driverId"
+      });
+    }
+
+    const driver = await Driver.findById(driverId)
       .select("-password")
       .lean();
 
@@ -72,16 +83,13 @@ router.get("/profile/:driverId", async (req, res) => {
     });
 
   } catch (error) {
-
-    console.error("Driver profile error:", error);
+    console.error("Driver profile error:", error.message);
 
     res.status(500).json({
       success: false,
       message: "Failed to load profile"
     });
-
   }
-
 });
 
 export default router;
