@@ -8,8 +8,7 @@ import {
 /* ================= START TRIP ================= */
 export const startTrip = async (req, res) => {
   try {
-    const driverId = req.params.driverId;
-    const { tripType } = req.body;
+    const { driverId, tripType } = req.body; // ✅ FIXED
 
     if (!driverId) {
       return res.status(400).json({
@@ -41,7 +40,7 @@ export const startTrip = async (req, res) => {
 /* ================= END TRIP ================= */
 export const endTrip = async (req, res) => {
   try {
-    const driverId = req.params.driverId;
+    const { driverId } = req.body; // ✅ FIXED
 
     if (!driverId) {
       return res.status(400).json({
@@ -72,7 +71,14 @@ export const endTrip = async (req, res) => {
 /* ================= TRIP HISTORY ================= */
 export const getTripHistory = async (req, res) => {
   try {
-    const driverId = req.params.driverId;
+    const { driverId } = req.query; // ✅ FIXED
+
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID is required"
+      });
+    }
 
     const trips = await getDriverTripsService(driverId);
 
@@ -93,7 +99,14 @@ export const getTripHistory = async (req, res) => {
 /* ================= ACTIVE TRIP ================= */
 export const getActiveTrip = async (req, res) => {
   try {
-    const driverId = req.params.driverId;
+    const { driverId } = req.query; // ✅ FIXED
+
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID is required"
+      });
+    }
 
     const trip = await getActiveTripService(driverId);
 
