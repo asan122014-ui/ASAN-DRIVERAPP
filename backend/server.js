@@ -3,7 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
-
 import connectDB from "./config/db.js";
 
 /* ROUTES */
@@ -64,14 +63,12 @@ io.on("connection", (socket) => {
 
   socket.on("joinDriverRoom", (driverId) => {
     if (!driverId) return;
-
     socket.join(driverId.toString());
     console.log(`Driver ${driverId} joined notification room`);
   });
 
   socket.on("driver_join", (driverId) => {
     if (!driverId) return;
-
     socket.join(`driver_${driverId}`);
     console.log(`Driver ${driverId} joined tracking room`);
   });
@@ -92,12 +89,10 @@ app.use(express.urlencoded({ extended: true }));
 /* ================= ROUTES ================= */
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
-
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
-
 app.use("/api/driver", dashboardRoutes);
-app.use("/api/trip", tripRoutes);
+app.use("/api/trip", tripRoutes);          // ✅ THIS IS CORRECT
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/location", locationRoutes);
@@ -114,7 +109,6 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("Server Error:", err.message);
-
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error"
