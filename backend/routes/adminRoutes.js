@@ -6,33 +6,47 @@ import AdminLog from "../models/AdminLog.js";
 const router = express.Router();
 
 /* ================= ADMIN LOGIN ================= */
+import bcrypt from "bcryptjs";
+
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const admin = await Admin.findOne({ username });
+    // 🔍 Find admin
+    const admin = await Admin.findOne({ username }).select("+password");
 
-    if (!admin || admin.password !== password) {
+    if (!admin) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid username"
       });
     }
 
+    // 🔑 Compare password (IMPORTANT FIX)
+    const isMatch = await bcrypt.compare(password, admin.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password"
+      });
+    }
+
+    // ✅ Success
     res.json({
       success: true,
       role: admin.role
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Login error:", error);
+
     res.status(500).json({
       success: false,
       message: "Login failed"
     });
   }
 });
-
 /* ================= GET ALL DRIVERS ================= */
 router.get("/drivers", async (req, res) => {
   try {
