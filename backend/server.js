@@ -7,6 +7,7 @@ import connectDB from "./config/db.js";
 
 /* ROUTES */
 import authRoutes from "./routes/authRoutes.js";
+ort parentRoutes from "./routes/parentRoutes.js";
 import otpRoutes from "./routes/otp.js";
 import dashboardRoutes from "./routes/driver.js";
 import tripRoutes from "./routes/trip.js";
@@ -40,6 +41,7 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+app.use("/api/parent", parentRoutes);
 
 /* ================= FIREBASE ================= */
 const firebaseServiceAccount = {
