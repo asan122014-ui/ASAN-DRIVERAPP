@@ -5,8 +5,77 @@ import Trip from "../models/Trip.js";
 
 const router = express.Router();
 
-/* ================= LINK DRIVER ================= */
+/* ================= REGISTER ================= */
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "All fields required"
+      });
+    }
+
+    // check existing
+    const existing = await Parent.findOne({ email });
+    if (existing) {
+      return res.status(400).json({
+        message: "Email already registered"
+      });
+    }
+
+    // create parent
+    const parent = await Parent.create({
+      name,
+      email,
+      password
+    });
+
+    res.json({
+      success: true,
+      data: {
+        parent,
+        token: "demo-token" // 🔥 replace with JWT later
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: "Registration failed"
+    });
+  }
+});
+
+/* ================= LOGIN ================= */
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const parent = await Parent.findOne({ email });
+
+    if (!parent || parent.password !== password) {
+      return res.status(400).json({
+        message: "Invalid credentials"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        parent,
+        token: "demo-token"
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      message: "Login failed"
+    });
+  }
+});
+
+/* ================= LINK DRIVER ================= */
 router.post("/link-driver", async (req, res) => {
   try {
     const { parentId, driverId } = req.body;
@@ -38,7 +107,6 @@ router.post("/link-driver", async (req, res) => {
 });
 
 /* ================= DASHBOARD ================= */
-
 router.get("/dashboard/:parentId", async (req, res) => {
   try {
     const parentId = req.params.parentId;
@@ -56,39 +124,6 @@ router.get("/dashboard/:parentId", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard"
-    });
-  }
-});
-/* ================= REGISTER ================= */
-
-router.post("/register", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    // 🔥 TEMP (replace with DB logic)
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        message: "All fields required"
-      });
-    }
-
-    const parent = {
-      _id: Date.now(),
-      name,
-      email
-    };
-
-    res.json({
-      success: true,
-      data: {
-        parent,
-        token: "demo-token"
-      }
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      message: "Registration failed"
     });
   }
 });
