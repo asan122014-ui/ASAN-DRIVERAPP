@@ -79,7 +79,25 @@ io.on("connection", (socket) => {
     console.log("Socket disconnected:", socket.id);
   });
 });
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
 
+io.on("connection", (socket) => {
+  console.log("Parent connected:", socket.id);
+
+  // driver sends location
+  socket.on("driver_location", (data) => {
+    // broadcast to parents
+    io.emit("live_location", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Disconnected:", socket.id);
+  });
+});
 /* ================= MIDDLEWARE ================= */
 app.use(cors({
   origin: process.env.FRONTEND_URL || "*"
