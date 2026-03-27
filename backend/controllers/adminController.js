@@ -193,3 +193,58 @@ export const getLogs = async (req, res) => {
     });
   }
 };
+/* ================= ANALYTICS ================= */
+export const getAnalytics = async (req, res) => {
+  try {
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 6);
+
+    const registrations = await Driver.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: last7Days }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%a", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const approvals = await Driver.aggregate([
+      {
+        $match: {
+          status: "approved",
+          updatedAt: { $gte: last7Days }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%a", date: "$updatedAt" }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        registrations,
+        approvals
+      }
+    });
+
+  } catch (error) {
+    console.error("Analytics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch analytics"
+    });
+  }
+};
