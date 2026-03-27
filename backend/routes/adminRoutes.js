@@ -1,4 +1,6 @@
 import express from "express";
+import bcrypt from "bcryptjs";
+
 import Admin from "../models/Admin.js";
 import Driver from "../models/Driver.js";
 import AdminLog from "../models/AdminLog.js";
@@ -6,13 +8,17 @@ import AdminLog from "../models/AdminLog.js";
 const router = express.Router();
 
 /* ================= ADMIN LOGIN ================= */
-import bcrypt from "bcryptjs";
-
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // 🔍 Find admin
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and password required"
+      });
+    }
+
     const admin = await Admin.findOne({ username }).select("+password");
 
     if (!admin) {
@@ -22,7 +28,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // 🔑 Compare password (IMPORTANT FIX)
     const isMatch = await bcrypt.compare(password, admin.password);
 
     if (!isMatch) {
@@ -32,7 +37,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // ✅ Success
     res.json({
       success: true,
       role: admin.role
@@ -47,10 +51,14 @@ router.post("/login", async (req, res) => {
     });
   }
 });
+
 /* ================= GET ALL DRIVERS ================= */
 router.get("/drivers", async (req, res) => {
   try {
-    const drivers = await Driver.find().sort({ createdAt: -1 });
+    const drivers = await Driver
+      .find()
+      .select("-password")
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -58,6 +66,8 @@ router.get("/drivers", async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Drivers fetch error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch drivers"
@@ -68,7 +78,16 @@ router.get("/drivers", async (req, res) => {
 /* ================= GET DRIVER DETAILS ================= */
 router.get("/drivers/:id", async (req, res) => {
   try {
-    const driver = await Driver.findById(req.params.id);
+    const driver = await Driver
+      .findById(req.params.id)
+      .select("-password");
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
 
     res.json({
       success: true,
@@ -76,6 +95,8 @@ router.get("/drivers/:id", async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Driver fetch error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch driver"
@@ -86,17 +107,36 @@ router.get("/drivers/:id", async (req, res) => {
 /* ================= APPROVE DRIVER ================= */
 router.put("/drivers/:id/approve", async (req, res) => {
   try {
-    await Driver.findByIdAndUpdate(req.params.id, {
-      status: "approved",
-      rejectionReason: null
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      {
+        status: "approved",
+        rejectionReason: null
+      },
+      { new: true }
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+
+    await AdminLog.create({
+      action: "DRIVER_APPROVED",
+      driverId: driver._id,
+      message: `Driver ${driver.name} approved`
     });
 
     res.json({
       success: true,
-      message: "Driver approved"
+      message: "Driver approved successfully"
     });
 
   } catch (error) {
+    console.error("Approve error:", error);
+
     res.status(500).json({
       success: false,
       message: "Approval failed"
@@ -109,17 +149,36 @@ router.put("/drivers/:id/reject", async (req, res) => {
   try {
     const { reason } = req.body;
 
-    await Driver.findByIdAndUpdate(req.params.id, {
-      status: "rejected",
-      rejectionReason: reason || "Rejected"
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      {
+        status: "rejected",
+        rejectionReason: reason || "Rejected"
+      },
+      { new: true }
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+
+    await AdminLog.create({
+      action: "DRIVER_REJECTED",
+      driverId: driver._id,
+      message: `Driver ${driver.name} rejected`
     });
 
     res.json({
       success: true,
-      message: "Driver rejected"
+      message: "Driver rejected successfully"
     });
 
   } catch (error) {
+    console.error("Reject error:", error);
+
     res.status(500).json({
       success: false,
       message: "Rejection failed"
@@ -127,7 +186,7 @@ router.put("/drivers/:id/reject", async (req, res) => {
   }
 });
 
-/* ================= LOGS ================= */
+/* ================= ADMIN LOGS ================= */
 router.get("/logs", async (req, res) => {
   try {
     const logs = await AdminLog.find()
@@ -141,9 +200,41 @@ router.get("/logs", async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Logs error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch logs"
+    });
+  }
+});
+
+/* ================= ANALYTICS (FIXED) ================= */
+router.get("/analytics", async (req, res) => {
+  try {
+    const total = await Driver.countDocuments();
+    const pending = await Driver.countDocuments({ status: "pending" });
+    const approved = await Driver.countDocuments({ status: "approved" });
+    const rejected = await Driver.countDocuments({ status: "rejected" });
+
+    res.json({
+      success: true,
+      analytics: {
+        drivers: {
+          total,
+          pending,
+          approved,
+          rejected
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Analytics error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Analytics failed"
     });
   }
 });
