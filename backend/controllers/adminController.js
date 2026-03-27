@@ -196,36 +196,39 @@ export const getLogs = async (req, res) => {
 /* ================= ANALYTICS ================= */
 export const getAnalytics = async (req, res) => {
   try {
-    const last7Days = new Date();
-    last7Days.setDate(last7Days.getDate() - 6);
-
+    // 📊 Registrations (last 7 days)
     const registrations = await Driver.aggregate([
       {
         $match: {
-          createdAt: { $gte: last7Days }
+          createdAt: {
+            $gte: new Date(new Date().setDate(new Date().getDate() - 7))
+          }
         }
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: "%a", date: "$createdAt" }
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
           },
           count: { $sum: 1 }
         }
       }
     ]);
 
+    // ✅ Approvals (last 7 days)
     const approvals = await Driver.aggregate([
       {
         $match: {
           status: "approved",
-          updatedAt: { $gte: last7Days }
+          updatedAt: {
+            $gte: new Date(new Date().setDate(new Date().getDate() - 7))
+          }
         }
       },
       {
         $group: {
           _id: {
-            $dateToString: { format: "%a", date: "$updatedAt" }
+            $dateToString: { format: "%Y-%m-%d", date: "$updatedAt" }
           },
           count: { $sum: 1 }
         }
