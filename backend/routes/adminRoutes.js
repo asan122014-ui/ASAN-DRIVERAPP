@@ -129,6 +129,13 @@ router.put("/drivers/:id/approve", async (req, res) => {
       driverId: driver._id,
       message: `Driver ${driver.name} approved`
     });
+    const io = req.app.get("io");
+
+if (io) {
+  io.emit("driver_approved", {
+    date: new Date().toISOString().split("T")[0]
+  });
+}
 
     res.json({
       success: true,
