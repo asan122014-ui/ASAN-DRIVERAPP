@@ -1,6 +1,7 @@
 import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
+import Trip from "../models/Trip.js";
 
 const router = express.Router();
 
@@ -32,6 +33,29 @@ router.post("/link-driver", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Linking failed"
+    });
+  }
+});
+
+/* ================= DASHBOARD ================= */
+
+router.get("/dashboard/:parentId", async (req, res) => {
+  try {
+    const parentId = req.params.parentId;
+
+    const trips = await Trip.find({ parentId })
+      .populate("driverId", "name driverId");
+
+    res.json({
+      success: true,
+      data: trips
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch dashboard"
     });
   }
 });
