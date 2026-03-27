@@ -7,7 +7,7 @@ import Driver from "../models/Driver.js";
 import AdminLog from "../models/AdminLog.js";
 
 const router = express.Router();
-
+router.get("/analytics", verifyAdmin, getAnalytics);
 /* ================= ADMIN LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
@@ -247,6 +247,5 @@ router.get("/analytics", async (req, res) => {
     });
   }
 });
-router.get("/analytics", verifyAdmin, getAnalytics);
 
 export default router;
