@@ -7,7 +7,7 @@ import connectDB from "./config/db.js";
 
 /* ROUTES */
 import authRoutes from "./routes/authRoutes.js";
-ort parentRoutes from "./routes/parentRoutes.js";
+import parentRoutes from "./routes/parentRoutes.js"; // ✅ fixed typo
 import otpRoutes from "./routes/otp.js";
 import dashboardRoutes from "./routes/driver.js";
 import tripRoutes from "./routes/trip.js";
@@ -40,8 +40,40 @@ const io = new Server(server, {
   }
 });
 
+// make io accessible everywhere
 app.set("io", io);
-app.use("/api/parent", parentRoutes);
+
+/* ================= SOCKET CONNECTION ================= */
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
+
+  /* ===== DRIVER JOINS TRACKING ROOM ===== */
+  socket.on("driver_join", (driverId) => {
+    if (!driverId) return;
+
+    socket.join(`driver_${driverId}`);
+    console.log(`Driver ${driverId} joined tracking room`);
+  });
+
+  /* ===== PARENT JOINS DRIVER ROOM ===== */
+  socket.on("join_driver_room", (driverId) => {
+    if (!driverId) return;
+
+    socket.join(`driver_${driverId}`);
+    console.log(`Parent joined driver ${driverId}`);
+  });
+
+  /* ===== LIVE LOCATION ===== */
+  socket.on("driver_location", (data) => {
+    if (!data?.driverId) return;
+
+    io.to(`driver_${data.driverId}`).emit("live_location", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Socket disconnected:", socket.id);
+  });
+});
 
 /* ================= FIREBASE ================= */
 const firebaseServiceAccount = {
@@ -59,45 +91,6 @@ if (!admin.apps.length) {
   });
 }
 
-/* ================= SOCKET CONNECTION ================= */
-io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
-
-  socket.on("joinDriverRoom", (driverId) => {
-    if (!driverId) return;
-    socket.join(driverId.toString());
-    console.log(`Driver ${driverId} joined notification room`);
-  });
-
-  socket.on("driver_join", (driverId) => {
-    if (!driverId) return;
-    socket.join(`driver_${driverId}`);
-    console.log(`Driver ${driverId} joined tracking room`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Socket disconnected:", socket.id);
-  });
-});
-const io = new Server(server, {
-  cors: {
-    origin: "*"
-  }
-});
-
-io.on("connection", (socket) => {
-  console.log("Parent connected:", socket.id);
-
-  // driver sends location
-  socket.on("driver_location", (data) => {
-    // broadcast to parents
-    io.emit("live_location", data);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
-  });
-});
 /* ================= MIDDLEWARE ================= */
 app.use(cors({
   origin: process.env.FRONTEND_URL || "*"
@@ -107,14 +100,16 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ================= ROUTES ================= */
-app.use("/api/admin", adminRoutes);
-app.use("/api/admin", adminAnalyticsRoutes);
+
 app.use("/api/auth", authRoutes);
+app.use("/api/parent", parentRoutes); // ✅ IMPORTANT
 app.use("/api/otp", otpRoutes);
 app.use("/api/driver", dashboardRoutes);
-app.use("/api/trip", tripRoutes);          // ✅ THIS IS CORRECT
+app.use("/api/trip", tripRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/admin", adminAnalyticsRoutes);
 app.use("/api/location", locationRoutes);
 
 /* ================= HEALTH ================= */
@@ -129,6 +124,7 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("Server Error:", err.message);
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "Internal Server Error"
