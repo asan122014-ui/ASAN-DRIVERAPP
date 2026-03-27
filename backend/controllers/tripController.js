@@ -39,6 +39,7 @@ export const startTrip = async (req, res) => {
 
   } catch (error) {
     console.error("Start trip error:", error);
+
     res.status(500).json({
       success: false,
       message: error.message
@@ -70,6 +71,7 @@ export const endTrip = async (req, res) => {
 
   } catch (error) {
     console.error("End trip error:", error);
+
     res.status(500).json({
       success: false,
       message: error.message
@@ -80,7 +82,7 @@ export const endTrip = async (req, res) => {
 /* ================= ACTIVE TRIP ================= */
 export const getActiveTrip = async (req, res) => {
   try {
-    const { driverId } = req.params; // ✅ MUST match route
+    const { driverId } = req.query;   // ✅ FIXED
 
     if (!driverId) {
       return res.status(400).json({
@@ -105,6 +107,7 @@ export const getActiveTrip = async (req, res) => {
 
   } catch (error) {
     console.error("Active trip error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch active trip"
@@ -115,7 +118,7 @@ export const getActiveTrip = async (req, res) => {
 /* ================= TRIP HISTORY ================= */
 export const getTripHistory = async (req, res) => {
   try {
-    const { driverId } = req.params; // ✅ match route
+    const { driverId } = req.query;   // ✅ FIXED
 
     if (!driverId) {
       return res.status(400).json({
@@ -133,6 +136,7 @@ export const getTripHistory = async (req, res) => {
 
   } catch (error) {
     console.error("Trip history error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch trips"
