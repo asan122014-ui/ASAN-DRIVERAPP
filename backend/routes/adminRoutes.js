@@ -1,6 +1,7 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-
+import { getAnalytics } from "../controllers/adminController.js";
+import verifyAdmin from "../middleware/verifyAdmin.js";
 import Admin from "../models/Admin.js";
 import Driver from "../models/Driver.js";
 import AdminLog from "../models/AdminLog.js";
@@ -238,5 +239,6 @@ router.get("/analytics", async (req, res) => {
     });
   }
 });
+router.get("/analytics", verifyAdmin, getAnalytics);
 
 export default router;
