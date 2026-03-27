@@ -1,45 +1,39 @@
 import Driver from "../models/Driver.js";
 import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
-import Notification from "../models/Notification.js";
-import admin from "firebase-admin";
+import AdminLog from "../models/AdminLog.js";
 
 /* ================= DASHBOARD STATS ================= */
 export const getDashboardStats = async (req, res) => {
   try {
     const [
       totalDrivers,
-      approvedDrivers,
       pendingDrivers,
-      totalStudents,
-      activeTrips,
-      completedTrips
+      approvedDrivers,
+      rejectedDrivers
     ] = await Promise.all([
       Driver.countDocuments(),
-      Driver.countDocuments({ status: "approved" }),
       Driver.countDocuments({ status: "pending" }),
-      Students.countDocuments(),
-      Trips.countDocuments({ status: "active" }),
-      Trips.countDocuments({ status: "completed" })
+      Driver.countDocuments({ status: "approved" }),
+      Driver.countDocuments({ status: "rejected" })
     ]);
 
     res.json({
       success: true,
       data: {
         totalDrivers,
-        approvedDrivers,
         pendingDrivers,
-        totalStudents,
-        activeTrips,
-        completedTrips
+        approvedDrivers,
+        rejectedDrivers
       }
     });
 
   } catch (error) {
     console.error("Dashboard Error:", error);
+
     res.status(500).json({
       success: false,
-      message: "Failed to fetch dashboard statistics"
+      message: "Failed to fetch dashboard stats"
     });
   }
 };
@@ -47,7 +41,10 @@ export const getDashboardStats = async (req, res) => {
 /* ================= GET ALL DRIVERS ================= */
 export const getDrivers = async (req, res) => {
   try {
-    const drivers = await Driver.find().select("-password").lean();
+    const drivers = await Driver
+      .find()
+      .select("-password")
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -56,6 +53,7 @@ export const getDrivers = async (req, res) => {
 
   } catch (error) {
     console.error("Get Drivers Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch drivers"
@@ -63,10 +61,12 @@ export const getDrivers = async (req, res) => {
   }
 };
 
-/* ================= APPROVE DRIVER ================= */
-export const approveDriver = async (req, res) => {
+/* ================= GET DRIVER BY ID ================= */
+export const getDriverById = async (req, res) => {
   try {
-    const driver = await Driver.findById(req.params.id);
+    const driver = await Driver
+      .findById(req.params.id)
+      .select("-password");
 
     if (!driver) {
       return res.status(404).json({
@@ -75,26 +75,43 @@ export const approveDriver = async (req, res) => {
       });
     }
 
-    driver.status = "approved";
-    await driver.save();
-
-    // Save notification
-    await Notification.create({
-      driver: driver._id,
-      title: "Account Approved",
-      message: "Your driver account has been approved"
+    res.json({
+      success: true,
+      data: driver
     });
 
-    // Push notification (safe check)
-    if (driver.fcmToken) {
-      await admin.messaging().send({
-        notification: {
-          title: "Account Approved",
-          body: "Your account has been approved. You can start trips."
-        },
-        token: driver.fcmToken
+  } catch (error) {
+    console.error("Get Driver Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver"
+    });
+  }
+};
+
+/* ================= APPROVE DRIVER ================= */
+export const approveDriver = async (req, res) => {
+  try {
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      { status: "approved", rejectionReason: null },
+      { new: true }
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
       });
     }
+
+    // Optional logging
+    await AdminLog.create({
+      action: "DRIVER_APPROVED",
+      driverId: driver._id,
+      message: `Driver ${driver.name} approved`
+    });
 
     res.json({
       success: true,
@@ -102,7 +119,8 @@ export const approveDriver = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Approve Driver Error:", error);
+    console.error("Approve Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to approve driver"
@@ -113,7 +131,16 @@ export const approveDriver = async (req, res) => {
 /* ================= REJECT DRIVER ================= */
 export const rejectDriver = async (req, res) => {
   try {
-    const driver = await Driver.findById(req.params.id);
+    const { reason } = req.body;
+
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      {
+        status: "rejected",
+        rejectionReason: reason || "Rejected"
+      },
+      { new: true }
+    );
 
     if (!driver) {
       return res.status(404).json({
@@ -122,8 +149,11 @@ export const rejectDriver = async (req, res) => {
       });
     }
 
-    driver.status = "rejected";
-    await driver.save();
+    await AdminLog.create({
+      action: "DRIVER_REJECTED",
+      driverId: driver._id,
+      message: `Driver ${driver.name} rejected`
+    });
 
     res.json({
       success: true,
@@ -131,7 +161,8 @@ export const rejectDriver = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Reject Driver Error:", error);
+    console.error("Reject Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to reject driver"
@@ -139,69 +170,26 @@ export const rejectDriver = async (req, res) => {
   }
 };
 
-/* ================= GET ALL STUDENTS ================= */
-export const getStudents = async (req, res) => {
+/* ================= GET LOGS ================= */
+export const getLogs = async (req, res) => {
   try {
-    const students = await Students.find().lean();
+    const logs = await AdminLog
+      .find()
+      .populate("adminId", "username")
+      .populate("driverId", "name driverId")
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      data: students
+      data: logs
     });
 
   } catch (error) {
-    console.error("Get Students Error:", error);
+    console.error("Logs Error:", error);
+
     res.status(500).json({
       success: false,
-      message: "Failed to fetch students"
-    });
-  }
-};
-
-/* ================= BROADCAST NOTIFICATION ================= */
-export const broadcastNotification = async (req, res) => {
-  try {
-    const { title, message } = req.body;
-
-    if (!title || !message) {
-      return res.status(400).json({
-        success: false,
-        message: "Title and message are required"
-      });
-    }
-
-    const drivers = await Driver.find({ status: "approved" });
-
-    for (const driver of drivers) {
-      // Save notification
-      await Notification.create({
-        driver: driver._id,
-        title,
-        message
-      });
-
-      // Push notification
-      if (driver.fcmToken) {
-        await admin.messaging().send({
-          notification: {
-            title,
-            body: message
-          },
-          token: driver.fcmToken
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: "Notification sent to all drivers"
-    });
-
-  } catch (error) {
-    console.error("Broadcast Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to send notifications"
+      message: "Failed to fetch logs"
     });
   }
 };
