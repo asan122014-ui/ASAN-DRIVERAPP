@@ -196,14 +196,21 @@ export const getLogs = async (req, res) => {
 /* ================= ANALYTICS ================= */
 export const getAnalytics = async (req, res) => {
   try {
-    // 📊 Registrations (last 7 days)
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+
+    /* ================= CURRENT STATE ================= */
+
+    const total = await Driver.countDocuments();
+    const approved = await Driver.countDocuments({ status: "approved" });
+    const pending = await Driver.countDocuments({ status: "pending" });
+    const rejected = await Driver.countDocuments({ status: "rejected" });
+
+    /* ================= REGISTRATIONS ================= */
+
     const registrations = await Driver.aggregate([
       {
-        $match: {
-          createdAt: {
-            $gte: new Date(new Date().setDate(new Date().getDate() - 7))
-          }
-        }
+        $match: { createdAt: { $gte: last7Days } }
       },
       {
         $group: {
@@ -215,14 +222,13 @@ export const getAnalytics = async (req, res) => {
       }
     ]);
 
-    // ✅ Approvals (last 7 days)
+    /* ================= APPROVALS ================= */
+
     const approvals = await Driver.aggregate([
       {
         $match: {
           status: "approved",
-          updatedAt: {
-            $gte: new Date(new Date().setDate(new Date().getDate() - 7))
-          }
+          updatedAt: { $gte: last7Days }
         }
       },
       {
@@ -238,16 +244,14 @@ export const getAnalytics = async (req, res) => {
     res.json({
       success: true,
       data: {
+        summary: { total, approved, pending, rejected },
         registrations,
         approvals
       }
     });
 
   } catch (error) {
-    console.error("Analytics error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch analytics"
-    });
+    console.error(error);
+    res.status(500).json({ success: false });
   }
 };
