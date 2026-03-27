@@ -59,5 +59,40 @@ router.get("/dashboard/:parentId", async (req, res) => {
     });
   }
 });
+/* ================= REGISTER ================= */
+
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // 🔥 TEMP (replace with DB logic)
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "All fields required"
+      });
+    }
+
+    const parent = {
+      _id: Date.now(),
+      name,
+      email
+    };
+
+    res.json({
+      success: true,
+      data: {
+        parent,
+        token: "demo-token"
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      message: "Registration failed"
+    });
+  }
+});
+
+export default router;
 
 export default router;
