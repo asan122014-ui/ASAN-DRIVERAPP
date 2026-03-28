@@ -38,7 +38,15 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
+    if (!email && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Email or phone required"
+      });
+    }
+
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const key = (email || phone).toString().trim();
 
     /* ================= EMAIL OTP (PARENT) ================= */
     if (email) {
@@ -58,7 +66,7 @@ router.post("/send-otp", async (req, res) => {
         });
       }
 
-      otpStore.set(email, {
+      otpStore.set(key, {
         otp,
         expires: Date.now() + 5 * 60 * 1000
       });
@@ -96,7 +104,7 @@ router.post("/send-otp", async (req, res) => {
         });
       }
 
-      otpStore.set(phone, {
+      otpStore.set(key, {
         otp,
         expires: Date.now() + 5 * 60 * 1000
       });
@@ -114,11 +122,6 @@ router.post("/send-otp", async (req, res) => {
         message: "OTP sent to phone"
       });
     }
-
-    return res.status(400).json({
-      success: false,
-      message: "Email or phone required"
-    });
 
   } catch (error) {
     console.error("Send OTP error:", error.message);
@@ -139,7 +142,6 @@ router.post("/verify-otp", async (req, res) => {
     console.log("VERIFY BODY:", req.body);
 
     const stored = otpStore.get(key);
-
     console.log("STORED:", stored);
 
     if (!stored || stored.expires < Date.now()) {
@@ -159,6 +161,7 @@ router.post("/verify-otp", async (req, res) => {
 
     otpStore.delete(key);
 
+    /* ===== DRIVER LOGIN ===== */
     if (type === "driver_login") {
       const driver = await Driver.findOne({ phone });
 
@@ -178,31 +181,16 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    if (type === "parent_login") {
-      const parent = await Parent.findOne({ email });
-
-      return res.json({
-        success: true,
-        parent
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "OTP verified"
-    });
-
-  } catch (error) {
-    console.error("Verify OTP error:", error.message);
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
-  }
-});
     /* ===== PARENT LOGIN ===== */
     if (type === "parent_login") {
       const parent = await Parent.findOne({ email });
+
+      if (!parent) {
+        return res.status(404).json({
+          success: false,
+          message: "Parent not found"
+        });
+      }
 
       return res.json({
         success: true,
