@@ -1,18 +1,21 @@
 import { Resend } from "resend";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendEmail = async (to, subject, html) => {
   try {
-    await resend.emails.send({
+    const data = await resend.emails.send({
       from: "ASAN <onboarding@resend.dev>", // later replace with your domain
-      to,
+      to: [to],
       subject,
-      html
+      html,
     });
 
-    console.log("✅ Email sent to:", to);
+    console.log("✅ Email sent:", data);
   } catch (error) {
-    console.error("❌ Email error:", error.message);
+    console.error("❌ Resend error:", error);
   }
 };
