@@ -16,6 +16,7 @@ import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import emailRoutes from "./routes/email.js";
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -71,6 +72,8 @@ app.use("/api/location", locationRoutes);
 // 🛠 Admin
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
+
+app.use("/api/email", emailRoutes);
 
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
