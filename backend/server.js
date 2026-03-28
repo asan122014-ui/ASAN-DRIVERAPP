@@ -16,7 +16,9 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import otpRoutes from "./routes/email.js";
 
+app.use("/api/otp", otpRoutes);
 /* FIREBASE */
 import admin from "firebase-admin";
 
