@@ -3,12 +3,14 @@ import cors from "cors";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
-
 import connectDB from "./config/db.js";
 
 /* ROUTES */
-import otpRoutes from "./routes/otp.js";          // ✅ unified OTP (driver + parent)
+import otpRoutes from "./routes/otp.js";
 import parentRoutes from "./routes/parentRoutes.js";
+import driverRoutes from "./routes/driver.js";              // ✅ ADD THIS
+import tripRoutes from "./routes/trip.js";                  // ✅ ADD THIS
+import notificationRoutes from "./routes/notificationRoutes.js"; // ✅ ADD THIS
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -36,16 +38,17 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 /* ================= ROUTES ================= */
-app.use("/api/otp", otpRoutes);          // ✅ single OTP system
+app.use("/api/otp", otpRoutes);
 app.use("/api/parent", parentRoutes);
+app.use("/api/driver", driverRoutes);              // ✅ FIX
+app.use("/api/trip", tripRoutes);                  // ✅ FIX
+app.use("/api/notifications", notificationRoutes);// ✅ FIX
 
-/* ================= SOCKET LOGIC ================= */
+/* ================= SOCKET ================= */
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
 
-  // Driver sends location
   socket.on("driver_location", (data) => {
-    // broadcast to all parents
     io.emit("live_location", data);
   });
 
@@ -54,7 +57,7 @@ io.on("connection", (socket) => {
   });
 });
 
-/* ================= HEALTH CHECK ================= */
+/* ================= HEALTH ================= */
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
