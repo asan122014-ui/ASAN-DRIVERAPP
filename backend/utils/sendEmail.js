@@ -5,12 +5,14 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export const sendEmail = async (to, subject, html) => {
   try {
     await resend.emails.send({
-      from: "ASAN <onboarding@resend.dev>",
+      from: "ASAN <onboarding@resend.dev>", // later replace with your domain
       to,
       subject,
       html
     });
+
+    console.log("✅ Email sent to:", to);
   } catch (error) {
-    console.error("Email error:", error);
+    console.error("❌ Email error:", error.message);
   }
 };
