@@ -82,12 +82,19 @@ export const endTrip = async (req, res) => {
 /* ================= ACTIVE TRIP ================= */
 export const getActiveTrip = async (req, res) => {
   try {
-    const { driverId } = req.params; // ✅ FIX
+    const { driverId } = req.params;
 
     if (!driverId) {
       return res.status(400).json({
         success: false,
         message: "Driver ID is required"
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Driver ID"
       });
     }
 
@@ -100,6 +107,7 @@ export const getActiveTrip = async (req, res) => {
 
   } catch (error) {
     console.error("Active trip error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch active trip"
@@ -108,9 +116,9 @@ export const getActiveTrip = async (req, res) => {
 };
 
 /* ================= TRIP HISTORY ================= */
-export const getActiveTrip = async (req, res) => {
+export const getTripHistory = async (req, res) => {
   try {
-    const { driverId } = req.params; // ✅ FIX
+    const { driverId } = req.params;
 
     if (!driverId) {
       return res.status(400).json({
@@ -119,18 +127,26 @@ export const getActiveTrip = async (req, res) => {
       });
     }
 
-    const trip = await getActiveTripService(driverId);
+    if (!mongoose.Types.ObjectId.isValid(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Driver ID"
+      });
+    }
+
+    const trips = await getDriverTripsService(driverId);
 
     res.json({
       success: true,
-      data: trip || null
+      data: trips || []
     });
 
   } catch (error) {
-    console.error("Active trip error:", error);
+    console.error("Trip history error:", error);
+
     res.status(500).json({
       success: false,
-      message: "Failed to fetch active trip"
+      message: "Failed to fetch trips"
     });
   }
 };
