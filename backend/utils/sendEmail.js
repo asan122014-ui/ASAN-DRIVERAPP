@@ -1,31 +1,16 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-const sendEmail = async (to, subject, text) => {
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+export const sendEmail = async (to, subject, html) => {
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
-
-    const mailOptions = {
-      from: `"ASAN App" <${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: "ASAN <onboarding@resend.dev>",
       to,
       subject,
-      text
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-
-    console.log("✅ Email sent:", info.response);
-
-    return true;
+      html
+    });
   } catch (error) {
-    console.error("❌ Email error:", error.message);
-    return false;
+    console.error("Email error:", error);
   }
 };
-
-export default sendEmail;
