@@ -134,8 +134,13 @@ router.post("/verify-otp", async (req, res) => {
   try {
     const { phone, email, otp, type } = req.body;
 
-    const key = email || phone;
+    const key = (email || phone)?.toString().trim();
+
+    console.log("VERIFY BODY:", req.body);
+
     const stored = otpStore.get(key);
+
+    console.log("STORED:", stored);
 
     if (!stored || stored.expires < Date.now()) {
       otpStore.delete(key);
@@ -154,9 +159,15 @@ router.post("/verify-otp", async (req, res) => {
 
     otpStore.delete(key);
 
-    /* ===== DRIVER LOGIN ===== */
     if (type === "driver_login") {
       const driver = await Driver.findOne({ phone });
+
+      if (!driver) {
+        return res.status(404).json({
+          success: false,
+          message: "Driver not found"
+        });
+      }
 
       const data = driver.toObject();
       delete data.password;
@@ -167,6 +178,28 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
+    if (type === "parent_login") {
+      const parent = await Parent.findOne({ email });
+
+      return res.json({
+        success: true,
+        parent
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "OTP verified"
+    });
+
+  } catch (error) {
+    console.error("Verify OTP error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+});
     /* ===== PARENT LOGIN ===== */
     if (type === "parent_login") {
       const parent = await Parent.findOne({ email });
