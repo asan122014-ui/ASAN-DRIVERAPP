@@ -2,22 +2,15 @@ import express from "express";
 import {
   startTrip,
   endTrip,
-  getTripHistory,
-  getActiveTrip
+  getActiveTrip,
+  getTripHistory
 } from "../controllers/tripController.js";
 
 const router = express.Router();
 
-/* ================= START TRIP ================= */
 router.post("/start", startTrip);
-
-/* ================= END TRIP ================= */
 router.post("/end", endTrip);
-
-/* ================= ACTIVE TRIP ================= */
-router.get("/active", getActiveTrip);   // ✅ FIXED
-
-/* ================= TRIP HISTORY ================= */
-router.get("/history", getTripHistory); // ✅ FIXED
+router.get("/active/:driverId", getActiveTrip);
+router.get("/history/:driverId", getTripHistory); // ✅ THIS LINE IMPORTANT
 
 export default router;
