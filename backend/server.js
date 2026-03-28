@@ -7,54 +7,86 @@ import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 
 /* ROUTES */
-import driverOtpRoutes from "./routes/otp.js";       // driver (phone OTP)
-import parentOtpRoutes from "./routes/email.js";     // parent (email OTP)
-
+import otpRoutes from "./routes/otp.js";          // ✅ unified OTP (driver + parent)
 import parentRoutes from "./routes/parentRoutes.js";
 
-/* INIT */
+/* ================= INIT ================= */
 dotenv.config();
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
 
-/* SOCKET */
+/* ================= SOCKET ================= */
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
 app.set("io", io);
 
-/* MIDDLEWARE */
-app.use(cors());
-app.use(express.json());
+/* ================= MIDDLEWARE ================= */
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*"
+}));
 
-/* ROUTES */
-app.use("/api/otp", driverOtpRoutes);         // driver
-app.use("/api/email-otp", parentOtpRoutes);   // parent
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+/* ================= ROUTES ================= */
+app.use("/api/otp", otpRoutes);          // ✅ single OTP system
 app.use("/api/parent", parentRoutes);
 
-/* SOCKET LOGIC */
+/* ================= SOCKET LOGIC ================= */
 io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
+  console.log("🔌 Client connected:", socket.id);
 
+  // Driver sends location
   socket.on("driver_location", (data) => {
+    // broadcast to all parents
     io.emit("live_location", data);
   });
 
   socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+    console.log("❌ Client disconnected:", socket.id);
   });
 });
 
-/* HEALTH */
+/* ================= HEALTH CHECK ================= */
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK" });
+  res.json({
+    status: "OK",
+    message: "ASAN backend running",
+    time: new Date()
+  });
 });
 
-/* START */
+/* ================= ERROR HANDLER ================= */
+app.use((err, req, res, next) => {
+  console.error("🔥 Server Error:", err.message);
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error"
+  });
+});
+
+/* ================= 404 ================= */
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "API route not found"
+  });
+});
+
+/* ================= START ================= */
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log("=================================");
+  console.log("🚀 ASAN BACKEND STARTED");
+  console.log(`🌍 Server running on port ${PORT}`);
+  console.log("=================================");
 });
