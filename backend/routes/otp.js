@@ -1,25 +1,19 @@
 import express from "express";
 import twilio from "twilio";
 import dotenv from "dotenv";
-import { Resend } from "resend";
-
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 dotenv.config();
 
 const router = express.Router();
 
-/* ================= SERVICES ================= */
-
-// Twilio (SMS)
+/* ================= TWILIO ================= */
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
-
-// Resend (Email)
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 /* ================= OTP STORE ================= */
 const otpStore = new Map();
@@ -36,13 +30,13 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    // normalize input
+    // normalize
     if (email) email = email.trim().toLowerCase();
     if (phone) phone = phone.trim();
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    /* ================= EMAIL OTP (PARENT) ================= */
+    /* ========= EMAIL (PARENT) ========= */
     if (email) {
       const parent = await Parent.findOne({ email });
 
@@ -60,7 +54,6 @@ router.post("/send-otp", async (req, res) => {
         });
       }
 
-      // store OTP
       otpStore.set(email, {
         otp,
         expires: Date.now() + 5 * 60 * 1000
@@ -74,25 +67,17 @@ router.post("/send-otp", async (req, res) => {
         message: "OTP sent to email"
       });
 
-      // ✅ send email in background (NO BLOCKING)
-      resend.emails.send({
-        from: "ASAN <onboarding@resend.dev>",
-        to: email,
-        subject: "ASAN OTP Verification",
-        html: `
-          <div style="font-family: Arial;">
-            <h2>ASAN Verification</h2>
-            <p>Your OTP is:</p>
-            <h1 style="color:#f59e0b;">${otp}</h1>
-            <p>This OTP expires in 5 minutes.</p>
-          </div>
-        `
-      }).catch(err => console.error("Resend error:", err));
+      // ✅ send email in background
+      sendEmail(
+        email,
+        "ASAN OTP Verification",
+        `<h2>Your OTP is ${otp}</h2><p>Valid for 5 minutes</p>`
+      );
 
       return;
     }
 
-    /* ================= PHONE OTP (DRIVER) ================= */
+    /* ========= PHONE (DRIVER) ========= */
     if (phone) {
       const driver = await Driver.findOne({ phone });
 
@@ -117,18 +102,18 @@ router.post("/send-otp", async (req, res) => {
 
       console.log("PHONE OTP:", otp);
 
-      // ✅ instant response
       res.json({
         success: true,
         message: "OTP sent to phone"
       });
 
-      // ✅ send SMS in background
-      client.messages.create({
-        body: `Your ASAN OTP is ${otp}`,
-        from: process.env.TWILIO_PHONE,
-        to: `+91${phone}`
-      }).catch(err => console.error("SMS error:", err));
+      client.messages
+        .create({
+          body: `Your ASAN OTP is ${otp}`,
+          from: process.env.TWILIO_PHONE,
+          to: `+91${phone}`
+        })
+        .catch((err) => console.error("SMS error:", err));
 
       return;
     }
@@ -157,16 +142,7 @@ router.post("/verify-otp", async (req, res) => {
 
     const key = email || phone;
 
-    if (!key) {
-      return res.status(400).json({
-        success: false,
-        message: "Email or phone required"
-      });
-    }
-
     const stored = otpStore.get(key);
-
-    console.log("VERIFY:", key, otp, stored);
 
     if (!stored || stored.expires < Date.now()) {
       otpStore.delete(key);
@@ -183,7 +159,6 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    // remove OTP after success
     otpStore.delete(key);
 
     /* ===== DRIVER LOGIN ===== */
