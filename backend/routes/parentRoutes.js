@@ -2,6 +2,7 @@ import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Trip from "../models/Trip.js";
+import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
@@ -124,6 +125,57 @@ router.get("/dashboard/:parentId", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard"
+    });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const parent = await Parent.findOne({ email });
+
+    if (!parent) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    parent.password = hashedPassword;
+    await parent.save();
+
+    res.json({
+      success: true,
+      message: "Password updated"
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: "Server error"
+    });
+  }
+});
+
+router.post("/check-email", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const parent = await Parent.findOne({ email });
+
+    if (!parent) {
+      return res.status(404).json({
+        message: "Email not found"
+      });
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.status(500).json({
+      message: "Server error"
     });
   }
 });
