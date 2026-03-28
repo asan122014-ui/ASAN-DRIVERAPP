@@ -137,28 +137,31 @@ router.post("/reset-password", async (req, res) => {
 
     if (!parent) {
       return res.status(404).json({
+        success: false,
         message: "User not found"
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // ✅ HASH PASSWORD (THIS IS THE FIX)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     parent.password = hashedPassword;
+
     await parent.save();
 
     res.json({
       success: true,
-      message: "Password updated"
+      message: "Password updated successfully"
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({
+      success: false,
       message: "Server error"
     });
   }
 });
-
 router.post("/check-email", async (req, res) => {
   try {
     const { email } = req.body;
