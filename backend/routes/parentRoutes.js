@@ -1,9 +1,8 @@
 import express from "express";
-import bcrypt from "bcryptjs";
-
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Trip from "../models/Trip.js";
+import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
@@ -14,7 +13,6 @@ router.post("/register", async (req, res) => {
 
     if (!name || !email || !password) {
       return res.status(400).json({
-        success: false,
         message: "All fields required"
       });
     }
@@ -22,7 +20,6 @@ router.post("/register", async (req, res) => {
     const existing = await Parent.findOne({ email });
     if (existing) {
       return res.status(400).json({
-        success: false,
         message: "Email already registered"
       });
     }
@@ -37,22 +34,14 @@ router.post("/register", async (req, res) => {
       password: hashedPassword
     });
 
-    // remove password from response
-    const data = parent.toObject();
-    delete data.password;
-
     res.json({
       success: true,
-      data: {
-        parent: data,
-        token: "demo-token" // replace with JWT later
-      }
+      data: { parent }
     });
 
   } catch (err) {
-    console.error("Register error:", err);
+    console.error(err);
     res.status(500).json({
-      success: false,
       message: "Registration failed"
     });
   }
@@ -67,36 +56,26 @@ router.post("/login", async (req, res) => {
 
     if (!parent) {
       return res.status(400).json({
-        success: false,
         message: "Invalid credentials"
       });
     }
 
-    // ✅ COMPARE HASH
+    // ✅ COMPARE HASHED PASSWORD
     const isMatch = await bcrypt.compare(password, parent.password);
 
     if (!isMatch) {
       return res.status(400).json({
-        success: false,
         message: "Invalid credentials"
       });
     }
 
-    const data = parent.toObject();
-    delete data.password;
-
     res.json({
       success: true,
-      data: {
-        parent: data,
-        token: "demo-token"
-      }
+      data: { parent }
     });
 
   } catch (err) {
-    console.error("Login error:", err);
     res.status(500).json({
-      success: false,
       message: "Login failed"
     });
   }
@@ -111,7 +90,6 @@ router.post("/check-email", async (req, res) => {
 
     if (!parent) {
       return res.status(404).json({
-        success: false,
         message: "Email not found"
       });
     }
@@ -120,7 +98,6 @@ router.post("/check-email", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({
-      success: false,
       message: "Server error"
     });
   }
@@ -135,12 +112,11 @@ router.post("/reset-password", async (req, res) => {
 
     if (!parent) {
       return res.status(404).json({
-        success: false,
         message: "User not found"
       });
     }
 
-    // ✅ HASH PASSWORD
+    // ✅ HASH NEW PASSWORD
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -149,44 +125,12 @@ router.post("/reset-password", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Password updated successfully"
+      message: "Password updated"
     });
 
   } catch (err) {
-    console.error("Reset error:", err);
     res.status(500).json({
-      success: false,
       message: "Server error"
-    });
-  }
-});
-
-/* ================= LINK DRIVER ================= */
-router.post("/link-driver", async (req, res) => {
-  try {
-    const { parentId, driverId } = req.body;
-
-    const driver = await Driver.findOne({ driverId });
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found"
-      });
-    }
-
-    await Parent.findByIdAndUpdate(parentId, { driverId });
-
-    res.json({
-      success: true,
-      message: "Driver linked successfully"
-    });
-
-  } catch (err) {
-    console.error("Link driver error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Linking failed"
     });
   }
 });
@@ -205,10 +149,38 @@ router.get("/dashboard/:parentId", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Dashboard error:", err);
+    console.error(err);
     res.status(500).json({
-      success: false,
       message: "Failed to fetch dashboard"
+    });
+  }
+});
+
+/* ================= LINK DRIVER ================= */
+router.post("/link-driver", async (req, res) => {
+  try {
+    const { parentId, driverId } = req.body;
+
+    const driver = await Driver.findOne({ driverId });
+
+    if (!driver) {
+      return res.status(404).json({
+        message: "Driver not found"
+      });
+    }
+
+    await Parent.findByIdAndUpdate(parentId, {
+      driverId
+    });
+
+    res.json({
+      success: true,
+      message: "Driver linked"
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      message: "Linking failed"
     });
   }
 });
