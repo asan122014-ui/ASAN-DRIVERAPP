@@ -8,13 +8,15 @@ import Parent from "../models/Parent.js";
 dotenv.config();
 const router = express.Router();
 
-/* ================= TWILIO ================= */
+/* ================= SERVICES ================= */
+
+// Twilio (SMS)
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-/* ================= EMAIL ================= */
+// Email (Gmail)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -29,7 +31,7 @@ const otpStore = new Map();
 /* ================= SEND OTP ================= */
 router.post("/send-otp", async (req, res) => {
   try {
-    const { phone, email, type } = req.body;
+    let { phone, email, type } = req.body;
 
     if (!type) {
       return res.status(400).json({
@@ -38,90 +40,100 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    if (!email && !phone) {
-      return res.status(400).json({
-        success: false,
-        message: "Email or phone required"
-      });
-    }
+    // normalize
+    if (email) email = email.trim().toLowerCase();
+    if (phone) phone = phone.trim();
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const key = (email || phone).toString().trim();
 
-    /* ================= EMAIL OTP (PARENT) ================= */
+    /* ================= EMAIL (PARENT) ================= */
     if (email) {
-      const existingParent = await Parent.findOne({ email });
+      const parent = await Parent.findOne({ email });
 
-      if (type === "parent_login" && !existingParent) {
+      if (type === "parent_login" && !parent) {
         return res.status(404).json({
           success: false,
           message: "Parent not found"
         });
       }
 
-      if (type === "parent_signup" && existingParent) {
+      if (type === "parent_signup" && parent) {
         return res.status(400).json({
           success: false,
           message: "Email already registered"
         });
       }
 
-      otpStore.set(key, {
+      // store OTP
+      otpStore.set(email, {
         otp,
         expires: Date.now() + 5 * 60 * 1000
       });
 
       console.log("EMAIL OTP:", otp);
 
-      await transporter.sendMail({
+      // ✅ FAST RESPONSE FIRST
+      res.json({
+        success: true,
+        message: "OTP sent to email"
+      });
+
+      // ✅ SEND EMAIL IN BACKGROUND
+      transporter.sendMail({
         from: `"ASAN" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: "ASAN OTP Verification",
         text: `Your OTP is ${otp}`
-      });
+      }).catch(err => console.error("Email error:", err));
 
-      return res.json({
-        success: true,
-        message: "OTP sent to email"
-      });
+      return;
     }
 
-    /* ================= PHONE OTP (DRIVER) ================= */
+    /* ================= PHONE (DRIVER) ================= */
     if (phone) {
-      const existingDriver = await Driver.findOne({ phone });
+      const driver = await Driver.findOne({ phone });
 
-      if (type === "driver_login" && !existingDriver) {
+      if (type === "driver_login" && !driver) {
         return res.status(404).json({
           success: false,
           message: "Driver not found"
         });
       }
 
-      if (type === "driver_signup" && existingDriver) {
+      if (type === "driver_signup" && driver) {
         return res.status(400).json({
           success: false,
           message: "Phone already registered"
         });
       }
 
-      otpStore.set(key, {
+      otpStore.set(phone, {
         otp,
         expires: Date.now() + 5 * 60 * 1000
       });
 
       console.log("PHONE OTP:", otp);
 
-      await client.messages.create({
-        body: `Your ASAN OTP is ${otp}`,
-        from: process.env.TWILIO_PHONE,
-        to: `+91${phone}`
-      });
-
-      return res.json({
+      // ✅ FAST RESPONSE
+      res.json({
         success: true,
         message: "OTP sent to phone"
       });
+
+      // ✅ SEND SMS IN BACKGROUND
+      client.messages.create({
+        body: `Your ASAN OTP is ${otp}`,
+        from: process.env.TWILIO_PHONE,
+        to: `+91${phone}`
+      }).catch(err => console.error("SMS error:", err));
+
+      return;
     }
+
+    return res.status(400).json({
+      success: false,
+      message: "Email or phone required"
+    });
 
   } catch (error) {
     console.error("Send OTP error:", error.message);
@@ -135,14 +147,14 @@ router.post("/send-otp", async (req, res) => {
 /* ================= VERIFY OTP ================= */
 router.post("/verify-otp", async (req, res) => {
   try {
-    const { phone, email, otp, type } = req.body;
+    let { phone, email, otp, type } = req.body;
 
-    const key = (email || phone)?.toString().trim();
+    if (email) email = email.trim().toLowerCase();
+    if (phone) phone = phone.trim();
 
-    console.log("VERIFY BODY:", req.body);
+    const key = email || phone;
 
     const stored = otpStore.get(key);
-    console.log("STORED:", stored);
 
     if (!stored || stored.expires < Date.now()) {
       otpStore.delete(key);
