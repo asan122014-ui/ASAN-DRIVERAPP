@@ -2,8 +2,6 @@ import express from "express";
 import twilio from "twilio";
 import dotenv from "dotenv";
 import Driver from "../models/Driver.js";
-import Parent from "../models/Parent.js";
-import { sendEmail } from "../utils/sendEmail.js";
 
 dotenv.config();
 
@@ -21,107 +19,63 @@ const otpStore = new Map();
 /* ================= SEND OTP ================= */
 router.post("/send-otp", async (req, res) => {
   try {
-    let { phone, email, type } = req.body;
+    let { phone, type } = req.body;
 
-    if (!type) {
+    if (!phone || !type) {
       return res.status(400).json({
         success: false,
-        message: "Type required"
+        message: "Phone and type required"
       });
     }
 
-    // normalize
-    if (email) email = email.trim().toLowerCase();
-    if (phone) phone = phone.trim();
+    phone = phone.trim();
+
+    if (!["driver_login", "driver_signup"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid type"
+      });
+    }
+
+    const driver = await Driver.findOne({ phone });
+
+    if (type === "driver_login" && !driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+
+    if (type === "driver_signup" && driver) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone already registered"
+      });
+    }
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    /* ========= EMAIL (PARENT) ========= */
-    if (email) {
-      const parent = await Parent.findOne({ email });
-
-      if (type === "parent_login" && !parent) {
-        return res.status(404).json({
-          success: false,
-          message: "Parent not found"
-        });
-      }
-
-      if (type === "parent_signup" && parent) {
-        return res.status(400).json({
-          success: false,
-          message: "Email already registered"
-        });
-      }
-
-      otpStore.set(email, {
-        otp,
-        expires: Date.now() + 5 * 60 * 1000
-      });
-
-      console.log("EMAIL OTP:", otp);
-
-      // ✅ instant response
-      res.json({
-        success: true,
-        message: "OTP sent to email"
-      });
-
-      // ✅ send email in background
-      sendEmail(
-        email,
-        "ASAN OTP Verification",
-        `<h2>Your OTP is ${otp}</h2><p>Valid for 5 minutes</p>`
-      );
-
-      return;
-    }
-
-    /* ========= PHONE (DRIVER) ========= */
-    if (phone) {
-      const driver = await Driver.findOne({ phone });
-
-      if (type === "driver_login" && !driver) {
-        return res.status(404).json({
-          success: false,
-          message: "Driver not found"
-        });
-      }
-
-      if (type === "driver_signup" && driver) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone already registered"
-        });
-      }
-
-      otpStore.set(phone, {
-        otp,
-        expires: Date.now() + 5 * 60 * 1000
-      });
-
-      console.log("PHONE OTP:", otp);
-
-      res.json({
-        success: true,
-        message: "OTP sent to phone"
-      });
-
-      client.messages
-        .create({
-          body: `Your ASAN OTP is ${otp}`,
-          from: process.env.TWILIO_PHONE,
-          to: `+91${phone}`
-        })
-        .catch((err) => console.error("SMS error:", err));
-
-      return;
-    }
-
-    return res.status(400).json({
-      success: false,
-      message: "Email or phone required"
+    otpStore.set(phone, {
+      otp,
+      expires: Date.now() + 5 * 60 * 1000
     });
+
+    console.log("PHONE OTP:", otp);
+
+    // ✅ instant response
+    res.json({
+      success: true,
+      message: "OTP sent"
+    });
+
+    // ✅ send SMS in background
+    client.messages
+      .create({
+        body: `Your ASAN OTP is ${otp}`,
+        from: process.env.TWILIO_PHONE,
+        to: `+91${phone}`
+      })
+      .catch(err => console.error("SMS error:", err));
 
   } catch (error) {
     console.error("Send OTP error:", error.message);
@@ -135,17 +89,21 @@ router.post("/send-otp", async (req, res) => {
 /* ================= VERIFY OTP ================= */
 router.post("/verify-otp", async (req, res) => {
   try {
-    let { phone, email, otp, type } = req.body;
+    let { phone, otp, type } = req.body;
 
-    if (email) email = email.trim().toLowerCase();
-    if (phone) phone = phone.trim();
+    if (!phone || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone and OTP required"
+      });
+    }
 
-    const key = email || phone;
+    phone = phone.trim();
 
-    const stored = otpStore.get(key);
+    const stored = otpStore.get(phone);
 
     if (!stored || stored.expires < Date.now()) {
-      otpStore.delete(key);
+      otpStore.delete(phone);
       return res.status(400).json({
         success: false,
         message: "OTP expired"
@@ -159,7 +117,7 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    otpStore.delete(key);
+    otpStore.delete(phone);
 
     /* ===== DRIVER LOGIN ===== */
     if (type === "driver_login") {
@@ -181,24 +139,7 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    /* ===== PARENT LOGIN ===== */
-    if (type === "parent_login") {
-      const parent = await Parent.findOne({ email });
-
-      if (!parent) {
-        return res.status(404).json({
-          success: false,
-          message: "Parent not found"
-        });
-      }
-
-      return res.json({
-        success: true,
-        parent
-      });
-    }
-
-    /* ===== SIGNUP ===== */
+    /* ===== DRIVER SIGNUP ===== */
     return res.json({
       success: true,
       message: "OTP verified"
