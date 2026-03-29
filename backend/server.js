@@ -27,9 +27,6 @@ const server = http.createServer(app);
 /* ================= ✅ PERFECT CORS ================= */
 app.use(cors());
 
-// ✅ handle preflight requests
-app.options("*", cors());
-
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
