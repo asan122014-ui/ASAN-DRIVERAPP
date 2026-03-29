@@ -26,7 +26,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-export default router;
 /* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
