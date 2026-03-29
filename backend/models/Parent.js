@@ -20,15 +20,14 @@ const parentSchema = new mongoose.Schema(
     phone: {
       type: String,
       required: true,
-      unique: true,
-      trim: true
+      unique: true
     },
 
     password: {
       type: String,
       required: true,
       minlength: 6,
-      select: false
+      select: false // 🔥 important
     },
 
     driverId: {
@@ -39,22 +38,15 @@ const parentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ================= HASH PASSWORD ================= */
+/* 🔐 HASH PASSWORD BEFORE SAVE */
 parentSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
 
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (err) {
-    next(err);
-  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+
+  next();
 });
 
-/* ================= COMPARE PASSWORD ================= */
-parentSchema.methods.comparePassword = function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
-};
-
-export default mongoose.model("Parent", parentSchema);
+const Parent = mongoose.model("Parent", parentSchema);
+export default Parent;
