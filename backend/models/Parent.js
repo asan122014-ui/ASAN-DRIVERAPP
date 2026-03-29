@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 
 const parentSchema = new mongoose.Schema(
   {
+    /* ================= BASIC DETAILS ================= */
+
     name: {
       type: String,
       required: true,
@@ -20,33 +22,55 @@ const parentSchema = new mongoose.Schema(
     phone: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
+      trim: true
     },
 
     password: {
       type: String,
       required: true,
       minlength: 6,
-      select: false // 🔥 important
+      select: false // 🔒 don't send password in queries
     },
 
+    /* ================= DRIVER LINK ================= */
+
     driverId: {
-      type: String,
+      type: String, // ASAN driver ID
       default: null
     }
+
   },
-  { timestamps: true }
+  {
+    timestamps: true
+  }
 );
 
-/* 🔐 HASH PASSWORD BEFORE SAVE */
+---
+
+/* ================= HASH PASSWORD ================= */
 parentSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+  try {
+    if (!this.isModified("password")) return next();
 
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
 
-  next();
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
+---
+
+/* ================= COMPARE PASSWORD ================= */
+parentSchema.methods.comparePassword = function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
+};
+
+---
+
+/* ================= EXPORT ================= */
 const Parent = mongoose.model("Parent", parentSchema);
 export default Parent;
