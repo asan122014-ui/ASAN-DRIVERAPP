@@ -25,17 +25,9 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
-/* ================= CORS (OPEN) ================= */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true
-  })
-);
-
-// 🔥 VERY IMPORTANT (fix preflight issues)
-app.options("/*", cors());
+/* ================= CORS ================= */
+// ✅ OPEN CORS (no restrictions)
+app.use(cors({ origin: "*" }));
 
 /* ================= BODY ================= */
 app.use(express.json({ limit: "10mb" }));
@@ -45,8 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"],
-    credentials: true
+    methods: ["GET", "POST"]
   }
 });
 
@@ -54,23 +45,21 @@ app.set("io", io);
 
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
-  console.log("🔌 Client connected:", socket.id);
+  console.log("🔌 Connected:", socket.id);
 
-  // Driver joins room
   socket.on("driver_join", (driverId) => {
     if (!driverId) return;
     socket.join(`driver_${driverId}`);
-    console.log(`🚗 Driver joined: driver_${driverId}`);
+    console.log("Driver joined:", driverId);
   });
 
-  // Parent joins room
   socket.on("join_parent", (parentId) => {
     if (!parentId) return;
     socket.join(`parent_${parentId}`);
-    console.log(`👨‍👩‍👧 Parent joined: parent_${parentId}`);
+    console.log("Parent joined:", parentId);
   });
 
-  // 🔥 Live tracking (FIXED)
+  // 🔥 LIVE LOCATION
   socket.on("driver_location", (data) => {
     if (!data?.driverId) return;
 
@@ -78,37 +67,19 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("❌ Client disconnected:", socket.id);
+    console.log("❌ Disconnected:", socket.id);
   });
 });
 
 /* ================= ROUTES ================= */
-
-// Auth
 app.use("/api/auth", authRoutes);
-
-// OTP
 app.use("/api/otp", otpRoutes);
-
-// Parent
 app.use("/api/parent", parentRoutes);
-
-// Driver
 app.use("/api/driver", driverRoutes);
-
-// Trip
 app.use("/api/trip", tripRoutes);
-
-// Notifications
 app.use("/api/notifications", notificationRoutes);
-
-// Students
 app.use("/api/students", studentRoutes);
-
-// Location
 app.use("/api/location", locationRoutes);
-
-// Admin
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin", adminAnalyticsRoutes);
 
@@ -116,18 +87,18 @@ app.use("/api/admin", adminAnalyticsRoutes);
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
-    message: "ASAN backend running",
+    message: "Backend running",
     time: new Date()
   });
 });
 
-/* ================= ERROR HANDLER ================= */
+/* ================= ERROR ================= */
 app.use((err, req, res, next) => {
-  console.error("🔥 Server Error:", err.message);
+  console.error("🔥 ERROR:", err.message);
 
-  res.status(err.status || 500).json({
+  res.status(500).json({
     success: false,
-    message: err.message || "Internal Server Error"
+    message: err.message || "Server error"
   });
 });
 
@@ -135,7 +106,7 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "API route not found"
+    message: "Route not found"
   });
 });
 
@@ -144,7 +115,6 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
   console.log("=================================");
-  console.log("🚀 ASAN BACKEND STARTED");
-  console.log(`🌍 Running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
   console.log("=================================");
 });
