@@ -9,7 +9,25 @@ const router = express.Router();
 /* ================= REGISTER ================= */
 router.post("/register", async (req, res) => {
   try {
+    console.log("BODY:", req.body); // 🔥 DEBUG
+
     const { name, email, password, phone } = req.body;
+
+    if (!name || !email || !password || !phone) {
+      return res.status(400).json({
+        message: "All fields required"
+      });
+    }
+
+    const existing = await Parent.findOne({
+      $or: [{ email }, { phone }]
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        message: "User already exists"
+      });
+    }
 
     const parent = await Parent.create({
       name,
@@ -18,11 +36,17 @@ router.post("/register", async (req, res) => {
       phone
     });
 
-    res.json({ success: true, data: { parent } });
+    res.status(201).json({
+      success: true,
+      data: { parent }
+    });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Signup failed" });
+    console.error("REGISTER ERROR:", err); // 🔥 VERY IMPORTANT
+
+    res.status(500).json({
+      message: "Signup failed"
+    });
   }
 });
 
