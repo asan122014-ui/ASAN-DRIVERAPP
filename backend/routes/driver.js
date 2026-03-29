@@ -50,7 +50,7 @@ router.get("/dashboard", async (req, res) => {
 /* ================= DRIVER PROFILE ================= */
 router.get("/profile", async (req, res) => {
   try {
-    const { driverId };
+    const { driverId } = req.query;
 
     if (!driverId) {
       return res.status(400).json({
