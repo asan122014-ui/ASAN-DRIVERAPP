@@ -24,9 +24,6 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-/* ================= CORS (SAFE) ================= */
-import cors from "cors";
-
 /* ================= CORS ================= */
 app.use(cors());
 
