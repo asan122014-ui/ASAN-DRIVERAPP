@@ -46,17 +46,21 @@ const parentSchema = new mongoose.Schema(
   }
 );
 /* ================= HASH PASSWORD ================= */
-parentSchema.pre("save", async function (next) {
-  try {
-    if (!this.isModified("password")) return next();
+parentSchema.pre("save", function (next) {
+  const user = this;
 
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
+  if (!user.isModified("password")) return next();
 
-    next();
-  } catch (err) {
-    next(err);
-  }
+  bcrypt.genSalt(10, (err, salt) => {
+    if (err) return next(err);
+
+    bcrypt.hash(user.password, salt, (err, hash) => {
+      if (err) return next(err);
+
+      user.password = hash;
+      next();
+    });
+  });
 });
 /* ================= COMPARE PASSWORD ================= */
 parentSchema.methods.comparePassword = function (enteredPassword) {
