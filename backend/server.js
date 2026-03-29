@@ -25,7 +25,17 @@ const app = express();
 const server = http.createServer(app);
 
 /* ================= ✅ PERFECT CORS ================= */
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+  })
+);
+
+// ✅ IMPORTANT: handle preflight
+app.options("/*", cors());
 
 /* ================= BODY ================= */
 app.use(express.json());
