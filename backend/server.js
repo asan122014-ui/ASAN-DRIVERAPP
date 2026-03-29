@@ -1,8 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import http from "http";
+import cors from "cors";
 import { Server } from "socket.io";
-import cors from "cors"; // ✅ NEW
 import connectDB from "./config/db.js";
 
 /* ================= ROUTES ================= */
@@ -14,25 +14,18 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import studentRoutes from "./routes/student.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
+// ❌ REMOVE THIS (duplicate)
+// import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 import locationRoutes from "./routes/locationRoutes.js";
 
 /* ================= INIT ================= */
 dotenv.config();
-connectDB();
 
 const app = express();
 const server = http.createServer(app);
 
-/* ================= ✅ PERFECT CORS ================= */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
-  })
-);
+/* ================= CORS (SAFE) ================= */
+app.use(cors());
 
 /* ================= BODY ================= */
 app.use(express.json());
@@ -42,7 +35,6 @@ app.use(express.urlencoded({ extended: true }));
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"],
   },
 });
 
@@ -53,18 +45,17 @@ io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
   socket.on("driver_join", (driverId) => {
-    if (!driverId) return;
-    socket.join(`driver_${driverId}`);
+    if (driverId) socket.join(`driver_${driverId}`);
   });
 
   socket.on("join_parent", (parentId) => {
-    if (!parentId) return;
-    socket.join(`parent_${parentId}`);
+    if (parentId) socket.join(`parent_${parentId}`);
   });
 
   socket.on("driver_location", (data) => {
-    if (!data?.driverId) return;
-    io.to(`driver_${data.driverId}`).emit("live_location", data);
+    if (data?.driverId) {
+      io.to(`driver_${data.driverId}`).emit("live_location", data);
+    }
   });
 
   socket.on("disconnect", () => {
@@ -82,7 +73,6 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/admin", adminAnalyticsRoutes);
 
 /* ================= HEALTH ================= */
 app.get("/api/health", (req, res) => {
@@ -109,9 +99,16 @@ app.use((req, res) => {
   });
 });
 
-/* ================= START ================= */
+/* ================= START SERVER ONLY AFTER DB ================= */
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT}`);
-});
+connectDB()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ DB CONNECTION FAILED:", err);
+    process.exit(1); // 🔥 force crash (prevents broken server)
+  });
