@@ -27,9 +27,6 @@ const server = http.createServer(app);
 /* ================= CORS ================= */
 app.use(cors());
 
-// 🔥 HANDLE PREFLIGHT (VERY IMPORTANT)
-app.options(/.*/, cors()); // ✅ THIS IS THE FIX
-
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
