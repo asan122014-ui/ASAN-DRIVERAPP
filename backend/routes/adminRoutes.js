@@ -69,6 +69,27 @@ router.get("/analytics", verifyAdmin, async (req, res) => {
   }
 });
 
+/* ================= ADMIN LOGS ================= */
+router.get("/logs", async (req, res) => {
+  try {
+    const logs = await AdminLog.find()
+      .populate("adminId", "username")
+      .populate("driverId", "name driverId")
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: logs
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch logs"
+    });
+  }
+});
+
 /* ================= DRIVERS ================= */
 router.get("/drivers", async (req, res) => {
   const drivers = await Driver.find().select("-password");
