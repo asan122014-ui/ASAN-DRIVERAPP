@@ -26,7 +26,7 @@ const driverSchema = new mongoose.Schema(
       type: String,
       required: true,
       minlength: 6,
-      select: false // 🔥 hide password in queries
+      select: false
     },
     address: {
       type: String,
@@ -109,9 +109,36 @@ const driverSchema = new mongoose.Schema(
         default: "Point"
       },
       coordinates: {
-        type: [Number], // [longitude, latitude]
+        type: [Number], // [lng, lat]
         default: [0, 0]
       }
+    },
+
+    /* ================= NEW: TRACKING UI ================= */
+
+    // 🔥 Live status
+    isOnline: {
+      type: Boolean,
+      default: false
+    },
+
+    // 🔥 current trip status
+    currentStatus: {
+      type: String,
+      enum: ["idle", "on_trip", "offline"],
+      default: "idle"
+    },
+
+    // 🔥 optional profile enhancements
+    vehicleModel: {
+      type: String,
+      default: ""
+    },
+
+    // 🔥 optional profile picture for UI
+    avatar: {
+      type: String,
+      default: ""
     }
   },
   { timestamps: true }
