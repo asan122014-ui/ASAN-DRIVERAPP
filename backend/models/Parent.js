@@ -3,7 +3,6 @@ import bcrypt from "bcryptjs";
 
 const parentSchema = new mongoose.Schema(
   {
-    /* ================= BASIC DETAILS ================= */
     name: {
       type: String,
       required: true,
@@ -29,20 +28,16 @@ const parentSchema = new mongoose.Schema(
       type: String,
       required: true,
       minlength: 6,
-      select: false // 🔒 hide password in queries
+      select: false
     },
 
-    /* ================= DRIVER LINK ================= */
     driverId: {
-      type: String, // ASAN Driver ID
+      type: String,
       default: null
     }
-
   },
   { timestamps: true }
 );
-
----
 
 /* ================= HASH PASSWORD ================= */
 parentSchema.pre("save", async function (next) {
@@ -57,13 +52,9 @@ parentSchema.pre("save", async function (next) {
   }
 });
 
----
-
 /* ================= COMPARE PASSWORD ================= */
 parentSchema.methods.comparePassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
-
----
 
 export default mongoose.model("Parent", parentSchema);
