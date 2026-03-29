@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
+import cors from "cors"; // ✅ NEW
 import connectDB from "./config/db.js";
 
 /* ================= ROUTES ================= */
@@ -23,18 +24,17 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
-/* ================= 🔥 GLOBAL CORS FIX ================= */
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Access-Control-Allow-Methods", "*");
+/* ================= ✅ PERFECT CORS ================= */
+app.use(
+  cors({
+    origin: "*", // allow all origins
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  next();
-});
+// ✅ handle preflight requests
+app.options("*", cors());
 
 /* ================= BODY ================= */
 app.use(express.json());
@@ -44,6 +44,7 @@ app.use(express.urlencoded({ extended: true }));
 const io = new Server(server, {
   cors: {
     origin: "*",
+    methods: ["GET", "POST"],
   },
 });
 
@@ -65,7 +66,6 @@ io.on("connection", (socket) => {
 
   socket.on("driver_location", (data) => {
     if (!data?.driverId) return;
-
     io.to(`driver_${data.driverId}`).emit("live_location", data);
   });
 
@@ -97,7 +97,6 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR:", err);
-
   res.status(500).json({
     success: false,
     message: err.message || "Internal error",
