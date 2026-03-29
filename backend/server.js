@@ -25,9 +25,26 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
+/* ================= FORCE CORS (VERY IMPORTANT) ================= */
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Allow-Methods", "*");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
 /* ================= CORS ================= */
-// ✅ OPEN CORS (no restrictions)
-app.use(cors({ origin: "*" }));
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  })
+);
 
 /* ================= BODY ================= */
 app.use(express.json({ limit: "10mb" }));
@@ -37,8 +54,8 @@ app.use(express.urlencoded({ extended: true }));
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
 
 app.set("io", io);
@@ -50,13 +67,13 @@ io.on("connection", (socket) => {
   socket.on("driver_join", (driverId) => {
     if (!driverId) return;
     socket.join(`driver_${driverId}`);
-    console.log("Driver joined:", driverId);
+    console.log("🚗 Driver joined:", driverId);
   });
 
   socket.on("join_parent", (parentId) => {
     if (!parentId) return;
     socket.join(`parent_${parentId}`);
-    console.log("Parent joined:", parentId);
+    console.log("👨‍👩‍👧 Parent joined:", parentId);
   });
 
   // 🔥 LIVE LOCATION
@@ -87,18 +104,18 @@ app.use("/api/admin", adminAnalyticsRoutes);
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
-    message: "Backend running",
-    time: new Date()
+    message: "ASAN backend running 🚀",
+    time: new Date(),
   });
 });
 
-/* ================= ERROR ================= */
+/* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
-  console.error("🔥 ERROR:", err.message);
+  console.error("🔥 SERVER ERROR:", err);
 
   res.status(500).json({
     success: false,
-    message: err.message || "Server error"
+    message: err.message || "Internal Server Error",
   });
 });
 
@@ -106,7 +123,7 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Route not found"
+    message: "API route not found",
   });
 });
 
@@ -115,6 +132,7 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
   console.log("=================================");
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🚀 ASAN BACKEND STARTED");
+  console.log(`🌍 Running on port ${PORT}`);
   console.log("=================================");
 });
