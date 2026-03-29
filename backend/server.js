@@ -23,30 +23,27 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
-/* ================= 🔥 FULL OPEN CORS ================= */
-// ✅ This allows EVERYTHING (no restriction)
+/* ================= 🔥 GLOBAL CORS FIX ================= */
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "*");
-  res.header("Access-Control-Allow-Methods", "*");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Allow-Methods", "*");
 
-  // ✅ handle preflight automatically
   if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+    return res.status(200).end();
   }
 
   next();
 });
 
 /* ================= BODY ================= */
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
   cors: {
-    origin: "*", // ✅ FULL OPEN
-    methods: ["GET", "POST"],
+    origin: "*",
   },
 });
 
@@ -54,21 +51,18 @@ app.set("io", io);
 
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
-  console.log("🔌 Connected:", socket.id);
+  console.log("🔌 Socket connected:", socket.id);
 
   socket.on("driver_join", (driverId) => {
     if (!driverId) return;
     socket.join(`driver_${driverId}`);
-    console.log("🚗 Driver joined:", driverId);
   });
 
   socket.on("join_parent", (parentId) => {
     if (!parentId) return;
     socket.join(`parent_${parentId}`);
-    console.log("👨‍👩‍👧 Parent joined:", parentId);
   });
 
-  // 🔥 LIVE LOCATION
   socket.on("driver_location", (data) => {
     if (!data?.driverId) return;
 
@@ -76,7 +70,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("❌ Disconnected:", socket.id);
+    console.log("❌ Socket disconnected:", socket.id);
   });
 });
 
@@ -96,7 +90,6 @@ app.use("/api/admin", adminAnalyticsRoutes);
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
-    message: "Backend running 🚀",
     time: new Date(),
   });
 });
@@ -107,7 +100,7 @@ app.use((err, req, res, next) => {
 
   res.status(500).json({
     success: false,
-    message: err.message || "Server error",
+    message: err.message || "Internal error",
   });
 });
 
@@ -123,7 +116,5 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
-  console.log("=================================");
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log("=================================");
+  console.log(`🚀 Server running on ${PORT}`);
 });
