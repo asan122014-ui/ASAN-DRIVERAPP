@@ -34,9 +34,6 @@ app.use(
   })
 );
 
-// ✅ IMPORTANT: handle preflight
-app.options("*", cors());
-
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
