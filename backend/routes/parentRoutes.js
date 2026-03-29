@@ -9,16 +9,18 @@ const router = express.Router();
 /* ================= REGISTER ================= */
 router.post("/register", async (req, res) => {
   try {
-    console.log("BODY:", req.body); // 🔥 DEBUG
+    console.log("REQ BODY:", req.body);
 
     const { name, email, password, phone } = req.body;
 
+    // ✅ VALIDATION
     if (!name || !email || !password || !phone) {
       return res.status(400).json({
-        message: "All fields required"
+        message: "All fields are required"
       });
     }
 
+    // ✅ CHECK EXISTING USER
     const existing = await Parent.findOne({
       $or: [{ email }, { phone }]
     });
@@ -29,12 +31,15 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const parent = await Parent.create({
+    // ✅ CREATE USER (IMPORTANT: use save)
+    const parent = new Parent({
       name,
       email,
       password,
       phone
     });
+
+    await parent.save();
 
     res.status(201).json({
       success: true,
@@ -42,10 +47,16 @@ router.post("/register", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("REGISTER ERROR:", err); // 🔥 VERY IMPORTANT
+    console.error("REGISTER ERROR:", err);
+
+    if (err.code === 11000) {
+      return res.status(400).json({
+        message: "Duplicate email or phone"
+      });
+    }
 
     res.status(500).json({
-      message: "Signup failed"
+      message: err.message || "Signup failed"
     });
   }
 });
@@ -55,7 +66,8 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const parent = await Parent.findOne({ email });
+    // ✅ include password explicitly
+    const parent = await Parent.findOne({ email }).select("+password");
 
     if (!parent) {
       return res.status(400).json({
@@ -63,7 +75,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // ✅ COMPARE HASHED PASSWORD
     const isMatch = await bcrypt.compare(password, parent.password);
 
     if (!isMatch) {
@@ -72,12 +83,17 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // ✅ remove password before sending
+    parent.password = undefined;
+
     res.json({
       success: true,
       data: { parent }
     });
 
   } catch (err) {
+    console.error("LOGIN ERROR:", err);
+
     res.status(500).json({
       message: "Login failed"
     });
@@ -119,11 +135,9 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // ✅ HASH NEW PASSWORD
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    parent.password = await bcrypt.hash(password, salt);
 
-    parent.password = hashedPassword;
     await parent.save();
 
     res.json({
@@ -132,6 +146,8 @@ router.post("/reset-password", async (req, res) => {
     });
 
   } catch (err) {
+    console.error("RESET ERROR:", err);
+
     res.status(500).json({
       message: "Server error"
     });
@@ -152,7 +168,8 @@ router.get("/dashboard/:parentId", async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("DASHBOARD ERROR:", err);
+
     res.status(500).json({
       message: "Failed to fetch dashboard"
     });
@@ -172,9 +189,7 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    await Parent.findByIdAndUpdate(parentId, {
-      driverId
-    });
+    await Parent.findByIdAndUpdate(parentId, { driverId });
 
     res.json({
       success: true,
@@ -182,6 +197,8 @@ router.post("/link-driver", async (req, res) => {
     });
 
   } catch (err) {
+    console.error("LINK DRIVER ERROR:", err);
+
     res.status(500).json({
       message: "Linking failed"
     });
