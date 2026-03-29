@@ -7,7 +7,6 @@ import bcrypt from "bcryptjs";
 const router = express.Router();
 
 /* ================= REGISTER ================= */
-asan-driverapp.onrender.com/api/parent/register:1  Failed to load resource: the server responded with a status of 500 ()Understand this error
 asan-driverapp.onrender.com/api/parent/register:1  Failed to load resource: the server responded with a status of 500 ()
 /* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
