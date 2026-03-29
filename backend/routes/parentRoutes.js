@@ -7,46 +7,8 @@ import bcrypt from "bcryptjs";
 const router = express.Router();
 
 /* ================= REGISTER ================= */
-router.post("/register", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        message: "All fields required"
-      });
-    }
-
-    const existing = await Parent.findOne({ email });
-    if (existing) {
-      return res.status(400).json({
-        message: "Email already registered"
-      });
-    }
-
-    // ✅ HASH PASSWORD
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const parent = await Parent.create({
-      name,
-      email,
-      password: hashedPassword
-    });
-
-    res.json({
-      success: true,
-      data: { parent }
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      message: "Registration failed"
-    });
-  }
-});
-
+asan-driverapp.onrender.com/api/parent/register:1  Failed to load resource: the server responded with a status of 500 ()Understand this error
+asan-driverapp.onrender.com/api/parent/register:1  Failed to load resource: the server responded with a status of 500 ()
 /* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
