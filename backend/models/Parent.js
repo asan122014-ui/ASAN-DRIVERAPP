@@ -30,7 +30,7 @@ const parentSchema = new mongoose.Schema(
       type: String,
       required: true,
       minlength: 6,
-      select: false // 🔒 don't send password in queries
+      select: false
     },
 
     /* ================= DRIVER LINK ================= */
@@ -45,9 +45,6 @@ const parentSchema = new mongoose.Schema(
     timestamps: true
   }
 );
-
----
-
 /* ================= HASH PASSWORD ================= */
 parentSchema.pre("save", async function (next) {
   try {
@@ -61,16 +58,10 @@ parentSchema.pre("save", async function (next) {
     next(err);
   }
 });
-
----
-
 /* ================= COMPARE PASSWORD ================= */
 parentSchema.methods.comparePassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
-
----
-
 /* ================= EXPORT ================= */
 const Parent = mongoose.model("Parent", parentSchema);
 export default Parent;
