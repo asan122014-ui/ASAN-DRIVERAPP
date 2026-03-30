@@ -14,9 +14,9 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import studentRoutes from "./routes/student.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-// ❌ REMOVE THIS (duplicate)
-// import adminAnalyticsRoutes from "./routes/adminAnalytics.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import childRoutes from "./routes/child.js";
+
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -30,6 +30,7 @@ app.use(cors());
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/api/children", childRoutes);
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
