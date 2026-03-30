@@ -10,19 +10,19 @@ router.get("/", async (req, res) => {
     const { driverId } = req.query;
 
     const students = await Student.find({
-      driver: driverId
+      driverId: driverId // ✅ FIXED
     }).lean();
 
     res.json({
       success: true,
-      students
+      data: students
     });
 
   } catch (error) {
-    console.error("Get students error:", error.message);
+    console.error("Get students error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch students"
+      message: error.message
     });
   }
 });
@@ -32,26 +32,28 @@ router.get("/active", async (req, res) => {
   try {
     const { driverId } = req.query;
 
+    console.log("driverId:", driverId); // debug
+
     const students = await Student.find({
-      driver: driverId,
+      driverId: driverId, // ✅ FIXED
       status: { $ne: "dropped" }
     }).lean();
 
     res.json({
       success: true,
-      students
+      data: students
     });
 
   } catch (error) {
-    console.error("Active students error:", error.message);
+    console.error("🔥 Active students error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch active students"
+      message: error.message
     });
   }
 });
 
-/* ================= PICKUP STUDENT ================= */
+/* ================= PICKUP ================= */
 router.put("/:id/pickup", async (req, res) => {
   try {
     const { driverId } = req.body;
@@ -59,7 +61,7 @@ router.put("/:id/pickup", async (req, res) => {
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: driverId,
+        driverId: driverId, // ✅ FIXED
         status: "waiting"
       },
       { status: "onboard" },
@@ -69,26 +71,25 @@ router.put("/:id/pickup", async (req, res) => {
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: "Student not found or already picked up"
+        message: "Student not found or already picked"
       });
     }
 
     res.json({
       success: true,
-      message: "Student picked up",
       student
     });
 
   } catch (error) {
-    console.error("Pickup error:", error.message);
+    console.error("Pickup error:", error);
     res.status(500).json({
       success: false,
-      message: "Pickup failed"
+      message: error.message
     });
   }
 });
 
-/* ================= DROP STUDENT ================= */
+/* ================= DROP ================= */
 router.put("/:id/drop", async (req, res) => {
   try {
     const { driverId } = req.body;
@@ -96,7 +97,7 @@ router.put("/:id/drop", async (req, res) => {
     const student = await Student.findOneAndUpdate(
       {
         _id: req.params.id,
-        driver: driverId,
+        driverId: driverId, // ✅ FIXED
         status: "onboard"
       },
       { status: "dropped" },
@@ -112,15 +113,14 @@ router.put("/:id/drop", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Student dropped",
       student
     });
 
   } catch (error) {
-    console.error("Drop error:", error.message);
+    console.error("Drop error:", error);
     res.status(500).json({
       success: false,
-      message: "Drop failed"
+      message: error.message
     });
   }
 });
@@ -131,14 +131,14 @@ router.post("/end", async (req, res) => {
     const { driverId } = req.body;
 
     const trip = await Trip.findOne({
-      driver: driverId,
+      driverId: driverId, // ✅ FIXED
       status: "active"
     }).sort({ createdAt: -1 });
 
     if (!trip) {
       return res.status(404).json({
         success: false,
-        message: "No active trip found"
+        message: "No active trip"
       });
     }
 
@@ -152,15 +152,14 @@ router.post("/end", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Trip ended successfully",
       trip
     });
 
   } catch (error) {
-    console.error("End trip error:", error.message);
+    console.error("🔥 End trip error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to end trip"
+      message: error.message
     });
   }
 });
