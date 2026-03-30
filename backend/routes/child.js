@@ -10,18 +10,6 @@ router.post("/add", async (req, res) => {
       name,
       age,
       school,
-      grade,import express from "express";
-import Child from "../models/Child.js";
-
-const router = express.Router();
-
-/* ================= ADD CHILD ================= */
-router.post("/add", async (req, res) => {
-  try {
-    const {
-      name,
-      age,
-      school,
       grade,
       pickupTime,
       dropoffTime,
@@ -31,7 +19,6 @@ router.post("/add", async (req, res) => {
       driverId
     } = req.body;
 
-    // ✅ VALIDATION
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
@@ -50,7 +37,7 @@ router.post("/add", async (req, res) => {
       dropoffLocation,
       parentId,
       driverId,
-      status: "waiting", // ✅ IMPORTANT DEFAULT
+      status: "waiting",
     });
 
     res.status(201).json({
@@ -60,7 +47,6 @@ router.post("/add", async (req, res) => {
 
   } catch (err) {
     console.error("Add child error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Failed to add child",
@@ -82,7 +68,6 @@ router.get("/parent/:parentId", async (req, res) => {
 
   } catch (err) {
     console.error("Fetch parent children error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch children",
@@ -104,7 +89,6 @@ router.get("/driver/:driverId", async (req, res) => {
 
   } catch (err) {
     console.error("Fetch driver children error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch children",
@@ -135,7 +119,6 @@ router.put("/:id/pickup", async (req, res) => {
 
   } catch (err) {
     console.error("Pickup error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Pickup failed",
@@ -166,7 +149,6 @@ router.put("/:id/drop", async (req, res) => {
 
   } catch (err) {
     console.error("Drop error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Drop failed",
@@ -194,118 +176,9 @@ router.delete("/:id", async (req, res) => {
 
   } catch (err) {
     console.error("Delete error:", err.message);
-
     res.status(500).json({
       success: false,
       message: "Delete failed",
-    });
-  }
-});
-
-export default router;
-      pickupTime,
-      dropoffTime,
-      pickupLocation,
-      dropoffLocation,
-      parentId,
-      driverId
-    } = req.body;
-
-    if (!name || !parentId || !driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields",
-      });
-    }
-
-    const child = await Child.create({
-      name,
-      age,
-      school,
-      grade,
-      pickupTime,
-      dropoffTime,
-      pickupLocation,
-      dropoffLocation,
-      parentId,
-      driverId,
-    });
-
-    res.json({
-      success: true,
-      data: child,
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-});
-
-/* ================= GET BY PARENT ================= */
-router.get("/parent/:parentId", async (req, res) => {
-  try {
-    const children = await Child.find({
-      parentId: req.params.parentId,
-    });
-
-    res.json({
-      success: true,
-      data: children,
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-});
-
-/* ================= GET BY DRIVER ================= */
-router.get("/driver/:driverId", async (req, res) => {
-  try {
-    const children = await Child.find({
-      driverId: req.params.driverId,
-    });
-
-    res.json({
-      success: true,
-      data: children,
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-});
-
-/* ================= DELETE CHILD ================= */
-router.delete("/:id", async (req, res) => {
-  try {
-    const deletedChild = await Child.findByIdAndDelete(req.params.id);
-
-    if (!deletedChild) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Child deleted successfully",
-      data: deletedChild,
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
     });
   }
 });
