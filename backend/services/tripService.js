@@ -50,33 +50,37 @@ export const startTripService = async (driverId, tripType, io) => {
 /* ================= END TRIP ================= */
 export const endTripService = async (driverId, io) => {
   try {
-    const trip = await Trips.findOne({
-      driver: driverId,
+    console.log("Ending trip for:", driverId); // debug
+
+    const trip = await Trip.findOne({
+      driverId: driverId, // ✅ FIXED
       status: "active"
-    });
+    }).sort({ createdAt: -1 });
 
-    if (!trip) throw new Error("Active trip not found");
+    if (!trip) {
+      throw new Error("No active trip found");
+    }
 
-    trip.status = "completed";
     trip.endTime = new Date();
+    trip.duration = Math.round(
+      (trip.endTime - trip.startTime) / 60000
+    );
+    trip.status = "completed";
 
     await trip.save();
 
-    const driver = await Driver.findById(driverId);
-
-    /* 🔔 Notification */
-    await sendNotification({
-      driverId,
-      title: "Trip Completed",
-      message: "Your trip has been completed successfully",
-      fcmToken: driver?.fcmToken,
-      io
-    });
+    // 🔔 optional realtime update
+    if (io) {
+      io.to(driverId).emit("trip_ended", {
+        message: "Trip completed"
+      });
+    }
 
     return trip;
 
   } catch (error) {
-    throw new Error(error.message);
+    console.error("🔥 endTripService error:", error);
+    throw error;
   }
 };
 
