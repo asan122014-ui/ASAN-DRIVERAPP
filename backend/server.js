@@ -17,10 +17,8 @@ import adminRoutes from "./routes/adminRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import childRoutes from "./routes/child.js";
 
-
 /* ================= INIT ================= */
 dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
@@ -30,6 +28,17 @@ app.use(cors());
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+/* ================= ROUTES ================= */
+app.use("/api/auth", authRoutes);
+app.use("/api/otp", otpRoutes);
+app.use("/api/parent", parentRoutes);
+app.use("/api/driver", driverRoutes);
+app.use("/api/trip", tripRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/students", studentRoutes);
+app.use("/api/location", locationRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/children", childRoutes);
 
 /* ================= SOCKET ================= */
@@ -45,35 +54,57 @@ app.set("io", io);
 io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
-  socket.on("driver_join", (driverId) => {
-    if (driverId) socket.join(`driver_${driverId}`);
-  });
-
-  socket.on("join_parent", (parentId) => {
-    if (parentId) socket.join(`parent_${parentId}`);
-  });
-
-  socket.on("driver_location", (data) => {
-    if (data?.driverId) {
-      io.to(`driver_${data.driverId}`).emit("live_location", data);
+  /* ===== DRIVER JOIN ===== */
+  socket.on("join_driver_room", (driverId) => {
+    if (driverId) {
+      socket.join(driverId);
+      console.log("🚐 Driver joined:", driverId);
     }
+  });
+
+  /* ===== PARENT JOIN ===== */
+  socket.on("join_parent", (parentId) => {
+    if (parentId) {
+      socket.join(parentId);
+      console.log("👨‍👩‍👧 Parent joined:", parentId);
+    }
+  });
+
+  /* ===== LIVE LOCATION FROM DRIVER ===== */
+  socket.on("send_location", (data) => {
+    const { driverId, lat, lng } = data;
+
+    if (!driverId || !lat || !lng) return;
+
+    // ✅ send to all parents tracking this driver
+    io.to(driverId).emit("live_location", {
+      lat,
+      lng,
+    });
+
+    console.log("📍 Location:", driverId, lat, lng);
+  });
+
+  /* ===== OPTIONAL: PICKUP EVENT ===== */
+  socket.on("child_picked", ({ childId }) => {
+    io.emit("notification", {
+      title: "Pickup",
+      message: "Child has been picked up",
+    });
+  });
+
+  /* ===== OPTIONAL: DROP EVENT ===== */
+  socket.on("child_dropped", ({ childId }) => {
+    io.emit("notification", {
+      title: "Drop",
+      message: "Child has been dropped",
+    });
   });
 
   socket.on("disconnect", () => {
     console.log("❌ Socket disconnected:", socket.id);
   });
 });
-
-/* ================= ROUTES ================= */
-app.use("/api/auth", authRoutes);
-app.use("/api/otp", otpRoutes);
-app.use("/api/parent", parentRoutes);
-app.use("/api/driver", driverRoutes);
-app.use("/api/trip", tripRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/location", locationRoutes);
-app.use("/api/admin", adminRoutes);
 
 /* ================= HEALTH ================= */
 app.get("/api/health", (req, res) => {
@@ -100,7 +131,7 @@ app.use((req, res) => {
   });
 });
 
-/* ================= START SERVER ONLY AFTER DB ================= */
+/* ================= START SERVER ================= */
 const PORT = process.env.PORT || 5000;
 
 connectDB()
@@ -111,5 +142,5 @@ connectDB()
   })
   .catch((err) => {
     console.error("❌ DB CONNECTION FAILED:", err);
-    process.exit(1); // 🔥 force crash (prevents broken server)
+    process.exit(1);
   });
