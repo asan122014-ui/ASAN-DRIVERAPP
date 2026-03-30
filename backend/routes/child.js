@@ -58,4 +58,32 @@ router.get("/driver/:driverId", async (req, res) => {
   }
 });
 
+// ================= DELETE CHILD =================
+router.delete("/:id", async (req, res) => {
+  try {
+    const childId = req.params.id;
+
+    const deletedChild = await Child.findByIdAndDelete(childId);
+
+    if (!deletedChild) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Child deleted successfully",
+      data: deletedChild,
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
+
 export default router;
