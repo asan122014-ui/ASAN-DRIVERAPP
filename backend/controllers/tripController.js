@@ -5,8 +5,6 @@ import {
   getActiveTripService
 } from "../services/tripService.js";
 
-import mongoose from "mongoose";
-
 /* ================= START TRIP ================= */
 export const startTrip = async (req, res) => {
   try {
@@ -19,12 +17,7 @@ export const startTrip = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(driverId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Driver ID"
-      });
-    }
+    // ❌ REMOVED ObjectId check
 
     const trip = await startTripService(
       driverId,
@@ -38,8 +31,7 @@ export const startTrip = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Start trip error:", error);
-
+    console.error("🔥 Start trip error:", error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -70,8 +62,7 @@ export const endTrip = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("End trip error:", error);
-
+    console.error("🔥 End trip error:", error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -91,12 +82,7 @@ export const getActiveTrip = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(driverId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Driver ID"
-      });
-    }
+    // ❌ REMOVED ObjectId check
 
     const trip = await getActiveTripService(driverId);
 
@@ -106,11 +92,10 @@ export const getActiveTrip = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Active trip error:", error);
-
+    console.error("🔥 Active trip error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch active trip"
+      message: error.message
     });
   }
 };
@@ -127,12 +112,7 @@ export const getTripHistory = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(driverId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Driver ID"
-      });
-    }
+    // ❌ REMOVED ObjectId check
 
     const trips = await getDriverTripsService(driverId);
 
@@ -142,11 +122,10 @@ export const getTripHistory = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Trip history error:", error);
-
+    console.error("🔥 Trip history error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch trips"
+      message: error.message
     });
   }
 };
