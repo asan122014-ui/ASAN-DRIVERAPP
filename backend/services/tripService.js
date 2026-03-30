@@ -8,40 +8,53 @@ export const startTripService = async (driverId, tripType, io) => {
   try {
     console.log("🚀 Starting trip:", driverId);
 
+    // ✅ Find driver using driverId string
     const driver = await Driver.findOne({ driverId });
     if (!driver) throw new Error("Driver not found");
 
-    // Check existing active trip
+    // ✅ Prevent duplicate active trip
     const existingTrip = await Trips.findOne({
       driverId,
       status: "active"
     });
 
-    if (existingTrip) return existingTrip;
+    if (existingTrip) {
+      console.log("⚠️ Existing trip found");
+      return existingTrip;
+    }
 
-    // Get students assigned to driver
+    // ✅ FIXED: use driverId (NOT driver)
     const students = await Students.find({
-      driver: driverId
+      driverId: driverId
     }).select("_id");
 
-    // Create trip
+    // ✅ Create trip
     const trip = await Trips.create({
       driverId,
       tripType,
       status: "active",
-      students: students.map(s => s._id),
+      students: students.map((s) => s._id),
       totalStudents: students.length,
       startTime: new Date()
     });
 
-    // Notification
-    await sendNotification({
-      driverId,
-      title: "Trip Started",
-      message: `${tripType} trip started`,
-      fcmToken: driver.fcmToken,
-      io
-    });
+    // ✅ Notification (safe)
+    try {
+      await sendNotification({
+        driverId,
+        title: "Trip Started",
+        message: `${tripType} trip started`,
+        fcmToken: driver.fcmToken,
+        io
+      });
+    } catch (err) {
+      console.warn("⚠️ Notification failed:", err.message);
+    }
+
+    // ✅ Socket emit
+    if (io) {
+      io.to(`driver_${driverId}`).emit("trip_started", trip);
+    }
 
     console.log("✅ Trip created:", trip._id);
 
@@ -68,7 +81,7 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    // Safe duration calc
+    // ✅ Safe time handling
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
@@ -84,9 +97,9 @@ export const endTripService = async (driverId, io) => {
 
     console.log("✅ Trip ended:", trip._id);
 
-    // realtime event
+    // ✅ Socket emit (fixed room name)
     if (io) {
-      io.to(driverId).emit("trip_ended", {
+      io.to(`driver_${driverId}`).emit("trip_ended", {
         message: "Trip completed"
       });
     }
@@ -108,7 +121,6 @@ export const getActiveTripService = async (driverId) => {
     })
       .populate("students")
       .lean();
-
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -118,12 +130,9 @@ export const getActiveTripService = async (driverId) => {
 /* ================= DRIVER TRIPS ================= */
 export const getDriverTripsService = async (driverId) => {
   try {
-    return await Trips.find({
-      driverId
-    })
+    return await Trips.find({ driverId })
       .sort({ createdAt: -1 })
       .lean();
-
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
     throw error;
