@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const tripSchema = new mongoose.Schema(
   {
-    driver: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
+    // ✅ FIXED: use STRING instead of ObjectId
+    driverId: {
+      type: String,
       required: true,
       index: true
     },
@@ -56,11 +56,9 @@ const tripSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
-// Fast queries for active trip per driver
-tripSchema.index({ driver: 1, status: 1 });
-
-// Optional: history sorting
-tripSchema.index({ driver: 1, createdAt: -1 });
+// ✅ updated indexes
+tripSchema.index({ driverId: 1, status: 1 });
+tripSchema.index({ driverId: 1, createdAt: -1 });
 
 const Trips = mongoose.model("Trips", tripSchema);
 
