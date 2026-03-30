@@ -3,11 +3,21 @@ import Child from "../models/Child.js";
 
 const router = express.Router();
 
-
-// ================= ADD CHILD =================
+/* ================= ADD CHILD ================= */
 router.post("/add", async (req, res) => {
   try {
-    const { name, age, school, parentId, driverId } = req.body;
+    const {
+      name,
+      age,
+      school,
+      grade,
+      pickupTime,
+      dropoffTime,
+      pickupLocation,
+      dropoffLocation,
+      parentId,
+      driverId
+    } = req.body;
 
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
@@ -20,50 +30,72 @@ router.post("/add", async (req, res) => {
       name,
       age,
       school,
+      grade,
+      pickupTime,
+      dropoffTime,
+      pickupLocation,
+      dropoffLocation,
       parentId,
       driverId,
     });
 
-    res.json({ success: true, data: child });
+    res.json({
+      success: true,
+      data: child,
+    });
+
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 });
 
-
-// ================= GET BY PARENT =================
+/* ================= GET BY PARENT ================= */
 router.get("/parent/:parentId", async (req, res) => {
   try {
     const children = await Child.find({
       parentId: req.params.parentId,
     });
 
-    res.json({ success: true, data: children });
+    res.json({
+      success: true,
+      data: children,
+    });
+
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 });
 
-
-// ================= GET BY DRIVER =================
+/* ================= GET BY DRIVER ================= */
 router.get("/driver/:driverId", async (req, res) => {
   try {
     const children = await Child.find({
       driverId: req.params.driverId,
     });
 
-    res.json({ success: true, data: children });
+    res.json({
+      success: true,
+      data: children,
+    });
+
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 });
 
-// ================= DELETE CHILD =================
+/* ================= DELETE CHILD ================= */
 router.delete("/:id", async (req, res) => {
   try {
-    const childId = req.params.id;
-
-    const deletedChild = await Child.findByIdAndDelete(childId);
+    const deletedChild = await Child.findByIdAndDelete(req.params.id);
 
     if (!deletedChild) {
       return res.status(404).json({
