@@ -1,5 +1,5 @@
 import Trips from "../models/Trips.js";
-import Students from "../models/Students.js";
+import Child from "../models/Child.js"; // ✅ FIXED
 import Driver from "../models/Driver.js";
 import { sendNotification } from "../utils/sendNotification.js";
 
@@ -8,37 +8,41 @@ export const startTripService = async (driverId, tripType, io) => {
   try {
     console.log("🚀 Starting trip:", driverId);
 
-    // ✅ Find driver using driverId string
+    /* ✅ FIND DRIVER */
     const driver = await Driver.findOne({ driverId });
     if (!driver) throw new Error("Driver not found");
 
-    // ✅ Prevent duplicate active trip
+    /* ✅ PREVENT MULTIPLE ACTIVE TRIPS */
     const existingTrip = await Trips.findOne({
       driverId,
       status: "active"
     });
 
     if (existingTrip) {
-      console.log("⚠️ Existing trip found");
+      console.log("⚠️ Existing active trip found");
       return existingTrip;
     }
 
-    // ✅ FIXED: use driverId (NOT driver)
-    const students = await Students.find({
-      driverId: driverId
-    }).select("_id");
+    /* ✅ FETCH CHILDREN (IMPORTANT FIX) */
+    const children = await Child.find({ driverId }).select("_id");
 
-    // ✅ Create trip
+    /* ✅ CREATE TRIP */
     const trip = await Trips.create({
       driverId,
       tripType,
       status: "active",
-      students: students.map((s) => s._id),
-      totalStudents: students.length,
+      students: children.map((c) => c._id),
+      totalStudents: children.length,
       startTime: new Date()
     });
 
-    // ✅ Notification (safe)
+    /* ✅ OPTIONAL: RESET CHILD STATUS AT START */
+    await Child.updateMany(
+      { driverId },
+      { status: "waiting" }
+    );
+
+    /* ✅ SEND NOTIFICATION */
     try {
       await sendNotification({
         driverId,
@@ -51,13 +55,12 @@ export const startTripService = async (driverId, tripType, io) => {
       console.warn("⚠️ Notification failed:", err.message);
     }
 
-    // ✅ Socket emit
+    /* ✅ SOCKET */
     if (io) {
-      io.to(`driver_${driverId}`).emit("trip_started", trip);
+      io.to(driverId).emit("trip_started", trip);
     }
 
     console.log("✅ Trip created:", trip._id);
-
     return trip;
 
   } catch (error) {
@@ -81,7 +84,7 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    // ✅ Safe time handling
+    /* ✅ SAFE TIME */
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
@@ -89,7 +92,11 @@ export const endTripService = async (driverId, io) => {
     trip.endTime = new Date();
 
     const durationMs = trip.endTime - trip.startTime;
-    trip.duration = Math.max(1, Math.round(durationMs / 60000));
+
+    trip.duration = Math.max(
+      1,
+      Math.round(durationMs / 60000)
+    );
 
     trip.status = "completed";
 
@@ -97,9 +104,16 @@ export const endTripService = async (driverId, io) => {
 
     console.log("✅ Trip ended:", trip._id);
 
-    // ✅ Socket emit (fixed room name)
+    /* 🔥 MOST IMPORTANT FIX */
+    /* RESET ALL CHILDREN AFTER TRIP */
+    await Child.updateMany(
+      { driverId },
+      { status: "waiting" }
+    );
+
+    /* ✅ SOCKET */
     if (io) {
-      io.to(`driver_${driverId}`).emit("trip_ended", {
+      io.to(driverId).emit("trip_ended", {
         message: "Trip completed"
       });
     }
@@ -121,6 +135,7 @@ export const getActiveTripService = async (driverId) => {
     })
       .populate("students")
       .lean();
+
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -133,6 +148,7 @@ export const getDriverTripsService = async (driverId) => {
     return await Trips.find({ driverId })
       .sort({ createdAt: -1 })
       .lean();
+
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
     throw error;
