@@ -43,21 +43,39 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
+    /* 🔥 MOST IMPORTANT FIELD (FOR DRIVER FLOW) */
+    status: {
+      type: String,
+      enum: ["waiting", "onboard", "dropped"],
+      default: "waiting",
+      index: true,
+    },
+
+    /* 🔥 OPTIONAL (FUTURE MAP SUPPORT) */
+    location: {
+      lat: { type: Number },
+      lng: { type: Number },
+    },
+
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
       required: true,
+      index: true,
     },
 
     driverId: {
       type: String,
       required: true,
-      index: true, // 🔥 faster queries for driver
+      index: true,
     },
   },
   {
     timestamps: true,
   }
 );
+
+/* 🔥 COMPOUND INDEX (VERY FAST DRIVER DASHBOARD) */
+childSchema.index({ driverId: 1, status: 1 });
 
 export default mongoose.model("Child", childSchema);
