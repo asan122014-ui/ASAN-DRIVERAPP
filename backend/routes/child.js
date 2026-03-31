@@ -13,15 +13,17 @@ router.post("/add", async (req, res) => {
       grade,
       pickupTime,
       dropoffTime,
-      eveningPickup,      // ✅ NEW
-      eveningDrop,        // ✅ NEW
+      eveningPickup,
+      eveningDrop,
       pickupLocation,
       dropoffLocation,
+      location,              // ✅ NEW (pickup coords)
+      dropLocationCoords,    // ✅ NEW (drop coords)
       parentId,
       driverId
     } = req.body;
 
-    // ✅ VALIDATION
+    /* ================= VALIDATION ================= */
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
@@ -29,17 +31,32 @@ router.post("/add", async (req, res) => {
       });
     }
 
+    /* ================= CREATE ================= */
     const child = await Child.create({
       name,
       age,
       school,
       grade,
+
       pickupTime,
       dropoffTime,
-      eveningPickup,     // ✅ SAVE
-      eveningDrop,       // ✅ SAVE
+      eveningPickup,
+      eveningDrop,
+
       pickupLocation,
       dropoffLocation,
+
+      // ✅ STORE COORDINATES FOR MAP
+      location: {
+        lat: location?.lat || null,
+        lng: location?.lng || null,
+      },
+
+      dropLocationCoords: {
+        lat: dropLocationCoords?.lat || null,
+        lng: dropLocationCoords?.lng || null,
+      },
+
       parentId,
       driverId,
       status: "waiting",
@@ -58,6 +75,7 @@ router.post("/add", async (req, res) => {
     });
   }
 });
+
 /* ================= GET BY PARENT ================= */
 router.get("/parent/:parentId", async (req, res) => {
   try {
@@ -160,6 +178,59 @@ router.put("/:id/drop", async (req, res) => {
   }
 });
 
+/* ================= UPDATE CHILD ================= */
+router.put("/:id", async (req, res) => {
+  try {
+    const {
+      location,
+      dropLocationCoords,
+      ...rest
+    } = req.body;
+
+    const updated = await Child.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...rest,
+
+        // ✅ update coords properly
+        ...(location && {
+          location: {
+            lat: location.lat,
+            lng: location.lng,
+          },
+        }),
+
+        ...(dropLocationCoords && {
+          dropLocationCoords: {
+            lat: dropLocationCoords.lat,
+            lng: dropLocationCoords.lng,
+          },
+        }),
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: updated,
+    });
+
+  } catch (err) {
+    console.error("Update error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Update failed",
+    });
+  }
+});
+
 /* ================= DELETE CHILD ================= */
 router.delete("/:id", async (req, res) => {
   try {
@@ -183,35 +254,6 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Delete failed",
-    });
-  }
-});
-/* ================= UPDATE CHILD ================= */
-router.put("/:id", async (req, res) => {
-  try {
-    const updated = await Child.findByIdAndUpdate(
-      req.params.id,
-      req.body, // ✅ includes new fields automatically
-      { new: true }
-    );
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: updated,
-    });
-
-  } catch (err) {
-    console.error("Update error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Update failed",
     });
   }
 });
