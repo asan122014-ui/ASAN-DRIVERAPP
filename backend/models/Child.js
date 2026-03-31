@@ -23,6 +23,7 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
+    /* ================= MORNING ================= */
     pickupTime: {
       type: String,
       default: "",
@@ -33,8 +34,20 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
-    pickupLocation: {
+    /* ================= EVENING ================= */
+    eveningPickup: {
       type: String,
+      default: "",
+    },
+
+    eveningDrop: {
+      type: String,
+      default: "",
+    },
+
+    /* ================= LOCATIONS ================= */
+    pickupLocation: {
+      type: String, // now stores address (not lat/lng)
       default: "",
     },
 
@@ -43,7 +56,13 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* 🔥 MOST IMPORTANT FIELD (FOR DRIVER FLOW) */
+    /* OPTIONAL: keep coordinates if needed later */
+    location: {
+      lat: { type: Number },
+      lng: { type: Number },
+    },
+
+    /* ================= STATUS ================= */
     status: {
       type: String,
       enum: ["waiting", "onboard", "dropped"],
@@ -51,12 +70,7 @@ const childSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* 🔥 OPTIONAL (FUTURE MAP SUPPORT) */
-    location: {
-      lat: { type: Number },
-      lng: { type: Number },
-    },
-
+    /* ================= RELATIONS ================= */
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -75,7 +89,12 @@ const childSchema = new mongoose.Schema(
   }
 );
 
-/* 🔥 COMPOUND INDEX (VERY FAST DRIVER DASHBOARD) */
+/* ================= INDEXES ================= */
+
+// Fast driver dashboard queries
 childSchema.index({ driverId: 1, status: 1 });
+
+// Optional: faster parent queries
+childSchema.index({ parentId: 1 });
 
 export default mongoose.model("Child", childSchema);
