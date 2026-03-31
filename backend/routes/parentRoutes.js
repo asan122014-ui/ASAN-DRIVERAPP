@@ -16,34 +16,43 @@ router.post("/register", async (req, res) => {
     // ✅ VALIDATION
     if (!name || !email || !password || !phone) {
       return res.status(400).json({
-        message: "All fields are required"
+        message: "All fields are required",
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     // ✅ CHECK EXISTING USER
     const existing = await Parent.findOne({
-      $or: [{ email }, { phone }]
+      $or: [{ email: normalizedEmail }, { phone }],
     });
 
     if (existing) {
       return res.status(400).json({
-        message: "User already exists"
+        message: "User already exists",
       });
     }
 
-    // ✅ CREATE USER (IMPORTANT: use save)
+    // ✅ HASH PASSWORD (🔥 FIX)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // ✅ CREATE USER
     const parent = new Parent({
       name,
-      email,
-      password,
-      phone
+      email: normalizedEmail,
+      phone,
+      password: hashedPassword, // ✅ FIXED
     });
 
     await parent.save();
 
+    // ✅ REMOVE PASSWORD FROM RESPONSE
+    parent.password = undefined;
+
     res.status(201).json({
       success: true,
-      data: { parent }
+      data: { parent },
     });
 
   } catch (err) {
@@ -51,12 +60,12 @@ router.post("/register", async (req, res) => {
 
     if (err.code === 11000) {
       return res.status(400).json({
-        message: "Duplicate email or phone"
+        message: "Duplicate email or phone",
       });
     }
 
     res.status(500).json({
-      message: err.message || "Signup failed"
+      message: err.message || "Signup failed",
     });
   }
 });
@@ -66,36 +75,46 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // ✅ include password explicitly
-    const parent = await Parent.findOne({ email }).select("+password");
-
-    if (!parent) {
+    // ✅ VALIDATION
+    if (!email || !password) {
       return res.status(400).json({
-        message: "Invalid credentials"
+        message: "Email and password are required",
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // ✅ FIND USER
+    const parent = await Parent.findOne({ email: normalizedEmail }).select("+password");
+
+    if (!parent) {
+      return res.status(400).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    // ✅ CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, parent.password);
 
     if (!isMatch) {
       return res.status(400).json({
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
-    // ✅ remove password before sending
+    // ✅ REMOVE PASSWORD
     parent.password = undefined;
 
     res.json({
       success: true,
-      data: { parent }
+      data: { parent },
     });
 
   } catch (err) {
     console.error("LOGIN ERROR:", err);
 
     res.status(500).json({
-      message: "Login failed"
+      message: "Login failed",
     });
   }
 });
@@ -105,11 +124,13 @@ router.post("/check-email", async (req, res) => {
   try {
     const { email } = req.body;
 
-    const parent = await Parent.findOne({ email });
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    });
 
     if (!parent) {
       return res.status(404).json({
-        message: "Email not found"
+        message: "Email not found",
       });
     }
 
@@ -117,7 +138,7 @@ router.post("/check-email", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({
-      message: "Server error"
+      message: "Server error",
     });
   }
 });
@@ -127,11 +148,13 @@ router.post("/reset-password", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const parent = await Parent.findOne({ email });
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    });
 
     if (!parent) {
       return res.status(404).json({
-        message: "User not found"
+        message: "User not found",
       });
     }
 
@@ -142,14 +165,14 @@ router.post("/reset-password", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Password updated"
+      message: "Password updated",
     });
 
   } catch (err) {
     console.error("RESET ERROR:", err);
 
     res.status(500).json({
-      message: "Server error"
+      message: "Server error",
     });
   }
 });
@@ -164,14 +187,14 @@ router.get("/dashboard/:parentId", async (req, res) => {
 
     res.json({
       success: true,
-      data: trips
+      data: trips,
     });
 
   } catch (err) {
     console.error("DASHBOARD ERROR:", err);
 
     res.status(500).json({
-      message: "Failed to fetch dashboard"
+      message: "Failed to fetch dashboard",
     });
   }
 });
@@ -181,11 +204,17 @@ router.post("/link-driver", async (req, res) => {
   try {
     const { parentId, driverId } = req.body;
 
+    if (!parentId || !driverId) {
+      return res.status(400).json({
+        message: "parentId and driverId required",
+      });
+    }
+
     const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
       return res.status(404).json({
-        message: "Driver not found"
+        message: "Driver not found",
       });
     }
 
@@ -193,14 +222,14 @@ router.post("/link-driver", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Driver linked"
+      message: "Driver linked",
     });
 
   } catch (err) {
     console.error("LINK DRIVER ERROR:", err);
 
     res.status(500).json({
-      message: "Linking failed"
+      message: "Linking failed",
     });
   }
 });
