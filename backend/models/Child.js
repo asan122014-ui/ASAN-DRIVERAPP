@@ -24,6 +24,7 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= MORNING ================= */
+
     pickupTime: {
       type: String,
       default: "",
@@ -35,6 +36,7 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= EVENING ================= */
+
     eveningPickup: {
       type: String,
       default: "",
@@ -46,8 +48,9 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= LOCATIONS ================= */
+
     pickupLocation: {
-      type: String, // now stores address (not lat/lng)
+      type: String, // address (UI)
       default: "",
     },
 
@@ -56,13 +59,22 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* OPTIONAL: keep coordinates if needed later */
+    /* ================= COORDINATES ================= */
+
+    // ✅ Pickup coordinates (USED FOR ROUTING)
     location: {
-      lat: { type: Number },
-      lng: { type: Number },
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+    },
+
+    // ✅ ADD THIS (IMPORTANT FOR DROP ROUTING)
+    dropLocationCoords: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
     },
 
     /* ================= STATUS ================= */
+
     status: {
       type: String,
       enum: ["waiting", "onboard", "dropped"],
@@ -71,6 +83,7 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= RELATIONS ================= */
+
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -91,10 +104,10 @@ const childSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
-// Fast driver dashboard queries
+// 🔥 Fast driver dashboard
 childSchema.index({ driverId: 1, status: 1 });
 
-// Optional: faster parent queries
+// 🔥 Fast parent queries
 childSchema.index({ parentId: 1 });
 
 export default mongoose.model("Child", childSchema);
