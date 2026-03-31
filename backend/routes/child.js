@@ -13,12 +13,15 @@ router.post("/add", async (req, res) => {
       grade,
       pickupTime,
       dropoffTime,
+      eveningPickup,      // ✅ NEW
+      eveningDrop,        // ✅ NEW
       pickupLocation,
       dropoffLocation,
       parentId,
       driverId
     } = req.body;
 
+    // ✅ VALIDATION
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
@@ -33,6 +36,8 @@ router.post("/add", async (req, res) => {
       grade,
       pickupTime,
       dropoffTime,
+      eveningPickup,     // ✅ SAVE
+      eveningDrop,       // ✅ SAVE
       pickupLocation,
       dropoffLocation,
       parentId,
@@ -53,7 +58,6 @@ router.post("/add", async (req, res) => {
     });
   }
 });
-
 /* ================= GET BY PARENT ================= */
 router.get("/parent/:parentId", async (req, res) => {
   try {
@@ -179,6 +183,35 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Delete failed",
+    });
+  }
+});
+/* ================= UPDATE CHILD ================= */
+router.put("/:id", async (req, res) => {
+  try {
+    const updated = await Child.findByIdAndUpdate(
+      req.params.id,
+      req.body, // ✅ includes new fields automatically
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: updated,
+    });
+
+  } catch (err) {
+    console.error("Update error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Update failed",
     });
   }
 });
