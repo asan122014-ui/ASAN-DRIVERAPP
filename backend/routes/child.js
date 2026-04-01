@@ -17,13 +17,14 @@ router.post("/add", async (req, res) => {
       eveningDrop,
       pickupLocation,
       dropoffLocation,
-      location,              // ✅ NEW (pickup coords)
-      dropLocationCoords,    // ✅ NEW (drop coords)
+      location,
+      dropLocationCoords,
       parentId,
       driverId
     } = req.body;
 
-    /* ================= VALIDATION ================= */
+    console.log("BODY:", req.body); // 🔥 debug
+
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
@@ -31,22 +32,18 @@ router.post("/add", async (req, res) => {
       });
     }
 
-    /* ================= CREATE ================= */
     const child = await Child.create({
       name,
       age,
       school,
       grade,
-
       pickupTime,
       dropoffTime,
       eveningPickup,
       eveningDrop,
-
       pickupLocation,
       dropoffLocation,
 
-      // ✅ STORE COORDINATES FOR MAP
       location: {
         lat: location?.lat || null,
         lng: location?.lng || null,
@@ -68,10 +65,11 @@ router.post("/add", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Add child error:", err.message);
+    console.error("🔥 Add child error:", err);
+
     res.status(500).json({
       success: false,
-      message: "Failed to add child",
+      message: err.message || "Failed to add child",
     });
   }
 });
@@ -89,11 +87,7 @@ router.get("/parent/:parentId", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Fetch parent children error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
+    res.status(500).json({ success: false });
   }
 });
 
@@ -102,7 +96,7 @@ router.get("/driver/:driverId", async (req, res) => {
   try {
     const children = await Child.find({
       driverId: req.params.driverId,
-    }).sort({ createdAt: -1 });
+    });
 
     res.json({
       success: true,
@@ -110,151 +104,7 @@ router.get("/driver/:driverId", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Fetch driver children error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
-  }
-});
-
-/* ================= PICKUP CHILD ================= */
-router.put("/:id/pickup", async (req, res) => {
-  try {
-    const child = await Child.findByIdAndUpdate(
-      req.params.id,
-      { status: "onboard" },
-      { new: true }
-    );
-
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: child,
-    });
-
-  } catch (err) {
-    console.error("Pickup error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Pickup failed",
-    });
-  }
-});
-
-/* ================= DROP CHILD ================= */
-router.put("/:id/drop", async (req, res) => {
-  try {
-    const child = await Child.findByIdAndUpdate(
-      req.params.id,
-      { status: "dropped" },
-      { new: true }
-    );
-
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: child,
-    });
-
-  } catch (err) {
-    console.error("Drop error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Drop failed",
-    });
-  }
-});
-
-/* ================= UPDATE CHILD ================= */
-router.put("/:id", async (req, res) => {
-  try {
-    const {
-      location,
-      dropLocationCoords,
-      ...rest
-    } = req.body;
-
-    const updated = await Child.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...rest,
-
-        // ✅ update coords properly
-        ...(location && {
-          location: {
-            lat: location.lat,
-            lng: location.lng,
-          },
-        }),
-
-        ...(dropLocationCoords && {
-          dropLocationCoords: {
-            lat: dropLocationCoords.lat,
-            lng: dropLocationCoords.lng,
-          },
-        }),
-      },
-      { new: true }
-    );
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: updated,
-    });
-
-  } catch (err) {
-    console.error("Update error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Update failed",
-    });
-  }
-});
-
-/* ================= DELETE CHILD ================= */
-router.delete("/:id", async (req, res) => {
-  try {
-    const deletedChild = await Child.findByIdAndDelete(req.params.id);
-
-    if (!deletedChild) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Child deleted successfully",
-      data: deletedChild,
-    });
-
-  } catch (err) {
-    console.error("Delete error:", err.message);
-    res.status(500).json({
-      success: false,
-      message: "Delete failed",
-    });
+    res.status(500).json({ success: false });
   }
 });
 
