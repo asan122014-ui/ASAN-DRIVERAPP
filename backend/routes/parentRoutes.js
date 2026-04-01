@@ -114,29 +114,48 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= SAVE FCM TOKEN ================= */
+/* ================= SAVE FCM TOKEN (🔥 UPDATED) ================= */
 router.post("/save-token", async (req, res) => {
   try {
-    const { parentId, token } = req.body;
+    const { parentId, driverId, token } = req.body;
 
-    if (!parentId || !token) {
+    if (!token) {
       return res.status(400).json({
         success: false,
-        message: "parentId and token are required",
+        message: "Token is required",
       });
     }
 
-    const parent = await Parent.findByIdAndUpdate(
-      parentId,
-      { fcmToken: token },
-      { new: true }
-    );
+    // ✅ SAVE FOR PARENT
+    if (parentId) {
+      const parent = await Parent.findByIdAndUpdate(
+        parentId,
+        { fcmToken: token },
+        { new: true }
+      );
 
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
+      if (!parent) {
+        return res.status(404).json({
+          success: false,
+          message: "Parent not found",
+        });
+      }
+    }
+
+    // ✅ SAVE FOR DRIVER
+    if (driverId) {
+      const driver = await Driver.findOneAndUpdate(
+        { driverId },
+        { fcmToken: token },
+        { new: true }
+      );
+
+      if (!driver) {
+        return res.status(404).json({
+          success: false,
+          message: "Driver not found",
+        });
+      }
     }
 
     res.json({
@@ -146,6 +165,7 @@ router.post("/save-token", async (req, res) => {
 
   } catch (err) {
     console.error("SAVE TOKEN ERROR:", err);
+
     res.status(500).json({
       success: false,
       message: "Failed to save token",
