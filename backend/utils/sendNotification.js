@@ -1,12 +1,12 @@
 import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
+import Driver from "../models/Driver.js";
 
 export const sendNotification = async ({
   driverId,
   title,
   message,
-  fcmToken,
   io
 }) => {
   try {
@@ -15,8 +15,6 @@ export const sendNotification = async ({
     if (!driverId || !title || !message) {
       throw new Error("Missing fields");
     }
-
-    console.log("📢 Saving notification:", { driverId, title });
 
     /* ================= SAVE TO DB ================= */
     const notification = await Notification.create({
@@ -28,22 +26,21 @@ export const sendNotification = async ({
 
     console.log("✅ Notification SAVED:", notification._id);
 
+    /* ================= FETCH USERS ================= */
+    const parent = await Parent.findOne({ driverId });
+    const driver = await Driver.findOne({ driverId });
+
     /* ================= SOCKET ================= */
     if (io) {
       const driverRoom = String(driverId);
 
-      // ✅ SEND TO DRIVER
+      // ✅ DRIVER SOCKET
       io.to(driverRoom).emit("new_notification", notification);
 
-      // 🔥 SEND TO PARENT
-      const parent = await Parent.findOne({ driverId });
-
-      if (parent && parent._id) {
+      // ✅ PARENT SOCKET
+      if (parent?._id) {
         const parentRoom = parent._id.toString();
 
-        console.log("📡 Sending to parent:", parentRoom);
-
-        // ✅ IMPORTANT: send FULL notification object (not partial)
         io.to(parentRoom).emit("notification", {
           _id: notification._id,
           title: notification.title,
@@ -51,21 +48,39 @@ export const sendNotification = async ({
           createdAt: notification.createdAt,
           driverId: notification.driver
         });
-      } else {
-        console.log("⚠️ No parent linked to driver:", driverId);
       }
     }
 
+    /* ================= FCM TOKENS ================= */
+    const tokens = [];
+
+    if (parent?.fcmToken) {
+      tokens.push(parent.fcmToken);
+    }
+
+    if (driver?.fcmToken) {
+      tokens.push(driver.fcmToken);
+    }
+
+    console.log("📱 FCM TOKENS:", tokens);
+
     /* ================= FIREBASE ================= */
-    if (fcmToken && admin.apps.length) {
+    if (tokens.length > 0 && admin.apps.length) {
       try {
-        await admin.messaging().send({
+        await admin.messaging().sendEachForMulticast({
+          tokens,
           notification: {
             title,
             body: message
           },
-          token: fcmToken
+          data: {
+            driverId: String(driverId),
+            type: "trip_update"
+          }
         });
+
+        console.log("✅ FCM sent to all devices");
+
       } catch (err) {
         console.error("❌ Firebase error:", err.message);
       }
