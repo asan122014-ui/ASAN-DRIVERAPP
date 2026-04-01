@@ -1,39 +1,46 @@
 import Notification from "../models/Notification.js";
 
-/* ================= GET NOTIFICATIONS (UNREAD ONLY) ================= */
+/* ================= GET UNREAD NOTIFICATIONS (BADGE) ================= */
 /**
  * GET /api/notifications?driverId=XXX OR parentId=XXX
  */
-export const getAllNotifications = async (req, res) => {
+export const getNotifications = async (req, res) => {
   try {
-    const { driverId } = req.params; // ✅ STRICT
+    const { driverId, parentId } = req.query;
 
-    if (!driverId) {
+    if (!driverId && !parentId) {
       return res.status(400).json({
         success: false,
-        message: "driverId is required"
+        message: "driverId or parentId is required",
       });
     }
 
-    const notifications = await Notification.find({
-      driver: driverId
-    }).sort({ createdAt: -1 });
+    let filter = { read: false };
+
+    if (driverId) filter.driver = driverId;
+    if (parentId) filter.parent = parentId;
+
+    const notifications = await Notification.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       success: true,
-      data: notifications
+      count: notifications.length,
+      data: notifications,
     });
 
   } catch (error) {
-    console.error("❌ Get all notifications error:", error);
+    console.error("❌ Get notifications error:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to fetch notifications"
+      message: "Failed to fetch notifications",
     });
   }
 };
-/* ================= GET ALL NOTIFICATIONS ================= */
+
+/* ================= GET ALL NOTIFICATIONS (HISTORY) ================= */
 /**
  * GET /api/notifications/all?driverId=XXX OR parentId=XXX
  */
