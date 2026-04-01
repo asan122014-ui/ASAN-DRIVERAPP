@@ -35,7 +35,7 @@ export const sendNotification = async ({
       // ✅ SEND TO DRIVER
       io.to(driverRoom).emit("new_notification", notification);
 
-      // 🔥 SEND TO PARENT (FIXED + SAFE)
+      // 🔥 SEND TO PARENT
       const parent = await Parent.findOne({ driverId });
 
       if (parent && parent._id) {
@@ -43,11 +43,13 @@ export const sendNotification = async ({
 
         console.log("📡 Sending to parent:", parentRoom);
 
+        // ✅ IMPORTANT: send FULL notification object (not partial)
         io.to(parentRoom).emit("notification", {
-          title,
-          message,
-          driverId, // 🔥 extra (optional for debugging/UI)
-          createdAt: new Date()
+          _id: notification._id,
+          title: notification.title,
+          message: notification.message,
+          createdAt: notification.createdAt,
+          driverId: notification.driver
         });
       } else {
         console.log("⚠️ No parent linked to driver:", driverId);
