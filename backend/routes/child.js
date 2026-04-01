@@ -128,11 +128,7 @@ router.post("/pickup", async (req, res) => {
       });
     }
 
-    const child = await Child.findByIdAndUpdate(
-      childId,
-      { status: "onboard" },
-      { new: true }
-    );
+    const child = await Child.findById(childId);
 
     if (!child) {
       return res.status(404).json({
@@ -140,6 +136,17 @@ router.post("/pickup", async (req, res) => {
         message: "Child not found",
       });
     }
+
+    // ✅ PREVENT DOUBLE PICKUP
+    if (child.status !== "waiting") {
+      return res.status(400).json({
+        success: false,
+        message: "Student already picked or completed",
+      });
+    }
+
+    child.status = "onboard";
+    await child.save();
 
     res.json({
       success: true,
@@ -168,11 +175,7 @@ router.post("/drop", async (req, res) => {
       });
     }
 
-    const child = await Child.findByIdAndUpdate(
-      childId,
-      { status: "dropped" },
-      { new: true }
-    );
+    const child = await Child.findById(childId);
 
     if (!child) {
       return res.status(404).json({
@@ -180,6 +183,17 @@ router.post("/drop", async (req, res) => {
         message: "Child not found",
       });
     }
+
+    // ✅ PREVENT WRONG DROP
+    if (child.status !== "onboard") {
+      return res.status(400).json({
+        success: false,
+        message: "Student not onboard",
+      });
+    }
+
+    child.status = "dropped";
+    await child.save();
 
     res.json({
       success: true,
@@ -192,6 +206,30 @@ router.post("/drop", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Drop failed",
+    });
+  }
+});
+
+/* ================= RESET ALL (END TRIP) ================= */
+router.post("/reset/:driverId", async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    await Child.updateMany(
+      { driverId },
+      { status: "waiting" }
+    );
+
+    res.json({
+      success: true,
+      message: "All students reset to waiting",
+    });
+
+  } catch (err) {
+    console.error("Reset error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Reset failed",
     });
   }
 });
