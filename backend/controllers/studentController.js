@@ -1,9 +1,7 @@
 import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
-
-/* ================= ADD STUDENT ================= */
 import Driver from "../models/Driver.js";
-
+/* ================= ADD STUDENT ================= */
 export const addStudent = async (req, res) => {
   try {
     const {
@@ -29,7 +27,7 @@ export const addStudent = async (req, res) => {
       });
     }
 
-    // 🔥 VERY IMPORTANT FIX (convert driverId → ObjectId)
+    // 🔥 STEP 1: FIND DRIVER USING driverId (STRING)
     const driverDoc = await Driver.findOne({ driverId });
 
     if (!driverDoc) {
@@ -39,6 +37,7 @@ export const addStudent = async (req, res) => {
       });
     }
 
+    // 🔥 STEP 2: SAVE USING ObjectId
     const student = new Students({
       name,
       age,
@@ -46,8 +45,7 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      // ✅ SAVE REAL ObjectId
-      driver: driverDoc._id,
+      driver: driverDoc._id, // ✅ THIS FIXES ERROR
 
       pickupTime,
       dropoffTime,
