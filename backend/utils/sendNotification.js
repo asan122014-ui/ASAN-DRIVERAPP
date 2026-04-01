@@ -18,7 +18,7 @@ export const sendNotification = async ({
 
     console.log("📢 Saving notification:", { driverId, title });
 
-    // ✅ SAVE TO DB
+    /* ================= SAVE TO DB ================= */
     const notification = await Notification.create({
       driver: driverId,
       title,
@@ -29,30 +29,32 @@ export const sendNotification = async ({
     console.log("✅ Notification SAVED:", notification._id);
 
     /* ================= SOCKET ================= */
-
     if (io) {
-      // ✅ DRIVER (UNCHANGED)
-      io.to(String(driverId)).emit("new_notification", notification);
+      const driverRoom = String(driverId);
 
-      // 🔥 FIXED: SEND TO PARENT (STRING ROOM)
+      // ✅ SEND TO DRIVER
+      io.to(driverRoom).emit("new_notification", notification);
+
+      // 🔥 SEND TO PARENT (FIXED + SAFE)
       const parent = await Parent.findOne({ driverId });
 
-      if (parent?._id) {
-        const parentRoom = parent._id.toString(); // ✅ IMPORTANT FIX
+      if (parent && parent._id) {
+        const parentRoom = parent._id.toString();
 
         console.log("📡 Sending to parent:", parentRoom);
 
         io.to(parentRoom).emit("notification", {
           title,
-          message
+          message,
+          driverId, // 🔥 extra (optional for debugging/UI)
+          createdAt: new Date()
         });
       } else {
-        console.log("⚠️ No parent linked to driver");
+        console.log("⚠️ No parent linked to driver:", driverId);
       }
     }
 
     /* ================= FIREBASE ================= */
-
     if (fcmToken && admin.apps.length) {
       try {
         await admin.messaging().send({
