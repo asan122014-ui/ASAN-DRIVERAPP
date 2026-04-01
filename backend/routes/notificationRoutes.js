@@ -6,8 +6,19 @@ import {
 
 const router = express.Router();
 
-/* ================= GET DRIVER NOTIFICATIONS ================= */
+/* ================= GET NOTIFICATIONS ================= */
+/**
+ * 🔥 IMPORTANT:
+ * Use driverId in query → /api/notifications?driverId=ASAN-XXXX
+ */
 router.get("/", getNotifications);
+
+/* ================= GET BY DRIVER (USED IN FRONTEND) ================= */
+/**
+ * 🔥 REQUIRED for your frontend:
+ * /api/notifications/:driverId
+ */
+router.get("/:driverId", getNotifications);
 
 /* ================= MARK AS READ ================= */
 router.put("/:id/read", markAsRead);
