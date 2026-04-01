@@ -1,34 +1,34 @@
 import Notification from "../models/Notification.js";
 
 /* ================= GET NOTIFICATIONS (UNREAD ONLY) ================= */
+/**
+ * GET /api/notifications?driverId=XXX OR parentId=XXX
+ */
 export const getNotifications = async (req, res) => {
   try {
-    // ✅ SUPPORT BOTH PARAMS & QUERY
-    const driverId = req.params.driverId || req.query.driverId;
+    const { driverId, parentId } = req.query;
 
-    console.log("📥 Fetch notifications for:", driverId);
-
-    if (!driverId) {
+    if (!driverId && !parentId) {
       return res.status(400).json({
         success: false,
-        message: "driverId is required"
+        message: "driverId or parentId is required",
       });
     }
 
-    // 🔥 ONLY UNREAD (FOR BADGE)
-    const notifications = await Notification.find({
-      driver: driverId,
-      read: false
-    })
+    // ✅ Dynamic filter
+    let filter = { read: false };
+
+    if (driverId) filter.driver = driverId;
+    if (parentId) filter.parent = parentId;
+
+    const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log("📊 Found unread notifications:", notifications.length);
-
     res.json({
       success: true,
-      count: notifications.length, // ✅ helpful for badge
-      data: notifications
+      count: notifications.length,
+      data: notifications,
     });
 
   } catch (error) {
@@ -36,32 +36,38 @@ export const getNotifications = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Failed to fetch notifications"
+      message: "Failed to fetch notifications",
     });
   }
 };
 
-/* ================= GET ALL NOTIFICATIONS (OPTIONAL HISTORY) ================= */
+/* ================= GET ALL NOTIFICATIONS ================= */
+/**
+ * GET /api/notifications/all?driverId=XXX OR parentId=XXX
+ */
 export const getAllNotifications = async (req, res) => {
   try {
-    const driverId = req.params.driverId || req.query.driverId;
+    const { driverId, parentId } = req.query;
 
-    if (!driverId) {
+    if (!driverId && !parentId) {
       return res.status(400).json({
         success: false,
-        message: "driverId is required"
+        message: "driverId or parentId is required",
       });
     }
 
-    const notifications = await Notification.find({
-      driver: driverId
-    })
+    let filter = {};
+
+    if (driverId) filter.driver = driverId;
+    if (parentId) filter.parent = parentId;
+
+    const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
       .lean();
 
     res.json({
       success: true,
-      data: notifications
+      data: notifications,
     });
 
   } catch (error) {
@@ -69,12 +75,15 @@ export const getAllNotifications = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Failed to fetch notifications"
+      message: "Failed to fetch notifications",
     });
   }
 };
 
 /* ================= MARK SINGLE AS READ ================= */
+/**
+ * PUT /api/notifications/:id/read
+ */
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -88,13 +97,13 @@ export const markAsRead = async (req, res) => {
     if (!updated) {
       return res.status(404).json({
         success: false,
-        message: "Notification not found"
+        message: "Notification not found",
       });
     }
 
     res.json({
       success: true,
-      data: updated
+      data: updated,
     });
 
   } catch (error) {
@@ -102,31 +111,36 @@ export const markAsRead = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Failed to update notification"
+      message: "Failed to update notification",
     });
   }
 };
 
-/* ================= MARK ALL AS READ (🔥 BEST PRACTICE) ================= */
+/* ================= MARK ALL AS READ ================= */
+/**
+ * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX
+ */
 export const markAllAsRead = async (req, res) => {
   try {
-    const driverId = req.params.driverId || req.query.driverId;
+    const { driverId, parentId } = req.query;
 
-    if (!driverId) {
+    if (!driverId && !parentId) {
       return res.status(400).json({
         success: false,
-        message: "driverId is required"
+        message: "driverId or parentId is required",
       });
     }
 
-    await Notification.updateMany(
-      { driver: driverId, read: false },
-      { read: true }
-    );
+    let filter = { read: false };
+
+    if (driverId) filter.driver = driverId;
+    if (parentId) filter.parent = parentId;
+
+    await Notification.updateMany(filter, { read: true });
 
     res.json({
       success: true,
-      message: "All notifications marked as read"
+      message: "All notifications marked as read",
     });
 
   } catch (error) {
@@ -134,7 +148,7 @@ export const markAllAsRead = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Failed to update notifications"
+      message: "Failed to update notifications",
     });
   }
 };
