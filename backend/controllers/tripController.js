@@ -1,3 +1,4 @@
+import Driver from "../models/Driver.js";
 import {
   startTripService,
   endTripService,
@@ -17,12 +18,24 @@ export const startTrip = async (req, res) => {
       });
     }
 
-    // ❌ REMOVED ObjectId check
-
+    // ✅ create trip
     const trip = await startTripService(
       driverId,
       tripType,
       req.app.get("io")
+    );
+
+    // ✅ UPDATE DRIVER STATS (🔥 IMPORTANT FIX)
+    await Driver.findOneAndUpdate(
+      { driverId },
+      {
+        $inc: {
+          totalTrips: 1,
+          todayTrips: 1
+        },
+        currentStatus: "on_trip",
+        isOnline: true
+      }
     );
 
     res.status(201).json({
@@ -38,6 +51,7 @@ export const startTrip = async (req, res) => {
     });
   }
 };
+
 
 /* ================= END TRIP ================= */
 export const endTrip = async (req, res) => {
@@ -56,6 +70,15 @@ export const endTrip = async (req, res) => {
       req.app.get("io")
     );
 
+    // ✅ RESET DRIVER STATUS
+    await Driver.findOneAndUpdate(
+      { driverId },
+      {
+        currentStatus: "idle",
+        isOnline: false
+      }
+    );
+
     res.json({
       success: true,
       data: trip
@@ -70,6 +93,7 @@ export const endTrip = async (req, res) => {
   }
 };
 
+
 /* ================= ACTIVE TRIP ================= */
 export const getActiveTrip = async (req, res) => {
   try {
@@ -81,8 +105,6 @@ export const getActiveTrip = async (req, res) => {
         message: "Driver ID is required"
       });
     }
-
-    // ❌ REMOVED ObjectId check
 
     const trip = await getActiveTripService(driverId);
 
@@ -100,6 +122,7 @@ export const getActiveTrip = async (req, res) => {
   }
 };
 
+
 /* ================= TRIP HISTORY ================= */
 export const getTripHistory = async (req, res) => {
   try {
@@ -111,8 +134,6 @@ export const getTripHistory = async (req, res) => {
         message: "Driver ID is required"
       });
     }
-
-    // ❌ REMOVED ObjectId check
 
     const trips = await getDriverTripsService(driverId);
 
