@@ -29,7 +29,6 @@ router.get("/", async (req, res) => {
 
   } catch (error) {
     console.error("Get all drivers error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch drivers",
@@ -63,7 +62,6 @@ router.get("/search", async (req, res) => {
 
   } catch (error) {
     console.error("Driver search error:", error);
-
     res.status(500).json({
       success: false,
       message: "Search failed",
@@ -71,7 +69,44 @@ router.get("/search", async (req, res) => {
   }
 });
 
-/* ================= DRIVER DASHBOARD (🔥 FIXED) ================= */
+/* ================= GET DRIVER LAST LOCATION (🔥 MOST IMPORTANT) ================= */
+router.get("/location", async (req, res) => {
+  try {
+    const { driverId } = req.query;
+
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID required",
+      });
+    }
+
+    const driver = await findDriver(driverId);
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        lastLocation: driver.lastLocation || null,
+      },
+    });
+
+  } catch (error) {
+    console.error("Get last location error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver location",
+    });
+  }
+});
+
+/* ================= DRIVER DASHBOARD ================= */
 router.get("/dashboard/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
@@ -97,16 +132,11 @@ router.get("/dashboard/:driverId", async (req, res) => {
 
     const [totalTrips, todayTrips, studentsAssigned] =
       await Promise.all([
-        // ✅ ALL TRIPS
         Trips.countDocuments({ driverId }),
-
-        // ✅ TODAY TRIPS
         Trips.countDocuments({
           driverId,
           createdAt: { $gte: today },
         }),
-
-        // ✅ TOTAL STUDENTS
         Child.countDocuments({ driverId }),
       ]);
 
@@ -124,7 +154,6 @@ router.get("/dashboard/:driverId", async (req, res) => {
 
   } catch (error) {
     console.error("Dashboard error:", error.message);
-
     res.status(500).json({
       success: false,
       message: "Failed to load dashboard",
@@ -153,7 +182,6 @@ router.get("/profile/:driverId", async (req, res) => {
 
   } catch (error) {
     console.error("Driver profile error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to load profile",
@@ -182,12 +210,12 @@ router.get("/tracking/:driverId", async (req, res) => {
         phone: driver.phone,
         vehicleNumber: driver.vehicleNumber,
         location: driver.location,
+        lastLocation: driver.lastLocation, // 🔥 ADDED
       },
     });
 
   } catch (error) {
     console.error("Tracking error:", error);
-
     res.status(500).json({
       success: false,
       message: "Tracking failed",
@@ -227,7 +255,6 @@ router.put("/update", async (req, res) => {
 
   } catch (error) {
     console.error("Update error:", error);
-
     res.status(500).json({
       success: false,
       message: "Update failed",
@@ -235,8 +262,7 @@ router.put("/update", async (req, res) => {
   }
 });
 
-/* ================= GET DRIVER BY ID ================= */
-/* ⚠️ KEEP THIS LAST */
+/* ================= GET DRIVER BY ID (⚠️ KEEP LAST) ================= */
 router.get("/:id", async (req, res) => {
   try {
     const driver = await findDriver(req.params.id);
@@ -255,7 +281,6 @@ router.get("/:id", async (req, res) => {
 
   } catch (error) {
     console.error("Get driver error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch driver",
