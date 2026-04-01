@@ -1,5 +1,5 @@
 import Trips from "../models/Trips.js";
-import Child from "../models/Child.js"; // ✅ FIXED
+import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
 import { sendNotification } from "../utils/sendNotification.js";
 
@@ -7,6 +7,11 @@ import { sendNotification } from "../utils/sendNotification.js";
 export const startTripService = async (driverId, tripType, io) => {
   try {
     console.log("🚀 Starting trip:", driverId);
+
+    /* ✅ VALIDATION */
+    if (!driverId || !tripType) {
+      throw new Error("driverId and tripType are required");
+    }
 
     /* ✅ FIND DRIVER */
     const driver = await Driver.findOne({ driverId });
@@ -23,7 +28,7 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN (IMPORTANT FIX) */
+    /* ✅ FETCH CHILDREN */
     const children = await Child.find({ driverId }).select("_id");
 
     /* ✅ CREATE TRIP */
@@ -36,7 +41,7 @@ export const startTripService = async (driverId, tripType, io) => {
       startTime: new Date()
     });
 
-    /* ✅ OPTIONAL: RESET CHILD STATUS AT START */
+    /* ✅ RESET CHILD STATUS */
     await Child.updateMany(
       { driverId },
       { status: "waiting" }
@@ -44,13 +49,15 @@ export const startTripService = async (driverId, tripType, io) => {
 
     /* ✅ SEND NOTIFICATION */
     try {
-      await sendNotification({
-        driverId,
-        title: "Trip Started",
-        message: `${tripType} trip started`,
-        fcmToken: driver.fcmToken,
-        io
-      });
+      if (driver.fcmToken) {
+        await sendNotification({
+          driverId,
+          title: "Trip Started",
+          message: `${tripType} trip started`,
+          fcmToken: driver.fcmToken,
+          io
+        });
+      }
     } catch (err) {
       console.warn("⚠️ Notification failed:", err.message);
     }
@@ -61,6 +68,7 @@ export const startTripService = async (driverId, tripType, io) => {
     }
 
     console.log("✅ Trip created:", trip._id);
+
     return trip;
 
   } catch (error) {
@@ -84,7 +92,7 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    /* ✅ SAFE TIME */
+    /* ✅ SAFE TIME HANDLING */
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
@@ -92,11 +100,7 @@ export const endTripService = async (driverId, io) => {
     trip.endTime = new Date();
 
     const durationMs = trip.endTime - trip.startTime;
-
-    trip.duration = Math.max(
-      1,
-      Math.round(durationMs / 60000)
-    );
+    trip.duration = Math.max(1, Math.round(durationMs / 60000));
 
     trip.status = "completed";
 
@@ -104,8 +108,7 @@ export const endTripService = async (driverId, io) => {
 
     console.log("✅ Trip ended:", trip._id);
 
-    /* 🔥 MOST IMPORTANT FIX */
-    /* RESET ALL CHILDREN AFTER TRIP */
+    /* ✅ RESET CHILDREN */
     await Child.updateMany(
       { driverId },
       { status: "waiting" }
@@ -135,7 +138,6 @@ export const getActiveTripService = async (driverId) => {
     })
       .populate("students")
       .lean();
-
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -148,7 +150,6 @@ export const getDriverTripsService = async (driverId) => {
     return await Trips.find({ driverId })
       .sort({ createdAt: -1 })
       .lean();
-
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
     throw error;
