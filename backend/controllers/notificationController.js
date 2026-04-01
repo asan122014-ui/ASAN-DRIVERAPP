@@ -151,3 +151,37 @@ export const markAllAsRead = async (req, res) => {
     });
   }
 };
+export const sendTestNotification = async (req, res) => {
+  try {
+    const { parentId } = req.body;
+
+    const parent = await Parent.findById(parentId);
+
+    if (!parent || !parent.fcmToken) {
+      return res.status(404).json({
+        success: false,
+        message: "FCM token not found",
+      });
+    }
+
+    await admin.messaging().send({
+      token: parent.fcmToken,
+      notification: {
+        title: "Backend Test 🚀",
+        body: "This notification is from your server",
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Notification sent successfully",
+    });
+
+  } catch (err) {
+    console.error("❌ FCM ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to send notification",
+    });
+  }
+};
