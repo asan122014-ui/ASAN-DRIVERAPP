@@ -4,11 +4,10 @@ import bcrypt from "bcryptjs";
 const parentSchema = new mongoose.Schema(
   {
     /* ================= BASIC DETAILS ================= */
-
     name: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
 
     email: {
@@ -16,56 +15,58 @@ const parentSchema = new mongoose.Schema(
       required: true,
       unique: true,
       lowercase: true,
-      trim: true
+      trim: true,
     },
 
     phone: {
       type: String,
       required: true,
       unique: true,
-      trim: true
+      trim: true,
     },
 
     password: {
       type: String,
       required: true,
       minlength: 6,
-      select: false
+      select: false,
     },
 
     /* ================= DRIVER LINK ================= */
-
     driverId: {
-      type: String, // ASAN driver ID
-      default: null
-    }
+      type: String,
+      default: null,
+    },
 
+    /* ================= 🔥 FCM TOKEN (ADD THIS) ================= */
+    fcmToken: {
+      type: String,
+      default: null,
+    },
   },
   {
-    timestamps: true
+    timestamps: true,
   }
 );
+
 /* ================= HASH PASSWORD ================= */
-parentSchema.pre("save", function (next) {
-  const user = this;
+parentSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
 
-  if (!user.isModified("password")) return next();
-
-  bcrypt.genSalt(10, (err, salt) => {
-    if (err) return next(err);
-
-    bcrypt.hash(user.password, salt, (err, hash) => {
-      if (err) return next(err);
-
-      user.password = hash;
-      next();
-    });
-  });
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
+
 /* ================= COMPARE PASSWORD ================= */
 parentSchema.methods.comparePassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
+
 /* ================= EXPORT ================= */
 const Parent = mongoose.model("Parent", parentSchema);
 export default Parent;
