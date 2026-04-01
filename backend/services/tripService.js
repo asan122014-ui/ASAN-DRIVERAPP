@@ -124,10 +124,13 @@ export const endTripService = async (driverId, io) => {
     console.log("✅ Trip ended:", trip._id);
 
     /* ✅ RESET CHILD STATUS */
-    await Child.updateMany(
-      { driverId },
-      { status: "waiting" }
-    );
+    /* ✅ RESET CHILD STATUS (ONLY AFTER COMPLETION) */
+await Child.updateMany(
+  { driverId },
+  {
+    $set: { status: "waiting" }
+  }
+);
 
     /* 🔥 SEND NOTIFICATION */
     await sendNotification({
