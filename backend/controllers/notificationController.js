@@ -3,7 +3,8 @@ import Notification from "../models/Notification.js";
 /* ================= GET NOTIFICATIONS ================= */
 export const getNotifications = async (req, res) => {
   try {
-    const { driverId } = req.query;
+    // 🔥 SUPPORT BOTH query & params
+    const driverId = req.params.driverId || req.query.driverId;
 
     console.log("📥 Fetch notifications for:", driverId);
 
@@ -15,7 +16,7 @@ export const getNotifications = async (req, res) => {
     }
 
     const notifications = await Notification.find({
-      driver: driverId   // 🔥 MUST MATCH MODEL FIELD
+      driver: driverId // ✅ matches schema field
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -29,6 +30,7 @@ export const getNotifications = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Get notifications error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications"
@@ -41,20 +43,30 @@ export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
 
-    await Notification.findByIdAndUpdate(id, {
-      read: true
-    });
+    const updated = await Notification.findByIdAndUpdate(
+      id,
+      { read: true },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Notification not found"
+      });
+    }
 
     res.json({
       success: true,
-      message: "Marked as read"
+      data: updated
     });
 
   } catch (error) {
     console.error("❌ Mark read error:", error);
+
     res.status(500).json({
       success: false,
-      message: "Failed to update"
+      message: "Failed to update notification"
     });
   }
 };
