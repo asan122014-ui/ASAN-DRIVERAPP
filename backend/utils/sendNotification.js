@@ -1,8 +1,7 @@
-import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-
+import admin from "../config/firebaseAdmin.js";
 export const sendNotification = async ({
   driverId,
   title,
