@@ -20,7 +20,7 @@ router.get("/", getNotifications);
  * GET /api/notifications/all?driverId=XXX OR parentId=XXX
  * 👉 returns full notification history
  */
-router.get("/all", getAllNotifications);
+router.get("/all/:driverId", getAllNotifications);
 
 /* ================= MARK SINGLE AS READ ================= */
 /**
