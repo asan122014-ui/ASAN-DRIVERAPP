@@ -1,27 +1,37 @@
 import express from "express";
 import {
   getNotifications,
-  markAsRead
+  getAllNotifications,
+  markAsRead,
+  markAllAsRead
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
 
-/* ================= GET NOTIFICATIONS ================= */
+/* ================= GET UNREAD (FOR BADGE) ================= */
 /**
- * 🔥 IMPORTANT:
- * Use driverId in query → /api/notifications?driverId=ASAN-XXXX
- */
-router.get("/", getNotifications);
-
-/* ================= GET BY DRIVER (USED IN FRONTEND) ================= */
-/**
- * 🔥 REQUIRED for your frontend:
- * /api/notifications/:driverId
+ * GET /api/notifications/:driverId
+ * Returns ONLY unread notifications
  */
 router.get("/:driverId", getNotifications);
 
+/* ================= GET ALL (FOR SCREEN) ================= */
+/**
+ * GET /api/notifications/all/:driverId
+ * Returns full history
+ */
+router.get("/all/:driverId", getAllNotifications);
 
-/* ================= MARK AS READ ================= */
+/* ================= MARK SINGLE ================= */
+/**
+ * PUT /api/notifications/:id/read
+ */
+router.put("/:id/read", markAsRead);
+
+/* ================= MARK ALL ================= */
+/**
+ * PUT /api/notifications/read-all/:driverId
+ */
 router.put("/read-all/:driverId", markAllAsRead);
 
 export default router;
