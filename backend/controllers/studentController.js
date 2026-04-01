@@ -10,7 +10,7 @@ export const addStudent = async (req, res) => {
       school,
       grade,
       parentId,
-      driver,
+      driverId, // ✅ USE THIS
       location,
       dropLocationCoords,
       pickupTime,
@@ -20,22 +20,10 @@ export const addStudent = async (req, res) => {
     } = req.body;
 
     // ✅ VALIDATION
-    if (!name || !driver) {
+    if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
-        message: "Name and driver are required"
-      });
-    }
-
-    // 🔥 CONVERT driver → ObjectId (CRITICAL FIX)
-    const driverObjectId = mongoose.Types.ObjectId.isValid(driver)
-      ? driver
-      : await Driver.findOne({ driverId: driver }).then(d => d?._id);
-
-    if (!driverObjectId) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid driver"
+        message: "Name, parentId, and driverId are required"
       });
     }
 
@@ -46,8 +34,8 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      // ✅ FIXED HERE
-      driver: driverObjectId,
+      // 🔥 IMPORTANT
+      driver: driverId, // map driverId → driver field
 
       pickupTime,
       dropoffTime,
@@ -83,7 +71,6 @@ export const addStudent = async (req, res) => {
     });
   }
 };
-
 /* ================= GET ALL STUDENTS ================= */
 export const getAllStudents = async (req, res) => {
   try {
