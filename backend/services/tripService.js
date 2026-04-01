@@ -29,8 +29,6 @@ export const startTripService = async (driverId, tripType, io) => {
 
     /* ✅ FETCH CHILDREN */
     const children = await Child.find({ driverId });
-    console.log("👶 children:", children);
-
     const firstChild = children?.[0];
 
     /* ✅ CREATE TRIP */
@@ -57,7 +55,7 @@ export const startTripService = async (driverId, tripType, io) => {
       { status: "waiting" }
     );
 
-    /* 🔥 SEND NOTIFICATION (IMPROVED MESSAGE) */
+    /* 🔥 SEND NOTIFICATION (DB + PARENT SOCKET) */
     await sendNotification({
       driverId,
       title: "Trip Started",
@@ -66,14 +64,25 @@ export const startTripService = async (driverId, tripType, io) => {
       io
     });
 
-    /* ✅ SOCKET EVENT */
+    /* 🔥 EXTRA SAFETY SOCKET EMIT (NO MISS GUARANTEE) */
     if (io) {
       const room = String(driverId);
+
       console.log("📡 Emitting trip_started to:", room);
+
       io.to(room).emit("trip_started", trip);
+
+      // 🔥 BACKUP NOTIFICATION EMIT
+      io.to(room).emit("notification", {
+        _id: new Date().getTime(),
+        title: "Trip Started",
+        message: `Trip started (${tripType}). ETA: ${trip.eta}`,
+        createdAt: new Date()
+      });
     }
 
     console.log("✅ Trip created:", trip._id);
+
     return trip;
 
   } catch (error) {
@@ -98,7 +107,7 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    /* ✅ SAFE TIME */
+    /* ✅ TIME CALCULATION */
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
@@ -128,11 +137,21 @@ export const endTripService = async (driverId, io) => {
       io
     });
 
-    /* ✅ SOCKET EVENT */
+    /* 🔥 EXTRA SAFETY SOCKET EMIT */
     if (io) {
       const room = String(driverId);
+
       console.log("📡 Emitting trip_ended to:", room);
+
       io.to(room).emit("trip_ended", trip);
+
+      // 🔥 BACKUP NOTIFICATION EMIT
+      io.to(room).emit("notification", {
+        _id: new Date().getTime(),
+        title: "Trip Completed",
+        message: `Trip completed in ${trip.duration} mins`,
+        createdAt: new Date()
+      });
     }
 
     return trip;
@@ -152,7 +171,6 @@ export const getActiveTripService = async (driverId) => {
     })
       .populate("students")
       .lean();
-
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -165,7 +183,6 @@ export const getDriverTripsService = async (driverId) => {
     return await Trips.find({ driverId })
       .sort({ createdAt: -1 })
       .lean();
-
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
     throw error;
