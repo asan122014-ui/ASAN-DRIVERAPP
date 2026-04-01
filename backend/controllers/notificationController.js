@@ -5,27 +5,30 @@ export const getNotifications = async (req, res) => {
   try {
     const { driverId } = req.query;
 
-    // ✅ Only check if exists (NOT ObjectId)
+    console.log("📥 Fetch notifications for:", driverId);
+
     if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "driverId required"
+        message: "driverId is required"
       });
     }
 
-    // ✅ Fetch using STRING driverId
-    const notifications = await Notification.find({ driverId })
-      .select("title message read createdAt")
+    const notifications = await Notification.find({
+      driver: driverId   // 🔥 MUST MATCH MODEL FIELD
+    })
       .sort({ createdAt: -1 })
-      .limit(50);
+      .lean();
 
-    res.status(200).json({
+    console.log("📊 Found notifications:", notifications.length);
+
+    res.json({
       success: true,
       data: notifications
     });
 
   } catch (error) {
-    console.error("Get notifications error:", error.message);
+    console.error("❌ Get notifications error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications"
@@ -38,37 +41,20 @@ export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ✅ Keep ObjectId validation (this is correct)
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        message: "Notification ID required"
-      });
-    }
+    await Notification.findByIdAndUpdate(id, {
+      read: true
+    });
 
-    const notification = await Notification.findByIdAndUpdate(
-      id,
-      { read: true },
-      { new: true }
-    );
-
-    if (!notification) {
-      return res.status(404).json({
-        success: false,
-        message: "Notification not found"
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
-      data: notification
+      message: "Marked as read"
     });
 
   } catch (error) {
-    console.error("Mark as read error:", error.message);
+    console.error("❌ Mark read error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to update notification"
+      message: "Failed to update"
     });
   }
 };
