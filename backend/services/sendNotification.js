@@ -1,59 +1,155 @@
-import admin from "firebase-admin";
-import Notification from "../models/Notification.js";
+import Trips from "../models/Trips.js";
+import Child from "../models/Child.js";
+import Driver from "../models/Driver.js";
+import { sendNotification } from "../utils/sendNotification.js";
 
-/*
- Utility: Send Notification
- - Saves to DB
- - Emits via socket
- - Sends Firebase push
-*/
-
-export const sendNotification = async ({
-  driverId,
-  title,
-  message,
-  fcmToken,
-  io
-}) => {
+/* ================= START TRIP ================= */
+export const startTripService = async (driverId, tripType, io) => {
   try {
-    /* ===== VALIDATION ===== */
-    if (!driverId || !title || !message) {
-      console.warn("Missing notification fields");
+    console.log("🚀 Starting trip:", driverId);
+
+    if (!driverId || !tripType) {
+      throw new Error("driverId and tripType are required");
+    }
+
+    /* ✅ FIND DRIVER */
+    const driver = await Driver.findOne({ driverId });
+    if (!driver) throw new Error("Driver not found");
+
+    /* ✅ PREVENT MULTIPLE ACTIVE TRIPS */
+    const existingTrip = await Trips.findOne({
+      driverId,
+      status: "active"
+    });
+
+    if (existingTrip) {
+      console.log("⚠️ Existing active trip found");
+      return existingTrip;
+    }
+
+    /* 🔥 FIX: CORRECT FIELD NAME */
+    const children = await Child.find({ driver: driverId }).select("_id");
+
+    /* ✅ CREATE TRIP */
+    const trip = await Trips.create({
+      driverId,
+      tripType,
+      status: "active",
+      students: children.map((c) => c._id),
+      totalStudents: children.length,
+      startTime: new Date()
+    });
+
+    /* ✅ RESET CHILD STATUS */
+    await Child.updateMany(
+      { driver: driverId },
+      { status: "waiting" }
+    );
+
+    /* 🔥 ALWAYS SAVE NOTIFICATION (IMPORTANT FIX) */
+    await sendNotification({
+      driverId,
+      title: "Trip Started",
+      message: `${tripType} trip started`,
+      fcmToken: driver.fcmToken, // optional
+      io
+    });
+
+    /* ✅ SOCKET */
+    if (io) {
+      io.to(driverId).emit("trip_started", trip);
+    }
+
+    console.log("✅ Trip created:", trip._id);
+    return trip;
+
+  } catch (error) {
+    console.error("🔥 startTripService error:", error);
+    throw error;
+  }
+};
+
+/* ================= END TRIP ================= */
+export const endTripService = async (driverId, io) => {
+  try {
+    console.log("🔥 Ending trip:", driverId);
+
+    const trip = await Trips.findOne({
+      driverId,
+      status: "active"
+    }).sort({ createdAt: -1 });
+
+    if (!trip) {
+      console.log("❌ No active trip found");
       return null;
     }
 
-    /* ================= SAVE TO DATABASE ================= */
-    const notification = await Notification.create({
-      driver: driverId,
-      title,
-      message,
-      read: false
+    /* ✅ SAFE TIME */
+    if (!trip.startTime) {
+      trip.startTime = new Date();
+    }
+
+    trip.endTime = new Date();
+    const durationMs = trip.endTime - trip.startTime;
+    trip.duration = Math.max(1, Math.round(durationMs / 60000));
+    trip.status = "completed";
+
+    await trip.save();
+
+    console.log("✅ Trip ended:", trip._id);
+
+    /* 🔥 FIX: CORRECT FIELD */
+    await Child.updateMany(
+      { driver: driverId },
+      { status: "waiting" }
+    );
+
+    /* 🔥 ADD MISSING NOTIFICATION */
+    await sendNotification({
+      driverId,
+      title: "Trip Completed",
+      message: "Trip ended successfully",
+      io
     });
 
-    /* ================= SOCKET.IO ================= */
+    /* ✅ SOCKET */
     if (io) {
-      io.to(driverId.toString()).emit("newNotification", notification);
+      io.to(driverId).emit("trip_ended", {
+        message: "Trip completed"
+      });
     }
 
-    /* ================= FIREBASE PUSH ================= */
-    if (fcmToken && admin.apps.length) {
-      try {
-        await admin.messaging().send({
-          notification: {
-            title,
-            body: message
-          },
-          token: fcmToken
-        });
-      } catch (err) {
-        console.error("Firebase push error:", err.message);
-      }
-    }
-
-    return notification;
+    return trip;
 
   } catch (error) {
-    console.error("Send notification error:", error.message);
-    return null;
+    console.error("🔥 endTripService error:", error);
+    throw error;
+  }
+};
+
+/* ================= ACTIVE TRIP ================= */
+export const getActiveTripService = async (driverId) => {
+  try {
+    return await Trips.findOne({
+      driverId,
+      status: "active"
+    })
+      .populate("students")
+      .lean();
+  } catch (error) {
+    console.error("🔥 getActiveTripService error:", error);
+    throw error;
+  }
+};
+
+/* ================= DRIVER TRIPS ================= */
+export const getDriverTripsService = async (driverId) => {
+  try {
+    return await Trips.find({ driverId })
+      .sort({ createdAt: -1 })
+      .lean();
+  } catch (error) {
+    console.error("🔥 getDriverTripsService error:", error);
+    throw error;
   }
 };
