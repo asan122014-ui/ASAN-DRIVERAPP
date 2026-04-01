@@ -16,7 +16,7 @@ export const startTripService = async (driverId, tripType, io) => {
     const driver = await Driver.findOne({ driverId });
     if (!driver) throw new Error("Driver not found");
 
-    /* 🔥 FIX: CHECK CORRECT STATUS */
+    /* ✅ PREVENT MULTIPLE ACTIVE TRIPS */
     const existingTrip = await Trips.findOne({
       driverId,
       status: "in_transit"
@@ -27,16 +27,30 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN */
-    const children = await Child.find({ driver: driverId }).select("_id");
+    /* ✅ FETCH CHILDREN (FULL DATA) */
+    const children = await Child.find({ driver: driverId });
 
-    /* 🔥 FIX: STATUS MUST MATCH PARENT APP */
+    /* 🔥 PREPARE UI DATA */
+    const firstChild = children[0];
+
     const trip = await Trips.create({
       driverId,
       tripType,
-      status: "in_transit", // ✅ FIXED
+      status: "in_transit",
+
       students: children.map((c) => c._id),
       totalStudents: children.length,
+
+      // 🔥 FIX FOR PARENT UI
+      childName: firstChild?.name || "Student",
+
+      route: {
+        from: firstChild?.pickupLocation || "Home",
+        to: firstChild?.schoolName || "School"
+      },
+
+      eta: "30 mins",
+
       startTime: new Date()
     });
 
@@ -46,12 +60,12 @@ export const startTripService = async (driverId, tripType, io) => {
       { status: "waiting" }
     );
 
-    /* ✅ SEND NOTIFICATION */
+    /* ✅ SEND NOTIFICATION (ALWAYS SAVE) */
     await sendNotification({
       driverId,
       title: "Trip Started",
       message: `${tripType} trip started`,
-      fcmToken: driver.fcmToken,
+      fcmToken: driver?.fcmToken,
       io
     });
 
@@ -69,12 +83,13 @@ export const startTripService = async (driverId, tripType, io) => {
   }
 };
 
+
 /* ================= END TRIP ================= */
 export const endTripService = async (driverId, io) => {
   try {
     console.log("🔥 Ending trip:", driverId);
 
-    /* 🔥 FIX: FIND ACTIVE USING in_transit */
+    /* ✅ FIND ACTIVE TRIP */
     const trip = await Trips.findOne({
       driverId,
       status: "in_transit"
@@ -97,7 +112,6 @@ export const endTripService = async (driverId, io) => {
 
     /* ✅ COMPLETE TRIP */
     trip.status = "completed";
-
     await trip.save();
 
     console.log("✅ Trip ended:", trip._id);
@@ -131,12 +145,13 @@ export const endTripService = async (driverId, io) => {
   }
 };
 
+
 /* ================= ACTIVE TRIP ================= */
 export const getActiveTripService = async (driverId) => {
   try {
     return await Trips.findOne({
       driverId,
-      status: "in_transit" // ✅ FIXED
+      status: "in_transit"
     })
       .populate("students")
       .lean();
@@ -146,6 +161,7 @@ export const getActiveTripService = async (driverId) => {
     throw error;
   }
 };
+
 
 /* ================= DRIVER TRIPS ================= */
 export const getDriverTripsService = async (driverId) => {
