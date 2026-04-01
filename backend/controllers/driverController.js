@@ -48,14 +48,25 @@ export const getDriverDashboard = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [totalTrips, todayTrips, studentsAssigned] = await Promise.all([
-  Trips.countDocuments({ driver: driverId, status: "completed" }),
-  Trips.countDocuments({
-    driver: driverId,
-    createdAt: { $gte: today }
-  }),
-  Students.countDocuments({ driver: driverId })
-]);
+    const [totalTrips, todayTrips, studentsAssigned] =
+      await Promise.all([
+        // ✅ TOTAL COMPLETED TRIPS
+        Trips.countDocuments({
+          driverId: driverId,
+          status: "completed"
+        }),
+
+        // ✅ TODAY TRIPS
+        Trips.countDocuments({
+          driverId: driverId,
+          createdAt: { $gte: today }
+        }),
+
+        // ✅ STUDENTS LINKED TO DRIVER
+        Students.countDocuments({
+          driver: driverId
+        })
+      ]);
 
     res.json({
       success: true,
@@ -63,14 +74,11 @@ export const getDriverDashboard = async (req, res) => {
         name: driver.name,
         vehicleNumber: driver.vehicleNumber,
         vehicleType: driver.vehicleType,
-        rating: driver.rating || 0,
         totalTrips,
         todayTrips,
-        studentsAssigned,
-        status: driver.status
+        studentsAssigned
       }
     });
-
   } catch (error) {
     console.error("Dashboard Error:", error);
     res.status(500).json({
@@ -79,7 +87,6 @@ export const getDriverDashboard = async (req, res) => {
     });
   }
 };
-
 /* ================= GET ASSIGNED STUDENTS ================= */
 export const getAssignedStudents = async (req, res) => {
   try {
