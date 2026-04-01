@@ -6,19 +6,15 @@ import Trips from "../models/Trips.js";
 export const addStudent = async (req, res) => {
   try {
     const {
-      name,
-      age,
-      school,
-      grade,
-      parentId,
-      driverId,
-      location,
-      dropLocationCoords,
-      pickupTime,
-      dropoffTime,
-      eveningPickup,
-      eveningDrop
-    } = req.body;
+  name,
+  age,
+  school,
+  grade,
+  parentId,
+  driverId,
+  location,
+  dropLocationCoords
+} = req.body;
 
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
@@ -28,34 +24,28 @@ export const addStudent = async (req, res) => {
     }
 
     const student = new Students({
-      name,
-      age,
-      school,
-      grade,
-      parentId,
+  name,
+  age,
+  school,
+  grade,
+  parentId,
 
-      // 🔥 DIRECT SAVE (NO CONVERSION)
-      driver: driverId,
+  // 🔥 THIS LINE FIXES EVERYTHING
+  driver: driverId,
 
-      pickupTime,
-      dropoffTime,
-      eveningPickup,
-      eveningDrop,
+  location: {
+    type: "Point",
+    coordinates: [
+      location?.lng || 0,
+      location?.lat || 0
+    ]
+  },
 
-      location: {
-        type: "Point",
-        coordinates: [
-          location?.lng || 0,
-          location?.lat || 0
-        ]
-      },
-
-      dropLocationCoords: {
-        lat: dropLocationCoords?.lat || 0,
-        lng: dropLocationCoords?.lng || 0
-      }
-    });
-
+  dropLocationCoords: {
+    lat: dropLocationCoords?.lat || 0,
+    lng: dropLocationCoords?.lng || 0
+  }
+});
     await student.save();
 
     res.status(201).json({
