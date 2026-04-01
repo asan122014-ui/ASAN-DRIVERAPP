@@ -8,19 +8,23 @@ import {
 
 const router = express.Router();
 
-/* ================= GET UNREAD (FOR BADGE) ================= */
+/* ================= SUPPORT QUERY (FIX 404 ERROR) ================= */
 /**
- * GET /api/notifications/:driverId
- * Returns ONLY unread notifications
+ * GET /api/notifications?driverId=ASAN-XXXX
  */
-router.get("/:driverId", getNotifications);
+router.get("/", getNotifications);
 
-/* ================= GET ALL (FOR SCREEN) ================= */
+/* ================= GET ALL (FULL HISTORY) ================= */
 /**
  * GET /api/notifications/all/:driverId
- * Returns full history
  */
 router.get("/all/:driverId", getAllNotifications);
+
+/* ================= GET UNREAD (BADGE) ================= */
+/**
+ * GET /api/notifications/:driverId
+ */
+router.get("/:driverId", getNotifications);
 
 /* ================= MARK SINGLE ================= */
 /**
