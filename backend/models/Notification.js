@@ -1,26 +1,22 @@
+// models/Notification.js
+
 import mongoose from "mongoose";
 
 const notificationSchema = new mongoose.Schema(
   {
     driver: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
+      type: String, // 🔥 IMPORTANT → MUST match driverId (STRING)
       required: true,
-      index: true // 🔥 faster queries per driver
+      index: true
     },
-
     title: {
       type: String,
-      required: true,
-      trim: true
+      required: true
     },
-
     message: {
       type: String,
-      required: true,
-      trim: true
+      required: true
     },
-
     read: {
       type: Boolean,
       default: false
@@ -29,11 +25,4 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ================= INDEXES ================= */
-
-// Fetch latest notifications quickly
-notificationSchema.index({ driver: 1, createdAt: -1 });
-
-const Notification = mongoose.model("Notification", notificationSchema);
-
-export default Notification;
+export default mongoose.model("Notification", notificationSchema);
