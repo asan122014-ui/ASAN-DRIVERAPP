@@ -20,9 +20,6 @@ export const addStudent = async (req, res) => {
       eveningDrop
     } = req.body;
 
-    console.log("Incoming body:", req.body);
-
-    // ✅ VALIDATION
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
@@ -30,19 +27,6 @@ export const addStudent = async (req, res) => {
       });
     }
 
-    // 🔥 FIND DRIVER USING CUSTOM driverId
-    const driverDoc = await Driver.findOne({ driverId });
-
-    console.log("Driver found:", driverDoc);
-
-    if (!driverDoc) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver not found"
-      });
-    }
-
-    // ✅ CREATE STUDENT
     const student = new Students({
       name,
       age,
@@ -50,8 +34,8 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      // 🔥 CRITICAL FIX
-      driver: driverDoc._id,
+      // 🔥 DIRECT SAVE (NO CONVERSION)
+      driver: driverId,
 
       pickupTime,
       dropoffTime,
@@ -80,11 +64,11 @@ export const addStudent = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 FULL ERROR:", error);
+    console.error("🔥 Add student error:", error);
 
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to add child"
+      message: error.message
     });
   }
 };
