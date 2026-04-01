@@ -4,6 +4,7 @@ import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
+import Driver from "./models/Driver.js"; // 🔥 IMPORTANT
 
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
@@ -54,59 +55,83 @@ app.set("io", io);
 io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
-  /* ===== DRIVER / PARENT JOIN SAME ROOM ===== */
+  /* ===== JOIN DRIVER ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
     if (!driverId) return;
 
-    const room = String(driverId); // 🔥 IMPORTANT FIX
-
+    const room = String(driverId);
     socket.join(room);
 
     console.log("🚐 Joined driver room:", room);
   });
 
-  /* ===== OPTIONAL PARENT ROOM ===== */
+  /* ===== JOIN PARENT ROOM ===== */
   socket.on("join_parent", (parentId) => {
     if (!parentId) return;
 
     const room = String(parentId);
-
     socket.join(room);
 
     console.log("👨‍👩‍👧 Parent joined:", room);
   });
 
-  /* ===== LIVE LOCATION ===== */
-  socket.on("send_location", (data) => {
-    const { driverId, lat, lng } = data;
+  /* ===== LIVE LOCATION (🔥 MOST IMPORTANT) ===== */
+  socket.on("send_location", async (data) => {
+    try {
+      const { driverId, lat, lng } = data;
 
-    if (!driverId || !lat || !lng) return;
+      // ✅ FIX: allow 0 values also
+      if (!driverId || lat === undefined || lng === undefined) return;
 
-    const room = String(driverId);
+      const room = String(driverId);
 
-    io.to(room).emit("live_location", {
-      lat,
-      lng,
-    });
+      /* 🔥 SAVE TO DATABASE */
+      await Driver.findOneAndUpdate(
+        { driverId },
+        {
+          lastLocation: {
+            lat,
+            lng,
+            updatedAt: new Date(),
+          },
+          location: {
+            type: "Point",
+            coordinates: [lng, lat],
+          },
+        }
+      );
 
-    console.log("📍 Location sent to:", room);
+      /* 🔥 EMIT TO ALL PARENTS */
+      io.to(room).emit("live_location", {
+        lat,
+        lng,
+      });
+
+      console.log("📍 Location updated + sent:", room);
+
+    } catch (err) {
+      console.error("❌ Location socket error:", err.message);
+    }
   });
 
-  /* ===== OPTIONAL EVENTS ===== */
-  socket.on("child_picked", () => {
+  /* ===== NOTIFICATIONS ===== */
+  socket.on("child_picked", (data) => {
     io.emit("notification", {
       title: "Pickup",
       message: "Child has been picked up",
+      ...data,
     });
   });
 
-  socket.on("child_dropped", () => {
+  socket.on("child_dropped", (data) => {
     io.emit("notification", {
       title: "Drop",
       message: "Child has been dropped",
+      ...data,
     });
   });
 
+  /* ===== DISCONNECT ===== */
   socket.on("disconnect", () => {
     console.log("❌ Socket disconnected:", socket.id);
   });
@@ -123,7 +148,6 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR:", err);
-
   res.status(500).json({
     success: false,
     message: err.message || "Internal error",
