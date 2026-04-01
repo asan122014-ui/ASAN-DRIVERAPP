@@ -8,30 +8,16 @@ import {
 
 const router = express.Router();
 
-/* ================= GET NOTIFICATIONS ================= */
-/**
- * GET /api/notifications?driverId=XXX OR parentId=XXX
- * 👉 returns latest notifications (with unread first)
- */
+/* GET UNREAD */
 router.get("/", getNotifications);
 
-/* ================= GET FULL HISTORY ================= */
-/**
- * GET /api/notifications/all?driverId=XXX OR parentId=XXX
- * 👉 returns full notification history
- */
-router.get("/all/:driverId", getAllNotifications);
+/* GET ALL */
+router.get("/all", getAllNotifications);
 
-/* ================= MARK SINGLE AS READ ================= */
-/**
- * PUT /api/notifications/:id/read
- */
+/* MARK ONE */
 router.put("/:id/read", markAsRead);
 
-/* ================= MARK ALL AS READ ================= */
-/**
- * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX
- */
+/* MARK ALL */
 router.put("/read-all", markAllAsRead);
 
 export default router;
