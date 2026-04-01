@@ -1,5 +1,8 @@
 import Notification from "../models/Notification.js";
 
+import admin from "../config/firebaseAdmin.js";
+import Parent from "../models/Parent.js";
+
 /* ================= GET UNREAD NOTIFICATIONS (BADGE) ================= */
 /**
  * GET /api/notifications?driverId=XXX OR parentId=XXX
