@@ -17,7 +17,7 @@ const tripSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["active", "completed"],
+      enum: ["in_transit", "completed"],
       default: "active",
       index: true
     },
