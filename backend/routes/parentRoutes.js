@@ -182,23 +182,42 @@ router.get("/dashboard/:parentId", async (req, res) => {
   try {
     const { parentId } = req.params;
 
-    const trips = await Trip.find({ parentId })
-      .populate("driverId", "name driverId");
+    /* ✅ GET PARENT */
+    const parent = await Parent.findById(parentId);
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found"
+      });
+    }
+
+    /* ✅ GET DRIVER ID */
+    const driverId = parent.driverId;
+
+    if (!driverId) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    /* ✅ FETCH TRIPS USING DRIVER ID */
+    const trips = await Trip.find({ driverId })
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      data: trips,
+      data: trips
     });
 
   } catch (err) {
     console.error("DASHBOARD ERROR:", err);
-
     res.status(500).json({
-      message: "Failed to fetch dashboard",
+      message: "Failed to fetch dashboard"
     });
   }
 });
-
 /* ================= LINK DRIVER ================= */
 /* ================= LINK DRIVER ================= */
 router.post("/link-driver", async (req, res) => {
