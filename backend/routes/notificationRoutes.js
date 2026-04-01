@@ -20,7 +20,8 @@ router.get("/", getNotifications);
  */
 router.get("/:driverId", getNotifications);
 
+
 /* ================= MARK AS READ ================= */
-router.put("/:id/read", markAsRead);
+router.put("/read-all/:driverId", markAllAsRead);
 
 export default router;
