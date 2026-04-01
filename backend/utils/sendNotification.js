@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
+import Parent from "../models/Parent.js"; // 🔥 ADDED
 
 export const sendNotification = async ({
   driverId,
@@ -27,12 +28,29 @@ export const sendNotification = async ({
 
     console.log("✅ Notification SAVED:", notification._id);
 
-    // ✅ SOCKET
+    /* ================= SOCKET ================= */
+
     if (io) {
-      io.to(driverId).emit("new_notification", notification);
+      // ✅ DRIVER (existing — KEEP)
+      io.to(String(driverId)).emit("new_notification", notification);
+
+      // 🔥 ADD: SEND TO PARENT ALSO
+      const parent = await Parent.findOne({ driverId });
+
+      if (parent?._id) {
+        console.log("📡 Sending to parent:", parent._id);
+
+        io.to(String(parent._id)).emit("notification", {
+          title,
+          message
+        });
+      } else {
+        console.log("⚠️ No parent linked to driver");
+      }
     }
 
-    // ✅ FIREBASE (optional)
+    /* ================= FIREBASE ================= */
+
     if (fcmToken && admin.apps.length) {
       try {
         await admin.messaging().send({
@@ -51,6 +69,6 @@ export const sendNotification = async ({
 
   } catch (error) {
     console.error("❌ sendNotification FAILED:", error);
-    throw error; // 🔥 IMPORTANT (DO NOT SILENCE)
+    throw error;
   }
 };
