@@ -1,7 +1,7 @@
 import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Trip from "../models/Trip.js";
+import Trip from "../models/Trips.js";
 import bcrypt from "bcryptjs";
 
 const router = express.Router();
