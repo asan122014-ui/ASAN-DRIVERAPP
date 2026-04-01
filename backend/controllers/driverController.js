@@ -1,14 +1,16 @@
 import Driver from "../models/Driver.js";
-import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
 import Notification from "../models/Notification.js";
+import Child from "../models/Child.js"; // 🔥 IMPORTANT
 
 /* ================= GET DRIVER PROFILE ================= */
 export const getDriverProfile = async (req, res) => {
   try {
     const driverId = req.params.driverId;
 
-    const driver = await Driver.findById(driverId).select("-password").lean();
+    const driver = await Driver.findOne({ driverId })
+      .select("-password")
+      .lean();
 
     if (!driver) {
       return res.status(404).json({
@@ -24,6 +26,7 @@ export const getDriverProfile = async (req, res) => {
 
   } catch (error) {
     console.error("Profile Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch driver profile"
@@ -62,9 +65,9 @@ export const getDriverDashboard = async (req, res) => {
           createdAt: { $gte: today }
         }),
 
-        // ✅ STUDENTS LINKED TO DRIVER
-        Students.countDocuments({
-          driver: driverId
+        // 🔥 FIXED: USE CHILD MODEL
+        Child.countDocuments({
+          driverId: driverId
         })
       ]);
 
@@ -79,22 +82,24 @@ export const getDriverDashboard = async (req, res) => {
         studentsAssigned
       }
     });
+
   } catch (error) {
     console.error("Dashboard Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard"
     });
   }
 };
+
 /* ================= GET ASSIGNED STUDENTS ================= */
 export const getAssignedStudents = async (req, res) => {
   try {
     const driverId = req.params.driverId;
 
-    const students = await Students.find({
-      driver: driverId,
-      active: true
+    const students = await Child.find({
+      driverId: driverId
     }).lean();
 
     res.json({
@@ -104,6 +109,7 @@ export const getAssignedStudents = async (req, res) => {
 
   } catch (error) {
     console.error("Students Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch assigned students"
@@ -124,8 +130,8 @@ export const updateDriverLocation = async (req, res) => {
       });
     }
 
-    const driver = await Driver.findByIdAndUpdate(
-      driverId,
+    const driver = await Driver.findOneAndUpdate(
+      { driverId },
       {
         location: {
           type: "Point",
@@ -142,6 +148,7 @@ export const updateDriverLocation = async (req, res) => {
 
   } catch (error) {
     console.error("Location Update Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to update driver location"
@@ -167,6 +174,7 @@ export const getDriverNotifications = async (req, res) => {
 
   } catch (error) {
     console.error("Notification Error:", error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications"
