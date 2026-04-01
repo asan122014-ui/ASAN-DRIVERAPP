@@ -1,6 +1,78 @@
 import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
 
+/* ================= ADD STUDENT ================= */
+export const addStudent = async (req, res) => {
+  try {
+    const {
+      name,
+      age,
+      school,
+      grade,
+      parentId,
+      driver,
+      location,
+      dropLocationCoords,
+      pickupTime,
+      dropoffTime,
+      eveningPickup,
+      eveningDrop
+    } = req.body;
+
+    // ✅ VALIDATION
+    if (!name || !driver) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and driver are required"
+      });
+    }
+
+    const student = new Students({
+      name,
+      age,
+      school,
+      grade,
+      parentId,
+
+      // 🔥 IMPORTANT FIX
+      driver, // must be driverId (STRING)
+
+      pickupTime,
+      dropoffTime,
+      eveningPickup,
+      eveningDrop,
+
+      // ✅ LOCATION FORMAT FIX
+      location: {
+        type: "Point",
+        coordinates: [
+          location?.lng || 0,
+          location?.lat || 0
+        ]
+      },
+
+      dropLocationCoords: {
+        lat: dropLocationCoords?.lat || 0,
+        lng: dropLocationCoords?.lng || 0
+      }
+    });
+
+    await student.save();
+
+    res.status(201).json({
+      success: true,
+      data: student
+    });
+
+  } catch (error) {
+    console.error("🔥 Add student error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to add student"
+    });
+  }
+};
+
 /* ================= GET ALL STUDENTS ================= */
 export const getAllStudents = async (req, res) => {
   try {
@@ -26,7 +98,7 @@ export const getActiveStudents = async (req, res) => {
     const driverId = req.params.driverId;
 
     const trip = await Trips.findOne({
-      driver: driverId,
+      driverId: driverId, // 🔥 FIXED (was driver)
       status: "active"
     });
 
@@ -113,7 +185,7 @@ export const dropStudent = async (req, res) => {
   }
 };
 
-/* ================= ASSIGN STUDENT TO DRIVER ================= */
+/* ================= ASSIGN STUDENT TO TRIP ================= */
 export const assignStudent = async (req, res) => {
   try {
     const { driverId, studentId } = req.body;
@@ -126,19 +198,22 @@ export const assignStudent = async (req, res) => {
     }
 
     const trip = await Trips.findOne({
-      driver: driverId,
+      driverId: driverId, // 🔥 FIXED
       status: "active"
     });
 
     if (!trip) {
       return res.status(404).json({
         success: false,
-        message: "Active trip not found for driver"
+        message: "Active trip not found"
       });
     }
 
-    trip.students.push(studentId);
-    await trip.save();
+    // prevent duplicates
+    if (!trip.students.includes(studentId)) {
+      trip.students.push(studentId);
+      await trip.save();
+    }
 
     res.json({
       success: true,
