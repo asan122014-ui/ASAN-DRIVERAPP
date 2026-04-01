@@ -54,47 +54,53 @@ app.set("io", io);
 io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
-  /* ===== DRIVER JOIN ===== */
+  /* ===== DRIVER / PARENT JOIN SAME ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
-    if (driverId) {
-      socket.join(driverId);
-      console.log("🚐 Driver joined:", driverId);
-    }
+    if (!driverId) return;
+
+    const room = String(driverId); // 🔥 IMPORTANT FIX
+
+    socket.join(room);
+
+    console.log("🚐 Joined driver room:", room);
   });
 
-  /* ===== PARENT JOIN ===== */
+  /* ===== OPTIONAL PARENT ROOM ===== */
   socket.on("join_parent", (parentId) => {
-    if (parentId) {
-      socket.join(parentId);
-      console.log("👨‍👩‍👧 Parent joined:", parentId);
-    }
+    if (!parentId) return;
+
+    const room = String(parentId);
+
+    socket.join(room);
+
+    console.log("👨‍👩‍👧 Parent joined:", room);
   });
 
-  /* ===== LIVE LOCATION FROM DRIVER ===== */
+  /* ===== LIVE LOCATION ===== */
   socket.on("send_location", (data) => {
     const { driverId, lat, lng } = data;
 
     if (!driverId || !lat || !lng) return;
 
-    // ✅ send to all parents tracking this driver
-    io.to(driverId).emit("live_location", {
+    const room = String(driverId);
+
+    io.to(room).emit("live_location", {
       lat,
       lng,
     });
 
-    console.log("📍 Location:", driverId, lat, lng);
+    console.log("📍 Location sent to:", room);
   });
 
-  /* ===== OPTIONAL: PICKUP EVENT ===== */
-  socket.on("child_picked", ({ childId }) => {
+  /* ===== OPTIONAL EVENTS ===== */
+  socket.on("child_picked", () => {
     io.emit("notification", {
       title: "Pickup",
       message: "Child has been picked up",
     });
   });
 
-  /* ===== OPTIONAL: DROP EVENT ===== */
-  socket.on("child_dropped", ({ childId }) => {
+  socket.on("child_dropped", () => {
     io.emit("notification", {
       title: "Drop",
       message: "Child has been dropped",
@@ -117,6 +123,7 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR:", err);
+
   res.status(500).json({
     success: false,
     message: err.message || "Internal error",
