@@ -27,6 +27,18 @@ export const addStudent = async (req, res) => {
       });
     }
 
+    // 🔥 CONVERT driver → ObjectId (CRITICAL FIX)
+    const driverObjectId = mongoose.Types.ObjectId.isValid(driver)
+      ? driver
+      : await Driver.findOne({ driverId: driver }).then(d => d?._id);
+
+    if (!driverObjectId) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid driver"
+      });
+    }
+
     const student = new Students({
       name,
       age,
@@ -34,15 +46,14 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      // 🔥 IMPORTANT FIX
-      driver, // must be driverId (STRING)
+      // ✅ FIXED HERE
+      driver: driverObjectId,
 
       pickupTime,
       dropoffTime,
       eveningPickup,
       eveningDrop,
 
-      // ✅ LOCATION FORMAT FIX
       location: {
         type: "Point",
         coordinates: [
