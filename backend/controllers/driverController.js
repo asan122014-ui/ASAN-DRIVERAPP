@@ -1,7 +1,7 @@
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Notification from "../models/Notification.js";
-import Child from "../models/Child.js"; // 🔥 IMPORTANT
+import Child from "../models/Child.js";
 
 /* ================= GET DRIVER PROFILE ================= */
 export const getDriverProfile = async (req, res) => {
@@ -53,22 +53,17 @@ export const getDriverDashboard = async (req, res) => {
 
     const [totalTrips, todayTrips, studentsAssigned] =
       await Promise.all([
-        // ✅ TOTAL COMPLETED TRIPS
-        Trips.countDocuments({
-          driverId: driverId,
-          status: "completed"
-        }),
+        // ✅ ALL TRIPS
+        Trips.countDocuments({ driverId }),
 
         // ✅ TODAY TRIPS
         Trips.countDocuments({
-          driverId: driverId,
+          driverId,
           createdAt: { $gte: today }
         }),
 
-        // 🔥 FIXED: USE CHILD MODEL
-        Child.countDocuments({
-          driverId: driverId
-        })
+        // ✅ TOTAL CHILDREN
+        Child.countDocuments({ driverId })
       ]);
 
     res.json({
@@ -98,9 +93,7 @@ export const getAssignedStudents = async (req, res) => {
   try {
     const driverId = req.params.driverId;
 
-    const students = await Child.find({
-      driverId: driverId
-    }).lean();
+    const students = await Child.find({ driverId }).lean();
 
     res.json({
       success: true,
