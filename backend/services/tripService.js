@@ -27,8 +27,10 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN */
-    const children = await Child.find({ driver: driverId });
+    /* 🔥 FIXED: CORRECT FIELD NAME */
+    const children = await Child.find({ driverId: driverId });
+
+    console.log("👶 children:", children);
 
     const firstChild = children?.[0];
 
@@ -41,7 +43,7 @@ export const startTripService = async (driverId, tripType, io) => {
       students: children.map((c) => c._id),
       totalStudents: children.length,
 
-      // 🔥 FIX FOR PARENT UI
+      // ✅ FIX FOR UI
       childName: firstChild?.name || "Student",
 
       route: {
@@ -53,9 +55,9 @@ export const startTripService = async (driverId, tripType, io) => {
       startTime: new Date()
     });
 
-    /* ✅ RESET CHILD STATUS */
+    /* 🔥 FIXED: CORRECT FIELD NAME */
     await Child.updateMany(
-      { driver: driverId },
+      { driverId: driverId },
       { status: "waiting" }
     );
 
@@ -68,11 +70,10 @@ export const startTripService = async (driverId, tripType, io) => {
       io
     });
 
-    /* ✅ SOCKET (FIXED 🔥) */
+    /* ✅ SOCKET */
     if (io) {
       const room = String(driverId);
       console.log("📡 Emitting trip_started to:", room);
-
       io.to(room).emit("trip_started", trip);
     }
 
@@ -118,9 +119,9 @@ export const endTripService = async (driverId, io) => {
 
     console.log("✅ Trip ended:", trip._id);
 
-    /* ✅ RESET CHILD STATUS */
+    /* 🔥 FIXED: CORRECT FIELD NAME */
     await Child.updateMany(
-      { driver: driverId },
+      { driverId: driverId },
       { status: "waiting" }
     );
 
@@ -132,12 +133,10 @@ export const endTripService = async (driverId, io) => {
       io
     });
 
-    /* ✅ SOCKET (FIXED 🔥 IMPORTANT) */
+    /* ✅ SOCKET */
     if (io) {
       const room = String(driverId);
       console.log("📡 Emitting trip_ended to:", room);
-
-      // 🔥 SEND FULL TRIP (NOT JUST MESSAGE)
       io.to(room).emit("trip_ended", trip);
     }
 
