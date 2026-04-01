@@ -36,7 +36,7 @@ export const getDriverDashboard = async (req, res) => {
   try {
     const driverId = req.params.driverId;
 
-    const driver = await Driver.findById(driverId);
+    const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
       return res.status(404).json({
@@ -49,10 +49,13 @@ export const getDriverDashboard = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const [totalTrips, todayTrips, studentsAssigned] = await Promise.all([
-      Trips.countDocuments({ driver: driver._id, status: "completed" }),
-      Trips.countDocuments({ driver: driver._id, createdAt: { $gte: today } }),
-      Students.countDocuments({ driver: driver._id })
-    ]);
+  Trips.countDocuments({ driver: driverId, status: "completed" }),
+  Trips.countDocuments({
+    driver: driverId,
+    createdAt: { $gte: today }
+  }),
+  Students.countDocuments({ driver: driverId })
+]);
 
     res.json({
       success: true,
