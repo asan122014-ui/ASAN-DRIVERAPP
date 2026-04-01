@@ -15,21 +15,20 @@ export const getDriverProfile = async (req, res) => {
     if (!driver) {
       return res.status(404).json({
         success: false,
-        message: "Driver not found"
+        message: "Driver not found",
       });
     }
 
     res.json({
       success: true,
-      data: driver
+      data: driver,
     });
 
   } catch (error) {
     console.error("Profile Error:", error);
-
     res.status(500).json({
       success: false,
-      message: "Failed to fetch driver profile"
+      message: "Failed to fetch driver profile",
     });
   }
 };
@@ -44,7 +43,7 @@ export const getDriverDashboard = async (req, res) => {
     if (!driver) {
       return res.status(404).json({
         success: false,
-        message: "Driver not found"
+        message: "Driver not found",
       });
     }
 
@@ -53,17 +52,12 @@ export const getDriverDashboard = async (req, res) => {
 
     const [totalTrips, todayTrips, studentsAssigned] =
       await Promise.all([
-        // ✅ ALL TRIPS
         Trips.countDocuments({ driverId }),
-
-        // ✅ TODAY TRIPS
         Trips.countDocuments({
           driverId,
-          createdAt: { $gte: today }
+          createdAt: { $gte: today },
         }),
-
-        // ✅ TOTAL CHILDREN
-        Child.countDocuments({ driverId })
+        Child.countDocuments({ driverId }),
       ]);
 
     res.json({
@@ -74,16 +68,15 @@ export const getDriverDashboard = async (req, res) => {
         vehicleType: driver.vehicleType,
         totalTrips,
         todayTrips,
-        studentsAssigned
-      }
+        studentsAssigned,
+      },
     });
 
   } catch (error) {
     console.error("Dashboard Error:", error);
-
     res.status(500).json({
       success: false,
-      message: "Failed to fetch dashboard"
+      message: "Failed to fetch dashboard",
     });
   }
 };
@@ -97,15 +90,14 @@ export const getAssignedStudents = async (req, res) => {
 
     res.json({
       success: true,
-      data: students
+      data: students,
     });
 
   } catch (error) {
     console.error("Students Error:", error);
-
     res.status(500).json({
       success: false,
-      message: "Failed to fetch assigned students"
+      message: "Failed to fetch assigned students",
     });
   }
 };
@@ -116,35 +108,85 @@ export const updateDriverLocation = async (req, res) => {
     const driverId = req.params.driverId;
     const { latitude, longitude } = req.body;
 
-    if (!latitude || !longitude) {
+    if (
+      latitude === undefined ||
+      longitude === undefined
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Latitude and longitude are required"
+        message: "Latitude and longitude are required",
       });
     }
 
-    const driver = await Driver.findOneAndUpdate(
+    const updatedDriver = await Driver.findOneAndUpdate(
       { driverId },
       {
+        /* ✅ GEOJSON (for maps / queries) */
         location: {
           type: "Point",
-          coordinates: [longitude, latitude]
-        }
+          coordinates: [longitude, latitude],
+        },
+
+        /* 🔥 IMPORTANT: LAST LIVE LOCATION */
+        lastLocation: {
+          lat: latitude,
+          lng: longitude,
+          updatedAt: new Date(),
+        },
       },
       { new: true }
     );
 
+    if (!updatedDriver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
     res.json({
       success: true,
-      location: driver.location
+      data: {
+        location: updatedDriver.location,
+        lastLocation: updatedDriver.lastLocation,
+      },
     });
 
   } catch (error) {
     console.error("Location Update Error:", error);
-
     res.status(500).json({
       success: false,
-      message: "Failed to update driver location"
+      message: "Failed to update driver location",
+    });
+  }
+};
+
+/* ================= GET DRIVER LAST LOCATION (FOR PARENT) ================= */
+export const getDriverLastLocation = async (req, res) => {
+  try {
+    const { driverId } = req.query;
+
+    const driver = await Driver.findOne({ driverId }).lean();
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        lastLocation: driver.lastLocation || null,
+      },
+    });
+
+  } catch (error) {
+    console.error("Get Location Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver location",
     });
   }
 };
@@ -155,22 +197,21 @@ export const getDriverNotifications = async (req, res) => {
     const driverId = req.params.driverId;
 
     const notifications = await Notification.find({
-      driver: driverId
+      driver: driverId,
     })
       .sort({ createdAt: -1 })
       .lean();
 
     res.json({
       success: true,
-      data: notifications
+      data: notifications,
     });
 
   } catch (error) {
     console.error("Notification Error:", error);
-
     res.status(500).json({
       success: false,
-      message: "Failed to fetch notifications"
+      message: "Failed to fetch notifications",
     });
   }
 };
