@@ -8,31 +8,25 @@ import {
 
 const router = express.Router();
 
-/* ================= SUPPORT QUERY (FIX 404 ERROR) ================= */
+/* ================= GET NOTIFICATIONS ================= */
 /**
- * GET /api/notifications?driverId=ASAN-XXXX
+ * GET /api/notifications?driverId=XXX OR parentId=XXX
  */
 router.get("/", getNotifications);
 
-/* ================= GET ALL (FULL HISTORY) ================= */
+/* ================= GET ALL HISTORY ================= */
 /**
  * GET /api/notifications/all/:driverId
  */
 router.get("/all/:driverId", getAllNotifications);
 
-/* ================= GET UNREAD (BADGE) ================= */
-/**
- * GET /api/notifications/:driverId
- */
-router.get("/:driverId", getNotifications);
-
-/* ================= MARK SINGLE ================= */
+/* ================= MARK SINGLE AS READ ================= */
 /**
  * PUT /api/notifications/:id/read
  */
 router.put("/:id/read", markAsRead);
 
-/* ================= MARK ALL ================= */
+/* ================= MARK ALL AS READ ================= */
 /**
  * PUT /api/notifications/read-all/:driverId
  */
