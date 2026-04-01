@@ -2,6 +2,8 @@ import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
 
 /* ================= ADD STUDENT ================= */
+import Driver from "../models/Driver.js";
+
 export const addStudent = async (req, res) => {
   try {
     const {
@@ -10,7 +12,7 @@ export const addStudent = async (req, res) => {
       school,
       grade,
       parentId,
-      driverId, // ✅ USE THIS
+      driverId,
       location,
       dropLocationCoords,
       pickupTime,
@@ -27,6 +29,16 @@ export const addStudent = async (req, res) => {
       });
     }
 
+    // 🔥 VERY IMPORTANT FIX (convert driverId → ObjectId)
+    const driverDoc = await Driver.findOne({ driverId });
+
+    if (!driverDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+
     const student = new Students({
       name,
       age,
@@ -34,8 +46,8 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      // 🔥 IMPORTANT
-      driver: driverId, // map driverId → driver field
+      // ✅ SAVE REAL ObjectId
+      driver: driverDoc._id,
 
       pickupTime,
       dropoffTime,
@@ -65,9 +77,10 @@ export const addStudent = async (req, res) => {
 
   } catch (error) {
     console.error("🔥 Add student error:", error);
+
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to add student"
+      message: error.message || "Failed to add child"
     });
   }
 };
