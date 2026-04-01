@@ -1,5 +1,3 @@
-// utils/sendNotification.js
-
 import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
 
@@ -11,43 +9,48 @@ export const sendNotification = async ({
   io
 }) => {
   try {
-    /* ===== VALIDATION ===== */
+    console.log("🔥 sendNotification CALLED");
+
     if (!driverId || !title || !message) {
-      console.warn("❌ Missing notification fields");
-      return null;
+      throw new Error("Missing fields");
     }
 
-    console.log("📢 Creating notification for:", driverId);
+    console.log("📢 Saving notification:", { driverId, title });
 
-    /* ===== SAVE TO DB ===== */
+    // ✅ SAVE TO DB
     const notification = await Notification.create({
-      driver: driverId, // 🔥 MUST MATCH frontend
+      driver: driverId,
       title,
       message,
       read: false
     });
 
-    /* ===== SOCKET ===== */
+    console.log("✅ Notification SAVED:", notification._id);
+
+    // ✅ SOCKET
     if (io) {
-      io.to(driverId).emit("new_notification", notification); // 🔥 FIXED NAME
+      io.to(driverId).emit("new_notification", notification);
     }
 
-    /* ===== FIREBASE (OPTIONAL) ===== */
+    // ✅ FIREBASE (optional)
     if (fcmToken && admin.apps.length) {
       try {
         await admin.messaging().send({
-          notification: { title, body: message },
+          notification: {
+            title,
+            body: message
+          },
           token: fcmToken
         });
       } catch (err) {
-        console.error("Firebase error:", err.message);
+        console.error("❌ Firebase error:", err.message);
       }
     }
 
     return notification;
 
   } catch (error) {
-    console.error("❌ Send notification error:", error.message);
-    return null;
+    console.error("❌ sendNotification FAILED:", error);
+    throw error; // 🔥 IMPORTANT (DO NOT SILENCE)
   }
 };
