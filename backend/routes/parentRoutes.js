@@ -31,8 +31,7 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const parent = await Parent.create({
       name,
@@ -41,22 +40,19 @@ router.post("/register", async (req, res) => {
       password: hashedPassword,
     });
 
-    parent.password = undefined;
+    // 🔥 REMOVE PASSWORD
+    const parentObj = parent.toObject();
+    delete parentObj.password;
 
-    res.status(201).json({
+    console.log("✅ Registered:", parentObj.email);
+
+    return res.status(201).json({
       success: true,
-      data: parent,
+      data: parentObj, // ✅ IMPORTANT FIX
     });
 
   } catch (err) {
-    console.error("REGISTER ERROR:", err);
-
-    if (err.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: "Duplicate email or phone",
-      });
-    }
+    console.error("❌ REGISTER ERROR:", err);
 
     res.status(500).json({
       success: false,
@@ -79,8 +75,8 @@ router.post("/login", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    const parent = await Parent.findOne({ email: normalizedEmail })
-      .select("+password");
+    // 🔥 IMPORTANT: select password
+    const parent = await Parent.findOne({ email: normalizedEmail }).select("+password");
 
     if (!parent) {
       return res.status(400).json({
@@ -98,15 +94,19 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    parent.password = undefined;
+    const parentObj = parent.toObject();
+    delete parentObj.password;
 
-    res.json({
+    console.log("✅ Login success:", parentObj.email);
+
+    return res.json({
       success: true,
-      data: parent,
+      data: parentObj, // ✅ IMPORTANT FIX
     });
 
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
+    console.error("❌ LOGIN ERROR:", err);
+
     res.status(500).json({
       success: false,
       message: "Login failed",
@@ -114,7 +114,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= SAVE FCM TOKEN (🔥 UPDATED) ================= */
+/* ================= SAVE FCM TOKEN ================= */
 router.post("/save-token", async (req, res) => {
   try {
     const { parentId, driverId, token } = req.body;
@@ -126,36 +126,17 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    // ✅ SAVE FOR PARENT
     if (parentId) {
-      const parent = await Parent.findByIdAndUpdate(
-        parentId,
-        { fcmToken: token },
-        { new: true }
-      );
-
-      if (!parent) {
-        return res.status(404).json({
-          success: false,
-          message: "Parent not found",
-        });
-      }
+      await Parent.findByIdAndUpdate(parentId, {
+        fcmToken: token,
+      });
     }
 
-    // ✅ SAVE FOR DRIVER
     if (driverId) {
-      const driver = await Driver.findOneAndUpdate(
+      await Driver.findOneAndUpdate(
         { driverId },
-        { fcmToken: token },
-        { new: true }
+        { fcmToken: token }
       );
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: "Driver not found",
-        });
-      }
     }
 
     res.json({
@@ -164,72 +145,11 @@ router.post("/save-token", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("SAVE TOKEN ERROR:", err);
+    console.error("❌ SAVE TOKEN ERROR:", err);
 
     res.status(500).json({
       success: false,
       message: "Failed to save token",
-    });
-  }
-});
-
-/* ================= CHECK EMAIL ================= */
-router.post("/check-email", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    const parent = await Parent.findOne({
-      email: email.trim().toLowerCase(),
-    });
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
-
-    res.json({ success: true });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-});
-
-/* ================= RESET PASSWORD ================= */
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const parent = await Parent.findOne({
-      email: email.trim().toLowerCase(),
-    });
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    parent.password = await bcrypt.hash(password, salt);
-
-    await parent.save();
-
-    res.json({
-      success: true,
-      message: "Password updated",
-    });
-
-  } catch (err) {
-    console.error("RESET ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
     });
   }
 });
@@ -264,7 +184,8 @@ router.get("/dashboard/:parentId", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("DASHBOARD ERROR:", err);
+    console.error("❌ DASHBOARD ERROR:", err);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard",
@@ -301,13 +222,6 @@ router.post("/link-driver", async (req, res) => {
       { new: true }
     );
 
-    if (!updatedParent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
     res.json({
       success: true,
       message: "Driver linked successfully",
@@ -315,7 +229,8 @@ router.post("/link-driver", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("LINK DRIVER ERROR:", err);
+    console.error("❌ LINK DRIVER ERROR:", err);
+
     res.status(500).json({
       success: false,
       message: "Linking failed",
