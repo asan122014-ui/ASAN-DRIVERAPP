@@ -4,43 +4,35 @@ import Notification from "../models/Notification.js";
 /**
  * GET /api/notifications?driverId=XXX OR parentId=XXX
  */
-export const getNotifications = async (req, res) => {
+export const getAllNotifications = async (req, res) => {
   try {
-    const { driverId, parentId } = req.query;
+    const { driverId } = req.params; // ✅ STRICT
 
-    if (!driverId && !parentId) {
+    if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "driverId or parentId is required",
+        message: "driverId is required"
       });
     }
 
-    // ✅ Dynamic filter
-    let filter = { read: false };
-
-    if (driverId) filter.driver = driverId;
-    if (parentId) filter.parent = parentId;
-
-    const notifications = await Notification.find(filter)
-      .sort({ createdAt: -1 })
-      .lean();
+    const notifications = await Notification.find({
+      driver: driverId
+    }).sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      count: notifications.length,
-      data: notifications,
+      data: notifications
     });
 
   } catch (error) {
-    console.error("❌ Get notifications error:", error);
+    console.error("❌ Get all notifications error:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to fetch notifications",
+      message: "Failed to fetch notifications"
     });
   }
 };
-
 /* ================= GET ALL NOTIFICATIONS ================= */
 /**
  * GET /api/notifications/all?driverId=XXX OR parentId=XXX
