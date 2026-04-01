@@ -20,10 +20,8 @@ router.post("/add", async (req, res) => {
       location,
       dropLocationCoords,
       parentId,
-      driverId
+      driverId,
     } = req.body;
-
-    console.log("BODY:", req.body); // 🔥 debug
 
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
@@ -44,18 +42,21 @@ router.post("/add", async (req, res) => {
       pickupLocation,
       dropoffLocation,
 
+      // ✅ SAFE LOCATION
       location: {
-        lat: location?.lat || null,
-        lng: location?.lng || null,
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
       },
 
       dropLocationCoords: {
-        lat: dropLocationCoords?.lat || null,
-        lng: dropLocationCoords?.lng || null,
+        lat: dropLocationCoords?.lat ?? null,
+        lng: dropLocationCoords?.lng ?? null,
       },
 
       parentId,
       driverId,
+
+      // ✅ DEFAULT STATUS
       status: "waiting",
     });
 
@@ -66,7 +67,6 @@ router.post("/add", async (req, res) => {
 
   } catch (err) {
     console.error("🔥 Add child error:", err);
-
     res.status(500).json({
       success: false,
       message: err.message || "Failed to add child",
@@ -87,7 +87,11 @@ router.get("/parent/:parentId", async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ success: false });
+    console.error("Parent fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch children",
+    });
   }
 });
 
@@ -104,7 +108,91 @@ router.get("/driver/:driverId", async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ success: false });
+    console.error("Driver fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch children",
+    });
+  }
+});
+
+/* ================= PICKUP STUDENT ================= */
+router.post("/pickup", async (req, res) => {
+  try {
+    const { childId } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "Child ID is required",
+      });
+    }
+
+    const child = await Child.findByIdAndUpdate(
+      childId,
+      { status: "onboard" },
+      { new: true }
+    );
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Student picked up",
+      data: child,
+    });
+
+  } catch (err) {
+    console.error("Pickup error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Pickup failed",
+    });
+  }
+});
+
+/* ================= DROP STUDENT ================= */
+router.post("/drop", async (req, res) => {
+  try {
+    const { childId } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "Child ID is required",
+      });
+    }
+
+    const child = await Child.findByIdAndUpdate(
+      childId,
+      { status: "dropped" },
+      { new: true }
+    );
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Student dropped",
+      data: child,
+    });
+
+  } catch (err) {
+    console.error("Drop error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Drop failed",
+    });
   }
 });
 
