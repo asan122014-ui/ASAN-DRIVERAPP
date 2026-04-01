@@ -2,30 +2,33 @@ import mongoose from "mongoose";
 
 const tripSchema = new mongoose.Schema(
   {
-    // ✅ FIXED: use STRING instead of ObjectId
+    /* ================= DRIVER ================= */
     driverId: {
       type: String,
       required: true,
       index: true
     },
 
+    /* ================= TRIP TYPE ================= */
     tripType: {
       type: String,
       enum: ["morning", "afternoon"],
       required: true
     },
 
+    /* ================= STATUS ================= */
     status: {
       type: String,
       enum: ["in_transit", "completed"],
-      default: "active",
+      default: "in_transit", // ✅ FIXED
       index: true
     },
 
+    /* ================= STUDENTS ================= */
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Student"
+        ref: "Child" // ✅ FIXED (was Student ❌)
       }
     ],
 
@@ -35,12 +38,36 @@ const tripSchema = new mongoose.Schema(
       min: 0
     },
 
+    /* ================= UI DATA (🔥 IMPORTANT) ================= */
+    childName: {
+      type: String,
+      default: "Student"
+    },
+
+    route: {
+      from: {
+        type: String,
+        default: "--"
+      },
+      to: {
+        type: String,
+        default: "--"
+      }
+    },
+
+    eta: {
+      type: String,
+      default: "--"
+    },
+
+    /* ================= OPTIONAL ================= */
     amount: {
       type: Number,
       default: 0,
       min: 0
     },
 
+    /* ================= TIME ================= */
     startTime: {
       type: Date,
       default: Date.now
@@ -49,14 +76,17 @@ const tripSchema = new mongoose.Schema(
     endTime: {
       type: Date,
       default: null
+    },
+
+    duration: {
+      type: Number,
+      default: 0
     }
   },
   { timestamps: true }
 );
 
 /* ================= INDEXES ================= */
-
-// ✅ updated indexes
 tripSchema.index({ driverId: 1, status: 1 });
 tripSchema.index({ driverId: 1, createdAt: -1 });
 
