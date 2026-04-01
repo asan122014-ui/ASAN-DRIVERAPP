@@ -1,152 +1,176 @@
 import Driver from "../models/Driver.js";
-import {
-  startTripService,
-  endTripService,
-  getDriverTripsService,
-  getActiveTripService
-} from "../services/tripService.js";
+import Trips from "../models/Trips.js";
+import Notification from "../models/Notification.js";
+import Child from "../models/Child.js";
 
-/* ================= START TRIP ================= */
-export const startTrip = async (req, res) => {
+/* ================= GET DRIVER PROFILE ================= */
+export const getDriverProfile = async (req, res) => {
   try {
-    const { driverId, tripType } = req.body;
+    const driverId = req.params.driverId;
 
-    if (!driverId) {
-      return res.status(400).json({
+    const driver = await Driver.findOne({ driverId })
+      .select("-password")
+      .lean();
+
+    if (!driver) {
+      return res.status(404).json({
         success: false,
-        message: "Driver ID is required"
+        message: "Driver not found"
       });
     }
 
-    // ✅ create trip
-    const trip = await startTripService(
-      driverId,
-      tripType,
-      req.app.get("io")
-    );
+    res.json({
+      success: true,
+      data: driver
+    });
 
-    // ✅ UPDATE DRIVER STATS (🔥 IMPORTANT FIX)
-    await Driver.findOneAndUpdate(
+  } catch (error) {
+    console.error("Profile Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch driver profile"
+    });
+  }
+};
+
+/* ================= DRIVER DASHBOARD ================= */
+export const getDriverDashboard = async (req, res) => {
+  try {
+    const driverId = req.params.driverId;
+
+    const driver = await Driver.findOne({ driverId });
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found"
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [totalTrips, todayTrips, studentsAssigned] =
+      await Promise.all([
+        // ✅ ALL TRIPS
+        Trips.countDocuments({ driverId }),
+
+        // ✅ TODAY TRIPS
+        Trips.countDocuments({
+          driverId,
+          createdAt: { $gte: today }
+        }),
+
+        // ✅ TOTAL CHILDREN
+        Child.countDocuments({ driverId })
+      ]);
+
+    res.json({
+      success: true,
+      data: {
+        name: driver.name,
+        vehicleNumber: driver.vehicleNumber,
+        vehicleType: driver.vehicleType,
+        totalTrips,
+        todayTrips,
+        studentsAssigned
+      }
+    });
+
+  } catch (error) {
+    console.error("Dashboard Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch dashboard"
+    });
+  }
+};
+
+/* ================= GET ASSIGNED STUDENTS ================= */
+export const getAssignedStudents = async (req, res) => {
+  try {
+    const driverId = req.params.driverId;
+
+    const students = await Child.find({ driverId }).lean();
+
+    res.json({
+      success: true,
+      data: students
+    });
+
+  } catch (error) {
+    console.error("Students Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch assigned students"
+    });
+  }
+};
+
+/* ================= UPDATE DRIVER LOCATION ================= */
+export const updateDriverLocation = async (req, res) => {
+  try {
+    const driverId = req.params.driverId;
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and longitude are required"
+      });
+    }
+
+    const driver = await Driver.findOneAndUpdate(
       { driverId },
       {
-        $inc: {
-          totalTrips: 1,
-          todayTrips: 1
-        },
-        currentStatus: "on_trip",
-        isOnline: true
-      }
-    );
-
-    res.status(201).json({
-      success: true,
-      data: trip
-    });
-
-  } catch (error) {
-    console.error("🔥 Start trip error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-
-/* ================= END TRIP ================= */
-export const endTrip = async (req, res) => {
-  try {
-    const { driverId } = req.body;
-
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required"
-      });
-    }
-
-    const trip = await endTripService(
-      driverId,
-      req.app.get("io")
-    );
-
-    // ✅ RESET DRIVER STATUS
-    await Driver.findOneAndUpdate(
-      { driverId },
-      {
-        currentStatus: "idle",
-        isOnline: false
-      }
+        location: {
+          type: "Point",
+          coordinates: [longitude, latitude]
+        }
+      },
+      { new: true }
     );
 
     res.json({
       success: true,
-      data: trip
+      location: driver.location
     });
 
   } catch (error) {
-    console.error("🔥 End trip error:", error);
+    console.error("Location Update Error:", error);
+
     res.status(500).json({
       success: false,
-      message: error.message
+      message: "Failed to update driver location"
     });
   }
 };
 
-
-/* ================= ACTIVE TRIP ================= */
-export const getActiveTrip = async (req, res) => {
+/* ================= GET DRIVER NOTIFICATIONS ================= */
+export const getDriverNotifications = async (req, res) => {
   try {
-    const { driverId } = req.params;
+    const driverId = req.params.driverId;
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required"
-      });
-    }
-
-    const trip = await getActiveTripService(driverId);
+    const notifications = await Notification.find({
+      driver: driverId
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       success: true,
-      data: trip || null
+      data: notifications
     });
 
   } catch (error) {
-    console.error("🔥 Active trip error:", error);
+    console.error("Notification Error:", error);
+
     res.status(500).json({
       success: false,
-      message: error.message
-    });
-  }
-};
-
-
-/* ================= TRIP HISTORY ================= */
-export const getTripHistory = async (req, res) => {
-  try {
-    const { driverId } = req.params;
-
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required"
-      });
-    }
-
-    const trips = await getDriverTripsService(driverId);
-
-    res.json({
-      success: true,
-      data: trips || []
-    });
-
-  } catch (error) {
-    console.error("🔥 Trip history error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
+      message: "Failed to fetch notifications"
     });
   }
 };
