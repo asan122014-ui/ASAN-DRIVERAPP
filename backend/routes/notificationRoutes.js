@@ -5,8 +5,11 @@ import {
   markAsRead,
   markAllAsRead
 } from "../controllers/notificationController.js";
+import { sendTestNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
+
+router.post("/test", sendTestNotification);
 
 /* GET UNREAD */
 router.get("/", getNotifications);
