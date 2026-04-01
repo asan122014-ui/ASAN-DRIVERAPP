@@ -9,50 +9,43 @@ const router = express.Router();
 /* ================= REGISTER ================= */
 router.post("/register", async (req, res) => {
   try {
-    console.log("REQ BODY:", req.body);
-
     const { name, email, password, phone } = req.body;
 
-    // ✅ VALIDATION
     if (!name || !email || !password || !phone) {
       return res.status(400).json({
+        success: false,
         message: "All fields are required",
       });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // ✅ CHECK EXISTING USER
     const existing = await Parent.findOne({
       $or: [{ email: normalizedEmail }, { phone }],
     });
 
     if (existing) {
       return res.status(400).json({
+        success: false,
         message: "User already exists",
       });
     }
 
-    // ✅ HASH PASSWORD (🔥 FIX)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // ✅ CREATE USER
-    const parent = new Parent({
+    const parent = await Parent.create({
       name,
       email: normalizedEmail,
       phone,
-      password: hashedPassword, // ✅ FIXED
+      password: hashedPassword,
     });
 
-    await parent.save();
-
-    // ✅ REMOVE PASSWORD FROM RESPONSE
     parent.password = undefined;
 
     res.status(201).json({
       success: true,
-      data: { parent },
+      data: parent,
     });
 
   } catch (err) {
@@ -60,11 +53,13 @@ router.post("/register", async (req, res) => {
 
     if (err.code === 11000) {
       return res.status(400).json({
+        success: false,
         message: "Duplicate email or phone",
       });
     }
 
     res.status(500).json({
+      success: false,
       message: err.message || "Signup failed",
     });
   }
@@ -75,46 +70,85 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // ✅ VALIDATION
     if (!email || !password) {
       return res.status(400).json({
+        success: false,
         message: "Email and password are required",
       });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // ✅ FIND USER
-    const parent = await Parent.findOne({ email: normalizedEmail }).select("+password");
+    const parent = await Parent.findOne({ email: normalizedEmail })
+      .select("+password");
 
     if (!parent) {
       return res.status(400).json({
+        success: false,
         message: "Invalid credentials",
       });
     }
 
-    // ✅ CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, parent.password);
 
     if (!isMatch) {
       return res.status(400).json({
+        success: false,
         message: "Invalid credentials",
       });
     }
 
-    // ✅ REMOVE PASSWORD
     parent.password = undefined;
 
     res.json({
       success: true,
-      data: { parent },
+      data: parent,
     });
 
   } catch (err) {
     console.error("LOGIN ERROR:", err);
-
     res.status(500).json({
+      success: false,
       message: "Login failed",
+    });
+  }
+});
+
+/* ================= SAVE FCM TOKEN ================= */
+router.post("/save-token", async (req, res) => {
+  try {
+    const { parentId, token } = req.body;
+
+    if (!parentId || !token) {
+      return res.status(400).json({
+        success: false,
+        message: "parentId and token are required",
+      });
+    }
+
+    const parent = await Parent.findByIdAndUpdate(
+      parentId,
+      { fcmToken: token },
+      { new: true }
+    );
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "FCM token saved successfully",
+    });
+
+  } catch (err) {
+    console.error("SAVE TOKEN ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to save token",
     });
   }
 });
@@ -130,6 +164,7 @@ router.post("/check-email", async (req, res) => {
 
     if (!parent) {
       return res.status(404).json({
+        success: false,
         message: "Email not found",
       });
     }
@@ -138,6 +173,7 @@ router.post("/check-email", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({
+      success: false,
       message: "Server error",
     });
   }
@@ -154,6 +190,7 @@ router.post("/reset-password", async (req, res) => {
 
     if (!parent) {
       return res.status(404).json({
+        success: false,
         message: "User not found",
       });
     }
@@ -170,8 +207,8 @@ router.post("/reset-password", async (req, res) => {
 
   } catch (err) {
     console.error("RESET ERROR:", err);
-
     res.status(500).json({
+      success: false,
       message: "Server error",
     });
   }
@@ -182,43 +219,39 @@ router.get("/dashboard/:parentId", async (req, res) => {
   try {
     const { parentId } = req.params;
 
-    /* ✅ GET PARENT */
     const parent = await Parent.findById(parentId);
 
     if (!parent) {
       return res.status(404).json({
         success: false,
-        message: "Parent not found"
+        message: "Parent not found",
       });
     }
 
-    /* ✅ GET DRIVER ID */
-    const driverId = parent.driverId;
-
-    if (!driverId) {
+    if (!parent.driverId) {
       return res.json({
         success: true,
-        data: []
+        data: [],
       });
     }
 
-    /* ✅ FETCH TRIPS USING DRIVER ID */
-    const trips = await Trip.find({ driverId })
+    const trips = await Trip.find({ driverId: parent.driverId })
       .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      data: trips
+      data: trips,
     });
 
   } catch (err) {
     console.error("DASHBOARD ERROR:", err);
     res.status(500).json({
-      message: "Failed to fetch dashboard"
+      success: false,
+      message: "Failed to fetch dashboard",
     });
   }
 });
-/* ================= LINK DRIVER ================= */
+
 /* ================= LINK DRIVER ================= */
 router.post("/link-driver", async (req, res) => {
   try {
@@ -231,10 +264,8 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    // clean input
     const cleanDriverId = driverId.trim();
 
-    // check driver exists
     const driver = await Driver.findOne({ driverId: cleanDriverId });
 
     if (!driver) {
@@ -244,7 +275,6 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    // update parent
     const updatedParent = await Parent.findByIdAndUpdate(
       parentId,
       { driverId: cleanDriverId },
@@ -266,11 +296,11 @@ router.post("/link-driver", async (req, res) => {
 
   } catch (err) {
     console.error("LINK DRIVER ERROR:", err);
-
     res.status(500).json({
       success: false,
       message: "Linking failed",
     });
   }
 });
+
 export default router;
