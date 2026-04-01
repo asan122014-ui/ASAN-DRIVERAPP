@@ -1,5 +1,4 @@
 import Notification from "../models/Notification.js";
-
 import admin from "../config/firebaseAdmin.js";
 import Parent from "../models/Parent.js";
 
@@ -161,19 +160,23 @@ export const sendTestNotification = async (req, res) => {
     const parent = await Parent.findById(parentId);
 
     if (!parent || !parent.fcmToken) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
         message: "FCM token not found",
       });
     }
 
-    await admin.messaging().send({
+    const message = {
       token: parent.fcmToken,
       notification: {
-        title: "Backend Test 🚀",
-        body: "This notification is from your server",
+        title: "Test Notification 🚀",
+        body: "FCM is working properly!",
       },
-    });
+    };
+
+    const response = await admin.messaging().send(message);
+
+    console.log("✅ Firebase response:", response);
 
     res.json({
       success: true,
@@ -181,7 +184,7 @@ export const sendTestNotification = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ FCM ERROR:", err);
+    console.error("❌ FCM ERROR:", err); // 🔥 VERY IMPORTANT
     res.status(500).json({
       success: false,
       message: "Failed to send notification",
