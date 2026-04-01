@@ -119,6 +119,11 @@ router.post("/save-token", async (req, res) => {
   try {
     const { parentId, driverId, token } = req.body;
 
+    console.log("👉 SAVE TOKEN API HIT");
+    console.log("parentId:", parentId);
+    console.log("driverId:", driverId);
+    console.log("token:", token);
+
     if (!token) {
       return res.status(400).json({
         success: false,
@@ -130,6 +135,7 @@ router.post("/save-token", async (req, res) => {
       await Parent.findByIdAndUpdate(parentId, {
         fcmToken: token,
       });
+      console.log("✅ Parent token saved");
     }
 
     if (driverId) {
@@ -137,6 +143,7 @@ router.post("/save-token", async (req, res) => {
         { driverId },
         { fcmToken: token }
       );
+      console.log("✅ Driver token saved");
     }
 
     res.json({
@@ -146,11 +153,7 @@ router.post("/save-token", async (req, res) => {
 
   } catch (err) {
     console.error("❌ SAVE TOKEN ERROR:", err);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to save token",
-    });
+    res.status(500).json({ success: false });
   }
 });
 
