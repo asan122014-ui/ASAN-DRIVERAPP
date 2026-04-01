@@ -1,6 +1,6 @@
 import admin from "firebase-admin";
 import Notification from "../models/Notification.js";
-import Parent from "../models/Parent.js"; // 🔥 ADDED
+import Parent from "../models/Parent.js";
 
 export const sendNotification = async ({
   driverId,
@@ -31,16 +31,18 @@ export const sendNotification = async ({
     /* ================= SOCKET ================= */
 
     if (io) {
-      // ✅ DRIVER (existing — KEEP)
+      // ✅ DRIVER (UNCHANGED)
       io.to(String(driverId)).emit("new_notification", notification);
 
-      // 🔥 ADD: SEND TO PARENT ALSO
+      // 🔥 FIXED: SEND TO PARENT (STRING ROOM)
       const parent = await Parent.findOne({ driverId });
 
       if (parent?._id) {
-        console.log("📡 Sending to parent:", parent._id);
+        const parentRoom = parent._id.toString(); // ✅ IMPORTANT FIX
 
-        io.to(String(parent._id)).emit("notification", {
+        console.log("📡 Sending to parent:", parentRoom);
+
+        io.to(parentRoom).emit("notification", {
           title,
           message
         });
