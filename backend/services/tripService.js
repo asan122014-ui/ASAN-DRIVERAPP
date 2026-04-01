@@ -27,12 +27,12 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN (FULL DATA) */
+    /* ✅ FETCH CHILDREN */
     const children = await Child.find({ driver: driverId });
 
-    /* 🔥 PREPARE UI DATA */
-    const firstChild = children[0];
+    const firstChild = children?.[0];
 
+    /* ✅ CREATE TRIP */
     const trip = await Trips.create({
       driverId,
       tripType,
@@ -50,7 +50,6 @@ export const startTripService = async (driverId, tripType, io) => {
       },
 
       eta: "30 mins",
-
       startTime: new Date()
     });
 
@@ -60,7 +59,7 @@ export const startTripService = async (driverId, tripType, io) => {
       { status: "waiting" }
     );
 
-    /* ✅ SEND NOTIFICATION (ALWAYS SAVE) */
+    /* ✅ SEND NOTIFICATION */
     await sendNotification({
       driverId,
       title: "Trip Started",
@@ -69,9 +68,12 @@ export const startTripService = async (driverId, tripType, io) => {
       io
     });
 
-    /* ✅ SOCKET */
+    /* ✅ SOCKET (FIXED 🔥) */
     if (io) {
-      io.to(driverId).emit("trip_started", trip);
+      const room = String(driverId);
+      console.log("📡 Emitting trip_started to:", room);
+
+      io.to(room).emit("trip_started", trip);
     }
 
     console.log("✅ Trip created:", trip._id);
@@ -130,11 +132,13 @@ export const endTripService = async (driverId, io) => {
       io
     });
 
-    /* ✅ SOCKET */
+    /* ✅ SOCKET (FIXED 🔥 IMPORTANT) */
     if (io) {
-      io.to(driverId).emit("trip_ended", {
-        message: "Trip completed"
-      });
+      const room = String(driverId);
+      console.log("📡 Emitting trip_ended to:", room);
+
+      // 🔥 SEND FULL TRIP (NOT JUST MESSAGE)
+      io.to(room).emit("trip_ended", trip);
     }
 
     return trip;
