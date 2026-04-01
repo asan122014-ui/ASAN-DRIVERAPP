@@ -7,30 +7,34 @@ const driverSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
+
     phone: {
       type: String,
       required: true,
       unique: true,
-      index: true
+      index: true,
     },
+
     email: {
       type: String,
       required: true,
       unique: true,
       lowercase: true,
-      trim: true
+      trim: true,
     },
+
     password: {
       type: String,
       required: true,
       minlength: 6,
-      select: false
+      select: false,
     },
+
     address: {
       type: String,
-      required: true
+      required: true,
     },
 
     /* ================= VEHICLE DETAILS ================= */
@@ -38,17 +42,19 @@ const driverSchema = new mongoose.Schema(
       type: String,
       required: true,
       uppercase: true,
-      trim: true
+      trim: true,
     },
+
     vehicleType: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
+
     licenseNumber: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
 
     /* ================= DOCUMENTS ================= */
@@ -65,20 +71,23 @@ const driverSchema = new mongoose.Schema(
     driverId: {
       type: String,
       unique: true,
-      index: true
+      index: true,
     },
+
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
-      default: "pending"
+      default: "pending",
     },
+
     rejectionReason: {
       type: String,
-      default: null
+      default: null,
     },
+
     fcmToken: {
       type: String,
-      default: null
+      default: null,
     },
 
     /* ================= PERFORMANCE ================= */
@@ -86,66 +95,81 @@ const driverSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
-      max: 5
-    },
-    totalTrips: {
-      type: Number,
-      default: 0
-    },
-    todayTrips: {
-      type: Number,
-      default: 0
-    },
-    studentsAssigned: {
-      type: Number,
-      default: 0
+      max: 5,
     },
 
-    /* ================= LOCATION ================= */
+    totalTrips: {
+      type: Number,
+      default: 0,
+    },
+
+    todayTrips: {
+      type: Number,
+      default: 0,
+    },
+
+    studentsAssigned: {
+      type: Number,
+      default: 0,
+    },
+
+    /* ================= LOCATION (GeoJSON) ================= */
     location: {
       type: {
         type: String,
         enum: ["Point"],
-        default: "Point"
+        default: "Point",
       },
       coordinates: {
         type: [Number], // [lng, lat]
-        default: [0, 0]
-      }
+        default: [0, 0],
+      },
     },
 
-    /* ================= NEW: TRACKING UI ================= */
+    /* ================= 🔥 NEW: LAST LIVE LOCATION ================= */
+    lastLocation: {
+      lat: {
+        type: Number,
+        default: null,
+      },
+      lng: {
+        type: Number,
+        default: null,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
 
-    // 🔥 Live status
+    /* ================= TRACKING UI ================= */
     isOnline: {
       type: Boolean,
-      default: false
+      default: false,
     },
 
-    // 🔥 current trip status
     currentStatus: {
       type: String,
       enum: ["idle", "on_trip", "offline"],
-      default: "idle"
+      default: "idle",
     },
 
-    // 🔥 optional profile enhancements
     vehicleModel: {
       type: String,
-      default: ""
+      default: "",
     },
 
-    // 🔥 optional profile picture for UI
     avatar: {
       type: String,
-      default: ""
-    }
+      default: "",
+    },
   },
   { timestamps: true }
 );
 
 /* ================= INDEX ================= */
 driverSchema.index({ location: "2dsphere" });
+driverSchema.index({ driverId: 1 });
 
 /* ================= HASH PASSWORD ================= */
 driverSchema.pre("save", async function (next) {
