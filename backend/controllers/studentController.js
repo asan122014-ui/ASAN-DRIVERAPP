@@ -1,6 +1,7 @@
 import Students from "../models/Students.js";
-import Trips from "../models/Trips.js";
 import Driver from "../models/Driver.js";
+import Trips from "../models/Trips.js";
+
 /* ================= ADD STUDENT ================= */
 export const addStudent = async (req, res) => {
   try {
@@ -19,6 +20,8 @@ export const addStudent = async (req, res) => {
       eveningDrop
     } = req.body;
 
+    console.log("Incoming body:", req.body);
+
     // ✅ VALIDATION
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
@@ -27,8 +30,10 @@ export const addStudent = async (req, res) => {
       });
     }
 
-    // 🔥 STEP 1: FIND DRIVER USING driverId (STRING)
+    // 🔥 FIND DRIVER USING CUSTOM driverId
     const driverDoc = await Driver.findOne({ driverId });
+
+    console.log("Driver found:", driverDoc);
 
     if (!driverDoc) {
       return res.status(400).json({
@@ -37,7 +42,7 @@ export const addStudent = async (req, res) => {
       });
     }
 
-    // 🔥 STEP 2: SAVE USING ObjectId
+    // ✅ CREATE STUDENT
     const student = new Students({
       name,
       age,
@@ -45,7 +50,8 @@ export const addStudent = async (req, res) => {
       grade,
       parentId,
 
-      driver: driverDoc._id, // ✅ THIS FIXES ERROR
+      // 🔥 CRITICAL FIX
+      driver: driverDoc._id,
 
       pickupTime,
       dropoffTime,
@@ -74,7 +80,7 @@ export const addStudent = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 Add student error:", error);
+    console.error("🔥 FULL ERROR:", error);
 
     res.status(500).json({
       success: false,
