@@ -8,7 +8,6 @@ export const startTripService = async (driverId, tripType, io) => {
   try {
     console.log("🚀 Starting trip:", driverId);
 
-    /* ✅ VALIDATION */
     if (!driverId || !tripType) {
       throw new Error("driverId and tripType are required");
     }
@@ -28,8 +27,8 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN */
-    const children = await Child.find({ driverId }).select("_id");
+    /* 🔥 FIX: CORRECT FIELD NAME */
+    const children = await Child.find({ driver: driverId }).select("_id");
 
     /* ✅ CREATE TRIP */
     const trip = await Trips.create({
@@ -43,24 +42,18 @@ export const startTripService = async (driverId, tripType, io) => {
 
     /* ✅ RESET CHILD STATUS */
     await Child.updateMany(
-      { driverId },
+      { driver: driverId },
       { status: "waiting" }
     );
 
-    /* ✅ SEND NOTIFICATION */
-    try {
-      if (driver.fcmToken) {
-        await sendNotification({
-          driverId,
-          title: "Trip Started",
-          message: `${tripType} trip started`,
-          fcmToken: driver.fcmToken,
-          io
-        });
-      }
-    } catch (err) {
-      console.warn("⚠️ Notification failed:", err.message);
-    }
+    /* 🔥 ALWAYS SAVE NOTIFICATION (IMPORTANT FIX) */
+    await sendNotification({
+      driverId,
+      title: "Trip Started",
+      message: `${tripType} trip started`,
+      fcmToken: driver.fcmToken, // optional
+      io
+    });
 
     /* ✅ SOCKET */
     if (io) {
@@ -68,7 +61,6 @@ export const startTripService = async (driverId, tripType, io) => {
     }
 
     console.log("✅ Trip created:", trip._id);
-
     return trip;
 
   } catch (error) {
@@ -92,27 +84,33 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    /* ✅ SAFE TIME HANDLING */
+    /* ✅ SAFE TIME */
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
 
     trip.endTime = new Date();
-
     const durationMs = trip.endTime - trip.startTime;
     trip.duration = Math.max(1, Math.round(durationMs / 60000));
-
     trip.status = "completed";
 
     await trip.save();
 
     console.log("✅ Trip ended:", trip._id);
 
-    /* ✅ RESET CHILDREN */
+    /* 🔥 FIX: CORRECT FIELD */
     await Child.updateMany(
-      { driverId },
+      { driver: driverId },
       { status: "waiting" }
     );
+
+    /* 🔥 ADD MISSING NOTIFICATION */
+    await sendNotification({
+      driverId,
+      title: "Trip Completed",
+      message: "Trip ended successfully",
+      io
+    });
 
     /* ✅ SOCKET */
     if (io) {
