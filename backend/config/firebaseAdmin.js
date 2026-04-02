@@ -1,12 +1,10 @@
 import admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
 
-// 🔥 get absolute path
-const serviceAccountPath = path.resolve("config/asan-app-4b7ea-firebase-adminsdk-fbsvc-1dd8033fce.json");
-
-// 🔥 read JSON file
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
+const serviceAccount = {
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+};
 
 if (!admin.apps.length) {
   admin.initializeApp({
