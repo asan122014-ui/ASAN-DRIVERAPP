@@ -38,10 +38,10 @@ const parentSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* ================= 🔥 FCM TOKEN (ADD THIS) ================= */
-    fcmToken: {
-      type: String,
-      default: null,
+    /* ================= 🔥 FCM TOKENS (UPDATED) ================= */
+    fcmTokens: {
+      type: [String], // ✅ ARRAY for multiple devices
+      default: [],
     },
   },
   {
