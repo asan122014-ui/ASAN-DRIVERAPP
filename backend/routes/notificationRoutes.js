@@ -1,43 +1,29 @@
 import express from "express";
 import {
-  getNotifications,        // unread
-  getAllNotifications,     // all
+  getNotifications,
+  getAllNotifications,
   markAsRead,
   markAllAsRead,
-  sendTestNotification
+  sendTestNotification,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
 
-/* ================= TEST FCM ================= */
-/**
- * POST /api/notifications/test
- * Body: { driverId }
- */
+/* ================= TEST ================= */
 router.post("/test", sendTestNotification);
 
-/* ================= GET UNREAD ================= */
-/**
- * GET /api/notifications?driverId=XXX OR parentId=XXX
- */
+/* ================= FETCH ================= */
+// unread
 router.get("/", getNotifications);
 
-/* ================= GET ALL ================= */
-/**
- * GET /api/notifications/all?driverId=XXX OR parentId=XXX
- */
+// all (with filters: driverId, parentId, childId)
 router.get("/all", getAllNotifications);
 
-/* ================= MARK SINGLE ================= */
-/**
- * PUT /api/notifications/:id/read
- */
+/* ================= UPDATE ================= */
+// mark single
 router.put("/:id/read", markAsRead);
 
-/* ================= MARK ALL ================= */
-/**
- * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX
- */
+// mark all
 router.put("/read-all", markAllAsRead);
 
 export default router;
