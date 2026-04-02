@@ -3,8 +3,9 @@ import dotenv from "dotenv";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
+
 import connectDB from "./config/db.js";
-import Driver from "./models/Driver.js"; // 🔥 IMPORTANT
+import Driver from "./models/Driver.js";
 
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
@@ -20,6 +21,7 @@ import childRoutes from "./routes/child.js";
 
 /* ================= INIT ================= */
 dotenv.config();
+
 const app = express();
 const server = http.createServer(app);
 
@@ -75,72 +77,41 @@ io.on("connection", (socket) => {
     console.log("👨‍👩‍👧 Parent joined:", room);
   });
 
-  /* ===== LIVE LOCATION (🔥 MOST IMPORTANT) ===== */
+  /* ===== LIVE LOCATION + ETA ===== */
   socket.on("send_location", async (data) => {
-  try {
-    const { driverId, lat, lng, eta } = data;
+    try {
+      const { driverId, lat, lng, eta } = data;
 
-    if (!driverId || lat === undefined || lng === undefined) return;
-
-    const room = String(driverId);
-
-    await Driver.findOneAndUpdate(
-      { driverId },
-      {
-        lastLocation: {
-          lat,
-          lng,
-          eta: eta || "--",
-          updatedAt: new Date(),
-        },
-        location: {
-          type: "Point",
-          coordinates: [lng, lat],
-        },
-      }
-    );
-
-    io.to(room).emit("live_location", {
-      lat,
-      lng,
-      eta: eta || "--",
-    });
-
-    console.log("📍 Location + ETA updated:", room);
-
-  } catch (err) {
-    console.error("❌ Location socket error:", err.message);
-  }
-});
-
-      // ✅ FIX: allow 0 values also
+      // ✅ allow 0 values
       if (!driverId || lat === undefined || lng === undefined) return;
 
       const room = String(driverId);
 
-      /* 🔥 SAVE TO DATABASE */
+      /* 🔥 SAVE TO DB */
       await Driver.findOneAndUpdate(
         { driverId },
         {
           lastLocation: {
-  lat: Number,
-  lng: Number,
-  eta: {
-    type: String,
-    default: "--"
-  },
-  updatedAt: Date,
-},
+            lat: lat,
+            lng: lng,
+            eta: eta || "--",
+            updatedAt: new Date(),
+          },
+          location: {
+            type: "Point",
+            coordinates: [lng, lat],
+          },
         }
       );
 
-      /* 🔥 EMIT TO ALL PARENTS */
+      /* 🔥 EMIT TO CLIENTS */
       io.to(room).emit("live_location", {
         lat,
         lng,
+        eta: eta || "--",
       });
 
-      console.log("📍 Location updated + sent:", room);
+      console.log("📍 Location + ETA updated:", room, eta);
 
     } catch (err) {
       console.error("❌ Location socket error:", err.message);
@@ -181,6 +152,7 @@ app.get("/api/health", (req, res) => {
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR:", err);
+
   res.status(500).json({
     success: false,
     message: err.message || "Internal error",
