@@ -1,8 +1,8 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import twilio from "twilio";
-
 import Driver from "../models/Driver.js";
+import Parent from "../models/Parent.js"; // 🔥 IMPORTANT
 import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
@@ -103,7 +103,7 @@ router.post(
   }
 );
 
-/* ================= LOGIN (NO TOKEN) ================= */
+/* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -146,6 +146,47 @@ router.post("/login", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Login failed"
+    });
+  }
+});
+
+/* ================= SAVE FCM TOKEN (🔥 NEW) ================= */
+router.post("/save-token", async (req, res) => {
+  try {
+    const { parentId, fcmToken } = req.body;
+
+    if (!parentId || !fcmToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing parentId or fcmToken",
+      });
+    }
+
+    const parent = await Parent.findByIdAndUpdate(
+      parentId,
+      { fcmToken },
+      { new: true }
+    );
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    console.log("✅ FCM token saved for parent:", parentId);
+
+    res.json({
+      success: true,
+      message: "Token saved successfully",
+    });
+
+  } catch (error) {
+    console.error("❌ Save token error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to save token",
     });
   }
 });
