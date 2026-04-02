@@ -4,7 +4,6 @@ import dotenv from "dotenv";
 import Driver from "../models/Driver.js";
 
 dotenv.config();
-
 const router = express.Router();
 
 /* ================= TWILIO ================= */
@@ -19,13 +18,21 @@ const otpStore = new Map();
 /* ================= SEND OTP ================= */
 router.post("/send-otp", async (req, res) => {
   try {
+    console.log("📥 REQ BODY:", req.body); // 🔥 DEBUG
+
     let { phone, type } = req.body;
 
-    if (!phone || !type) {
+    /* ===== VALIDATION ===== */
+    if (!phone) {
       return res.status(400).json({
         success: false,
-        message: "Phone and type required"
+        message: "Phone is required",
       });
+    }
+
+    // 🔥 DEFAULT TYPE (prevents 400 errors)
+    if (!type) {
+      type = "driver_login";
     }
 
     phone = phone.trim();
@@ -33,55 +40,59 @@ router.post("/send-otp", async (req, res) => {
     if (!["driver_login", "driver_signup"].includes(type)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid type"
+        message: "Invalid type",
       });
     }
 
+    /* ===== DRIVER CHECK ===== */
     const driver = await Driver.findOne({ phone });
 
     if (type === "driver_login" && !driver) {
       return res.status(404).json({
         success: false,
-        message: "Driver not found"
+        message: "Driver not found",
       });
     }
 
     if (type === "driver_signup" && driver) {
       return res.status(400).json({
         success: false,
-        message: "Phone already registered"
+        message: "Phone already registered",
       });
     }
 
+    /* ===== GENERATE OTP ===== */
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     otpStore.set(phone, {
       otp,
-      expires: Date.now() + 5 * 60 * 1000
+      expires: Date.now() + 5 * 60 * 1000, // 5 mins
     });
 
-    console.log("PHONE OTP:", otp);
+    console.log("📲 OTP:", otp);
 
-    // ✅ instant response
+    /* ===== RESPONSE FAST ===== */
     res.json({
       success: true,
-      message: "OTP sent"
+      message: "OTP sent successfully",
     });
 
-    // ✅ send SMS in background
+    /* ===== SEND SMS (BACKGROUND) ===== */
     client.messages
       .create({
         body: `Your ASAN OTP is ${otp}`,
         from: process.env.TWILIO_PHONE,
-        to: `+91${phone}`
+        to: `+91${phone}`,
       })
-      .catch(err => console.error("SMS error:", err));
+      .then(() => console.log("✅ SMS sent"))
+      .catch((err) => console.error("❌ SMS error:", err.message));
 
   } catch (error) {
-    console.error("Send OTP error:", error.message);
+    console.error("❌ Send OTP error:", error.message);
+
     res.status(500).json({
       success: false,
-      message: "Failed to send OTP"
+      message: "Failed to send OTP",
     });
   }
 });
@@ -89,12 +100,14 @@ router.post("/send-otp", async (req, res) => {
 /* ================= VERIFY OTP ================= */
 router.post("/verify-otp", async (req, res) => {
   try {
+    console.log("📥 VERIFY BODY:", req.body); // 🔥 DEBUG
+
     let { phone, otp, type } = req.body;
 
     if (!phone || !otp) {
       return res.status(400).json({
         success: false,
-        message: "Phone and OTP required"
+        message: "Phone and OTP required",
       });
     }
 
@@ -104,16 +117,17 @@ router.post("/verify-otp", async (req, res) => {
 
     if (!stored || stored.expires < Date.now()) {
       otpStore.delete(phone);
+
       return res.status(400).json({
         success: false,
-        message: "OTP expired"
+        message: "OTP expired",
       });
     }
 
     if (stored.otp !== otp.toString()) {
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP"
+        message: "Invalid OTP",
       });
     }
 
@@ -126,7 +140,7 @@ router.post("/verify-otp", async (req, res) => {
       if (!driver) {
         return res.status(404).json({
           success: false,
-          message: "Driver not found"
+          message: "Driver not found",
         });
       }
 
@@ -135,21 +149,22 @@ router.post("/verify-otp", async (req, res) => {
 
       return res.json({
         success: true,
-        driver: data
+        driver: data,
       });
     }
 
-    /* ===== DRIVER SIGNUP ===== */
+    /* ===== SIGNUP VERIFIED ===== */
     return res.json({
       success: true,
-      message: "OTP verified"
+      message: "OTP verified successfully",
     });
 
   } catch (error) {
-    console.error("Verify OTP error:", error.message);
+    console.error("❌ Verify OTP error:", error.message);
+
     res.status(500).json({
       success: false,
-      message: "Server error"
+      message: "Server error",
     });
   }
 });
