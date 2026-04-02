@@ -2,6 +2,7 @@ import express from "express";
 import {
   getNotifications,
   getAllNotifications,
+  getParentNotifications, // 🔥 NEW
   markAsRead,
   markAllAsRead,
   sendTestNotification,
@@ -13,17 +14,24 @@ const router = express.Router();
 router.post("/test", sendTestNotification);
 
 /* ================= FETCH ================= */
-// unread
+
+// 🔥 DRIVER (unread or basic)
 router.get("/", getNotifications);
 
-// all (with filters: driverId, parentId, childId)
+// 🔥 ALL (with filters: driverId, parentId, childId)
 router.get("/all", getAllNotifications);
 
+// 🔥 NEW: PARENT-SPECIFIC (MAIN API YOU SHOULD USE)
+router.get("/parent/:parentId", getParentNotifications);
+
+
 /* ================= UPDATE ================= */
+
 // mark single
 router.put("/:id/read", markAsRead);
 
-// mark all
+// 🔥 mark all (based on parentId or driverId)
 router.put("/read-all", markAllAsRead);
+
 
 export default router;
