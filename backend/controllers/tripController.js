@@ -4,7 +4,7 @@ import {
   endTripService,
   getDriverTripsService,
   getActiveTripService,
-  getParentTripsService // 🔥 NEW
+  getParentTripsService,
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
@@ -12,17 +12,10 @@ export const startTrip = async (req, res) => {
   try {
     const { driverId, tripType } = req.body;
 
-    if (!driverId) {
+    if (!driverId || !tripType) {
       return res.status(400).json({
         success: false,
-        message: "Driver ID is required"
-      });
-    }
-
-    if (!tripType) {
-      return res.status(400).json({
-        success: false,
-        message: "Trip type is required"
+        message: "driverId and tripType are required",
       });
     }
 
@@ -32,25 +25,26 @@ export const startTrip = async (req, res) => {
       req.app.get("io")
     );
 
+    /* ✅ UPDATE DRIVER STATUS */
     await Driver.findOneAndUpdate(
       { driverId },
       {
         currentStatus: "on_trip",
-        isOnline: true
+        isOnline: true,
       }
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      data: trip
+      data: trip,
     });
 
   } catch (error) {
-    console.error("🔥 Start trip error:", error);
+    console.error("🔥 Start trip error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to start trip"
+      message: error.message || "Failed to start trip",
     });
   }
 };
@@ -63,7 +57,7 @@ export const endTrip = async (req, res) => {
     if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "Driver ID is required"
+        message: "Driver ID is required",
       });
     }
 
@@ -72,25 +66,26 @@ export const endTrip = async (req, res) => {
       req.app.get("io")
     );
 
+    /* ✅ UPDATE DRIVER STATUS */
     await Driver.findOneAndUpdate(
       { driverId },
       {
         currentStatus: "idle",
-        isOnline: false
+        isOnline: false,
       }
     );
 
-    res.json({
+    return res.json({
       success: true,
-      data: trip
+      data: trip,
     });
 
   } catch (error) {
-    console.error("🔥 End trip error:", error);
+    console.error("🔥 End trip error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to end trip"
+      message: error.message || "Failed to end trip",
     });
   }
 };
@@ -103,23 +98,23 @@ export const getActiveTrip = async (req, res) => {
     if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "Driver ID is required"
+        message: "Driver ID is required",
       });
     }
 
     const trip = await getActiveTripService(driverId);
 
-    res.json({
+    return res.json({
       success: true,
-      data: trip || null
+      data: trip || null,
     });
 
   } catch (error) {
-    console.error("🔥 Active trip error:", error);
+    console.error("🔥 Active trip error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch active trip"
+      message: error.message || "Failed to fetch active trip",
     });
   }
 };
@@ -132,28 +127,28 @@ export const getTripHistory = async (req, res) => {
     if (!driverId) {
       return res.status(400).json({
         success: false,
-        message: "Driver ID is required"
+        message: "Driver ID is required",
       });
     }
 
     const trips = await getDriverTripsService(driverId);
 
-    res.json({
+    return res.json({
       success: true,
-      data: trips || []
+      data: trips || [],
     });
 
   } catch (error) {
-    console.error("🔥 Trip history error:", error);
+    console.error("🔥 Trip history error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch trip history"
+      message: error.message || "Failed to fetch trip history",
     });
   }
 };
 
-/* ================= 🔥 NEW: PARENT TRIP HISTORY ================= */
+/* ================= 🔥 PARENT TRIP HISTORY ================= */
 export const getParentTripHistory = async (req, res) => {
   try {
     const { parentId } = req.params;
@@ -161,23 +156,23 @@ export const getParentTripHistory = async (req, res) => {
     if (!parentId) {
       return res.status(400).json({
         success: false,
-        message: "Parent ID is required"
+        message: "Parent ID is required",
       });
     }
 
     const trips = await getParentTripsService(parentId);
 
-    res.json({
+    return res.json({
       success: true,
-      data: trips || []
+      data: trips || [],
     });
 
   } catch (error) {
-    console.error("🔥 Parent trip history error:", error);
+    console.error("🔥 Parent trip history error:", error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch parent trips"
+      message: error.message || "Failed to fetch parent trips",
     });
   }
 };
