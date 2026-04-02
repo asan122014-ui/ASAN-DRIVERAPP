@@ -24,125 +24,130 @@ export const sendNotification = async ({
     const driver = await Driver.findOne({ driverId });
 
     /* ================= SAVE TO DB ================= */
-    const notification = await Notification.create({
-      driver: driverId,
-      parent: null, // (optional: you can store per parent separately if needed)
-      childId,
-      title,
-      message,
-      type,
-      priority,
-      read: false,
-    });
+    // 🔥 PRO VERSION: save per parent (better filtering)
+    const notifications = [];
 
-    console.log("✅ Notification SAVED:", notification._id);
+    for (const parent of parents) {
+      const notif = await Notification.create({
+        driver: driverId,
+        parent: parent._id, // ✅ important
+        childId,
+        title,
+        message,
+        type,
+        priority,
+        read: false,
+      });
+
+      notifications.push(notif);
+    }
+
+    console.log("✅ Notifications saved:", notifications.length);
 
     /* ================= SOCKET ================= */
     if (io) {
       const driverRoom = String(driverId);
 
-      // DRIVER SOCKET
-      io.to(driverRoom).emit("new_notification", notification);
+      // DRIVER
+      io.to(driverRoom).emit("new_notification", notifications[0]);
 
-      // PARENT SOCKET (loop all parents)
-      parents.forEach((parent) => {
-        if (!parent?._id) return;
+      // PARENTS
+      notifications.forEach((notif) => {
+        if (!notif.parent) return;
 
-        io.to(parent._id.toString()).emit("notification", {
-          _id: notification._id,
-          title: notification.title,
-          message: notification.message,
-          type: notification.type,
-          priority: notification.priority,
-          childId: notification.childId,
-          createdAt: notification.createdAt,
-          driverId: notification.driver,
+        io.to(notif.parent.toString()).emit("notification", {
+          _id: notif._id,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type,
+          priority: notif.priority,
+          childId: notif.childId,
+          createdAt: notif.createdAt,
+          driverId: notif.driver,
         });
       });
     }
 
     /* ================= FCM TOKENS ================= */
-    const tokens = [];
+    const tokenSet = new Set();
 
-    // collect parent tokens
     parents.forEach((p) => {
-      if (p?.fcmToken) tokens.push(p.fcmToken);
+      if (p?.fcmToken) tokenSet.add(p.fcmToken);
     });
 
-    // driver token (optional)
     if (driver?.fcmToken) {
-      tokens.push(driver.fcmToken);
+      tokenSet.add(driver.fcmToken);
     }
+
+    const tokens = Array.from(tokenSet); // ✅ remove duplicates
 
     console.log("📱 FCM TOKENS:", tokens);
 
     /* ================= FIREBASE ================= */
-    if (tokens.length > 0 && admin.apps.length) {
-      try {
-        const response = await admin.messaging().sendEachForMulticast({
-          tokens,
+    if (!admin.apps.length) {
+      console.log("⚠️ Firebase not initialized");
+      return notifications;
+    }
 
+    if (tokens.length === 0) {
+      console.log("⚠️ No tokens found");
+      return notifications;
+    }
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: {
+          title,
+          body: message,
+        },
+        android: {
+          priority: "high",
           notification: {
-            title,
-            body: message,
+            sound: "default",
           },
-
-          android: {
-            priority: "high",
-            notification: {
+        },
+        apns: {
+          payload: {
+            aps: {
               sound: "default",
             },
           },
+        },
+        data: {
+          driverId: String(driverId),
+          childId: childId || "",
+          type,
+          priority,
+        },
+      });
 
-          apns: {
-            payload: {
-              aps: {
-                sound: "default",
-              },
-            },
-          },
+      console.log("✅ FCM sent:", response.successCount);
 
-          data: {
-            driverId: String(driverId),
-            childId: childId || "",
-            type,
-            priority,
-          },
-        });
+      /* ================= CLEAN INVALID TOKENS ================= */
+      const invalidTokens = tokens.filter(
+        (_, i) => !response.responses[i].success
+      );
 
-        console.log("✅ FCM sent:", response.successCount);
+      if (invalidTokens.length > 0) {
+        console.log("🧹 Cleaning invalid tokens:", invalidTokens.length);
 
-        /* ================= CLEAN INVALID TOKENS ================= */
-        const invalidTokens = [];
-
-        response.responses.forEach((res, index) => {
-          if (!res.success) {
-            console.log("❌ Invalid token:", tokens[index]);
-            invalidTokens.push(tokens[index]);
-          }
-        });
-
-        if (invalidTokens.length > 0) {
-          await Parent.updateMany(
+        await Promise.all([
+          Parent.updateMany(
             { fcmToken: { $in: invalidTokens } },
             { $unset: { fcmToken: "" } }
-          );
-
-          await Driver.updateMany(
+          ),
+          Driver.updateMany(
             { fcmToken: { $in: invalidTokens } },
             { $unset: { fcmToken: "" } }
-          );
-        }
-
-      } catch (err) {
-        console.error("❌ Firebase error:", err.message);
+          ),
+        ]);
       }
-    } else {
-      console.log("⚠️ No tokens found or Firebase not initialized");
+    } catch (err) {
+      console.error("❌ Firebase error:", err.message);
     }
 
-    return notification;
-
+    return notifications;
   } catch (error) {
     console.error("❌ sendNotification FAILED:", error.message);
     throw error;
