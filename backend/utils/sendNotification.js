@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Child from "../models/Child.js"; // 🔥 IMPORTANT
+import Child from "../models/Child.js";
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
@@ -23,18 +23,15 @@ export const sendNotification = async ({
     /* ================= FETCH DRIVER ================= */
     const driver = await Driver.findOne({ driverId });
 
-    /* ================= 🔥 FETCH TARGET PARENT ================= */
+    /* ================= FETCH TARGET PARENTS ================= */
     let parents = [];
 
     if (childId) {
-      // ✅ ONLY specific parent
       const child = await Child.findById(childId).populate("parentId");
-
       if (child?.parentId) {
         parents = [child.parentId];
       }
     } else {
-      // ✅ fallback (general notifications)
       parents = await Parent.find({ driverId });
     }
 
@@ -67,7 +64,7 @@ export const sendNotification = async ({
         io.to(driverRoom).emit("new_notification", notifications[0]);
       }
 
-      // 🔥 ONLY TARGET PARENTS
+      // PARENTS
       notifications.forEach((notif) => {
         if (!notif.parent) return;
 
@@ -84,13 +81,19 @@ export const sendNotification = async ({
       });
     }
 
-    /* ================= FCM TOKENS ================= */
+    /* ================= FCM TOKENS (🔥 FIXED) ================= */
     const tokenSet = new Set();
 
+    // ✅ PARENTS (ARRAY SUPPORT)
     parents.forEach((p) => {
-      if (p?.fcmToken) tokenSet.add(p.fcmToken);
+      if (Array.isArray(p.fcmTokens)) {
+        p.fcmTokens.forEach((token) => {
+          if (token) tokenSet.add(token);
+        });
+      }
     });
 
+    // ✅ DRIVER (optional single token)
     if (driver?.fcmToken) {
       tokenSet.add(driver.fcmToken);
     }
@@ -140,7 +143,7 @@ export const sendNotification = async ({
 
       console.log("✅ FCM sent:", response.successCount);
 
-      /* ================= CLEAN INVALID TOKENS ================= */
+      /* ================= CLEAN INVALID TOKENS (🔥 FIXED) ================= */
       const invalidTokens = tokens.filter(
         (_, i) => !response.responses[i].success
       );
@@ -150,8 +153,8 @@ export const sendNotification = async ({
 
         await Promise.all([
           Parent.updateMany(
-            { fcmToken: { $in: invalidTokens } },
-            { $unset: { fcmToken: "" } }
+            { fcmTokens: { $in: invalidTokens } },
+            { $pull: { fcmTokens: { $in: invalidTokens } } }
           ),
           Driver.updateMany(
             { fcmToken: { $in: invalidTokens } },
