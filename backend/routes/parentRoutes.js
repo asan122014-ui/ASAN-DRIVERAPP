@@ -40,20 +40,17 @@ router.post("/register", async (req, res) => {
       password: hashedPassword,
     });
 
-    // 🔥 REMOVE PASSWORD
     const parentObj = parent.toObject();
     delete parentObj.password;
 
     console.log("✅ Registered:", parentObj.email);
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      data: parentObj, // ✅ IMPORTANT FIX
+      data: parentObj,
     });
-
   } catch (err) {
     console.error("❌ REGISTER ERROR:", err);
-
     res.status(500).json({
       success: false,
       message: err.message || "Signup failed",
@@ -75,7 +72,6 @@ router.post("/login", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 🔥 IMPORTANT: select password
     const parent = await Parent.findOne({ email: normalizedEmail }).select("+password");
 
     if (!parent) {
@@ -99,14 +95,12 @@ router.post("/login", async (req, res) => {
 
     console.log("✅ Login success:", parentObj.email);
 
-    return res.json({
+    res.json({
       success: true,
-      data: parentObj, // ✅ IMPORTANT FIX
+      data: parentObj,
     });
-
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
-
     res.status(500).json({
       success: false,
       message: "Login failed",
@@ -114,15 +108,12 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= SAVE FCM TOKEN ================= */
+/* ================= SAVE FCM TOKEN (🔥 IMPROVED) ================= */
 router.post("/save-token", async (req, res) => {
   try {
     const { parentId, driverId, token } = req.body;
 
     console.log("👉 SAVE TOKEN API HIT");
-    console.log("parentId:", parentId);
-    console.log("driverId:", driverId);
-    console.log("token:", token);
 
     if (!token) {
       return res.status(400).json({
@@ -131,18 +122,28 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
+    /* ================= SAVE FOR PARENT ================= */
     if (parentId) {
-      await Parent.findByIdAndUpdate(parentId, {
-        fcmToken: token,
-      });
+      await Parent.findByIdAndUpdate(
+        parentId,
+        {
+          $addToSet: { fcmTokens: token }, // 🔥 ARRAY SUPPORT
+        },
+        { new: true }
+      );
+
       console.log("✅ Parent token saved");
     }
 
+    /* ================= SAVE FOR DRIVER ================= */
     if (driverId) {
       await Driver.findOneAndUpdate(
         { driverId },
-        { fcmToken: token }
+        {
+          $addToSet: { fcmTokens: token }, // 🔥 ARRAY SUPPORT
+        }
       );
+
       console.log("✅ Driver token saved");
     }
 
@@ -150,10 +151,12 @@ router.post("/save-token", async (req, res) => {
       success: true,
       message: "FCM token saved successfully",
     });
-
   } catch (err) {
     console.error("❌ SAVE TOKEN ERROR:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({
+      success: false,
+      message: "Failed to save token",
+    });
   }
 });
 
@@ -185,10 +188,8 @@ router.get("/dashboard/:parentId", async (req, res) => {
       success: true,
       data: trips,
     });
-
   } catch (err) {
     console.error("❌ DASHBOARD ERROR:", err);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard",
@@ -230,10 +231,8 @@ router.post("/link-driver", async (req, res) => {
       message: "Driver linked successfully",
       data: updatedParent,
     });
-
   } catch (err) {
     console.error("❌ LINK DRIVER ERROR:", err);
-
     res.status(500).json({
       success: false,
       message: "Linking failed",
