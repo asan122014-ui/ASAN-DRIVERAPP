@@ -3,7 +3,8 @@ import {
   startTripService,
   endTripService,
   getDriverTripsService,
-  getActiveTripService
+  getActiveTripService,
+  getParentTripsService // 🔥 NEW
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
@@ -11,7 +12,6 @@ export const startTrip = async (req, res) => {
   try {
     const { driverId, tripType } = req.body;
 
-    // ✅ VALIDATION
     if (!driverId) {
       return res.status(400).json({
         success: false,
@@ -26,14 +26,12 @@ export const startTrip = async (req, res) => {
       });
     }
 
-    // ✅ CREATE TRIP
     const trip = await startTripService(
       driverId,
       tripType,
       req.app.get("io")
     );
 
-    // ✅ UPDATE DRIVER STATUS ONLY (NO COUNTERS)
     await Driver.findOneAndUpdate(
       { driverId },
       {
@@ -62,7 +60,6 @@ export const endTrip = async (req, res) => {
   try {
     const { driverId } = req.body;
 
-    // ✅ VALIDATION
     if (!driverId) {
       return res.status(400).json({
         success: false,
@@ -70,13 +67,11 @@ export const endTrip = async (req, res) => {
       });
     }
 
-    // ✅ END TRIP
     const trip = await endTripService(
       driverId,
       req.app.get("io")
     );
 
-    // ✅ RESET DRIVER STATUS
     await Driver.findOneAndUpdate(
       { driverId },
       {
@@ -129,7 +124,7 @@ export const getActiveTrip = async (req, res) => {
   }
 };
 
-/* ================= GET TRIP HISTORY ================= */
+/* ================= DRIVER TRIP HISTORY ================= */
 export const getTripHistory = async (req, res) => {
   try {
     const { driverId } = req.params;
@@ -154,6 +149,35 @@ export const getTripHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch trip history"
+    });
+  }
+};
+
+/* ================= 🔥 NEW: PARENT TRIP HISTORY ================= */
+export const getParentTripHistory = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+
+    if (!parentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID is required"
+      });
+    }
+
+    const trips = await getParentTripsService(parentId);
+
+    res.json({
+      success: true,
+      data: trips || []
+    });
+
+  } catch (error) {
+    console.error("🔥 Parent trip history error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch parent trips"
     });
   }
 };
