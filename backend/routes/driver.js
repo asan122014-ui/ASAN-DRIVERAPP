@@ -15,6 +15,48 @@ const findDriver = async (driverId) => {
   }
 };
 
+/* ================= SAVE FCM TOKEN (🔥 NEW) ================= */
+router.post("/save-token", async (req, res) => {
+  try {
+    const { driverId, token } = req.body;
+
+    if (!driverId || !token) {
+      return res.status(400).json({
+        success: false,
+        message: "driverId and token required",
+      });
+    }
+
+    const driver = await Driver.findOneAndUpdate(
+      { driverId },
+      {
+        $addToSet: { fcmTokens: token }, // ✅ multiple devices support
+      },
+      { new: true }
+    );
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    console.log("✅ Driver FCM token saved");
+
+    res.json({
+      success: true,
+      message: "Token saved successfully",
+    });
+  } catch (error) {
+    console.error("❌ Save token error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to save token",
+    });
+  }
+});
+
 /* ================= GET ALL DRIVERS ================= */
 router.get("/", async (req, res) => {
   try {
@@ -26,7 +68,6 @@ router.get("/", async (req, res) => {
       success: true,
       data: drivers,
     });
-
   } catch (error) {
     console.error("Get all drivers error:", error);
     res.status(500).json({
@@ -59,7 +100,6 @@ router.get("/search", async (req, res) => {
       success: true,
       data: drivers,
     });
-
   } catch (error) {
     console.error("Driver search error:", error);
     res.status(500).json({
@@ -69,7 +109,7 @@ router.get("/search", async (req, res) => {
   }
 });
 
-/* ================= GET DRIVER LAST LOCATION (🔥 MOST IMPORTANT) ================= */
+/* ================= GET DRIVER LAST LOCATION ================= */
 router.get("/location", async (req, res) => {
   try {
     const { driverId } = req.query;
@@ -96,7 +136,6 @@ router.get("/location", async (req, res) => {
         lastLocation: driver.lastLocation || null,
       },
     });
-
   } catch (error) {
     console.error("Get last location error:", error);
     res.status(500).json({
@@ -110,13 +149,6 @@ router.get("/location", async (req, res) => {
 router.get("/dashboard/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
-
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID required",
-      });
-    }
 
     const driver = await findDriver(driverId);
 
@@ -151,7 +183,6 @@ router.get("/dashboard/:driverId", async (req, res) => {
         studentsAssigned,
       },
     });
-
   } catch (error) {
     console.error("Dashboard error:", error.message);
     res.status(500).json({
@@ -164,9 +195,7 @@ router.get("/dashboard/:driverId", async (req, res) => {
 /* ================= DRIVER PROFILE ================= */
 router.get("/profile/:driverId", async (req, res) => {
   try {
-    const { driverId } = req.params;
-
-    const driver = await findDriver(driverId);
+    const driver = await findDriver(req.params.driverId);
 
     if (!driver) {
       return res.status(404).json({
@@ -179,7 +208,6 @@ router.get("/profile/:driverId", async (req, res) => {
       success: true,
       data: driver,
     });
-
   } catch (error) {
     console.error("Driver profile error:", error);
     res.status(500).json({
@@ -192,9 +220,7 @@ router.get("/profile/:driverId", async (req, res) => {
 /* ================= DRIVER TRACKING ================= */
 router.get("/tracking/:driverId", async (req, res) => {
   try {
-    const { driverId } = req.params;
-
-    const driver = await findDriver(driverId);
+    const driver = await findDriver(req.params.driverId);
 
     if (!driver) {
       return res.status(404).json({
@@ -210,10 +236,9 @@ router.get("/tracking/:driverId", async (req, res) => {
         phone: driver.phone,
         vehicleNumber: driver.vehicleNumber,
         location: driver.location,
-        lastLocation: driver.lastLocation, // 🔥 ADDED
+        lastLocation: driver.lastLocation,
       },
     });
-
   } catch (error) {
     console.error("Tracking error:", error);
     res.status(500).json({
@@ -252,7 +277,6 @@ router.put("/update", async (req, res) => {
       message: "Driver updated",
       data: driver,
     });
-
   } catch (error) {
     console.error("Update error:", error);
     res.status(500).json({
@@ -262,7 +286,7 @@ router.put("/update", async (req, res) => {
   }
 });
 
-/* ================= GET DRIVER BY ID (⚠️ KEEP LAST) ================= */
+/* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
     const driver = await findDriver(req.params.id);
@@ -278,7 +302,6 @@ router.get("/:id", async (req, res) => {
       success: true,
       data: driver,
     });
-
   } catch (error) {
     console.error("Get driver error:", error);
     res.status(500).json({
