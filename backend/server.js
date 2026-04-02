@@ -78,21 +78,19 @@ io.on("connection", (socket) => {
   /* ===== LIVE LOCATION (🔥 MOST IMPORTANT) ===== */
   socket.on("send_location", async (data) => {
   try {
-    const { driverId, lat, lng, eta } = data; // 🔥 ADD ETA
+    const { driverId, lat, lng, eta } = data;
 
-    // ✅ VALIDATION (allow 0 also)
     if (!driverId || lat === undefined || lng === undefined) return;
 
     const room = String(driverId);
 
-    /* 🔥 SAVE TO DATABASE */
     await Driver.findOneAndUpdate(
       { driverId },
       {
         lastLocation: {
           lat,
           lng,
-          eta: eta || "--", // 🔥 STORE ETA
+          eta: eta || "--",
           updatedAt: new Date(),
         },
         location: {
@@ -102,14 +100,13 @@ io.on("connection", (socket) => {
       }
     );
 
-    /* 🔥 EMIT TO ALL PARENTS */
     io.to(room).emit("live_location", {
       lat,
       lng,
-      eta: eta || "--", // 🔥 SEND ETA TO FRONTEND
+      eta: eta || "--",
     });
 
-    console.log("📍 Location + ETA updated:", room, eta);
+    console.log("📍 Location + ETA updated:", room);
 
   } catch (err) {
     console.error("❌ Location socket error:", err.message);
