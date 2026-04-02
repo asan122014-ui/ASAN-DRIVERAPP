@@ -1,6 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
+import Child from "../models/Child.js"; // 🔥 IMPORTANT
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
@@ -19,18 +20,31 @@ export const sendNotification = async ({
       throw new Error("Missing fields");
     }
 
-    /* ================= FETCH USERS ================= */
-    const parents = await Parent.find({ driverId });
+    /* ================= FETCH DRIVER ================= */
     const driver = await Driver.findOne({ driverId });
 
+    /* ================= 🔥 FETCH TARGET PARENT ================= */
+    let parents = [];
+
+    if (childId) {
+      // ✅ ONLY specific parent
+      const child = await Child.findById(childId).populate("parentId");
+
+      if (child?.parentId) {
+        parents = [child.parentId];
+      }
+    } else {
+      // ✅ fallback (general notifications)
+      parents = await Parent.find({ driverId });
+    }
+
     /* ================= SAVE TO DB ================= */
-    // 🔥 PRO VERSION: save per parent (better filtering)
     const notifications = [];
 
     for (const parent of parents) {
       const notif = await Notification.create({
         driver: driverId,
-        parent: parent._id, // ✅ important
+        parent: parent._id,
         childId,
         title,
         message,
@@ -49,9 +63,11 @@ export const sendNotification = async ({
       const driverRoom = String(driverId);
 
       // DRIVER
-      io.to(driverRoom).emit("new_notification", notifications[0]);
+      if (notifications[0]) {
+        io.to(driverRoom).emit("new_notification", notifications[0]);
+      }
 
-      // PARENTS
+      // 🔥 ONLY TARGET PARENTS
       notifications.forEach((notif) => {
         if (!notif.parent) return;
 
@@ -79,7 +95,7 @@ export const sendNotification = async ({
       tokenSet.add(driver.fcmToken);
     }
 
-    const tokens = Array.from(tokenSet); // ✅ remove duplicates
+    const tokens = Array.from(tokenSet);
 
     console.log("📱 FCM TOKENS:", tokens);
 
@@ -143,11 +159,13 @@ export const sendNotification = async ({
           ),
         ]);
       }
+
     } catch (err) {
       console.error("❌ Firebase error:", err.message);
     }
 
     return notifications;
+
   } catch (error) {
     console.error("❌ sendNotification FAILED:", error.message);
     throw error;
