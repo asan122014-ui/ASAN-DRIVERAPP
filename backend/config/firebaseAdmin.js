@@ -1,20 +1,10 @@
 import admin from "firebase-admin";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-/* ================= INIT FIREBASE ================= */
+import serviceAccount from "./firebase-service-account.json" assert { type: "json" };
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FCM_PROJECT_ID,
-      clientEmail: process.env.FCM_CLIENT_EMAIL,
-      privateKey: process.env.FCM_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    }),
+    credential: admin.credential.cert(serviceAccount),
   });
-
-  console.log("🔥 Firebase Admin Initialized");
 }
 
 export default admin;
