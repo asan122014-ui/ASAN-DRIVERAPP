@@ -85,9 +85,10 @@ const driverSchema = new mongoose.Schema(
       default: null,
     },
 
-    fcmToken: {
-      type: String,
-      default: null,
+    /* ================= 🔥 FCM TOKENS (UPDATED) ================= */
+    fcmTokens: {
+      type: [String], // ✅ MULTI DEVICE SUPPORT
+      default: [],
     },
 
     /* ================= PERFORMANCE ================= */
@@ -126,7 +127,7 @@ const driverSchema = new mongoose.Schema(
       },
     },
 
-    /* ================= 🔥 NEW: LAST LIVE LOCATION ================= */
+    /* ================= LAST LIVE LOCATION ================= */
     lastLocation: {
       lat: {
         type: Number,
@@ -190,5 +191,4 @@ driverSchema.methods.comparePassword = function (enteredPassword) {
 };
 
 const Driver = mongoose.model("Driver", driverSchema);
-
 export default Driver;
