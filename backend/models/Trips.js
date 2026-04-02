@@ -9,7 +9,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= 🔥 PARENT (NEW) ================= */
+    /* ================= 🔥 PARENT ================= */
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -17,7 +17,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= 🔥 CHILD (NEW) ================= */
+    /* ================= 🔥 CHILD ================= */
     child: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Child",
@@ -40,7 +40,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= STUDENTS ================= */
+    /* ================= STUDENTS (ALL CHILDREN UNDER DRIVER) ================= */
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -58,16 +58,19 @@ const tripSchema = new mongoose.Schema(
     childName: {
       type: String,
       default: "Student",
+      trim: true,
     },
 
     route: {
       from: {
         type: String,
         default: "--",
+        trim: true,
       },
       to: {
         type: String,
         default: "--",
+        trim: true,
       },
     },
 
@@ -97,9 +100,12 @@ const tripSchema = new mongoose.Schema(
     duration: {
       type: Number,
       default: 0,
+      min: 0,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 /* ================= INDEXES ================= */
@@ -114,5 +120,6 @@ tripSchema.index({ parent: 1, createdAt: -1 });
 // 🔥 child queries
 tripSchema.index({ child: 1, createdAt: -1 });
 
+/* ================= EXPORT ================= */
 const Trips = mongoose.model("Trips", tripSchema);
 export default Trips;
