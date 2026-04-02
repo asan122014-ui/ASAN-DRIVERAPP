@@ -2,18 +2,18 @@ import Notification from "../models/Notification.js";
 import admin from "../config/firebaseAdmin.js";
 import Parent from "../models/Parent.js";
 
-/* ================= GET UNREAD NOTIFICATIONS (BADGE) ================= */
+/* ================= GET UNREAD (BADGE) ================= */
 /**
- * GET /api/notifications?driverId=XXX OR parentId=XXX
+ * GET /api/notifications?driverId=XXX OR parentId=XXX OR childId=XXX
  */
 export const getNotifications = async (req, res) => {
   try {
-    const { driverId, parentId } = req.query;
+    const { driverId, parentId, childId } = req.query;
 
-    if (!driverId && !parentId) {
+    if (!driverId && !parentId && !childId) {
       return res.status(400).json({
         success: false,
-        message: "driverId or parentId is required",
+        message: "driverId or parentId or childId is required",
       });
     }
 
@@ -21,6 +21,7 @@ export const getNotifications = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
+    if (childId) filter.childId = childId;
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -34,7 +35,6 @@ export const getNotifications = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Get notifications error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications",
@@ -42,18 +42,18 @@ export const getNotifications = async (req, res) => {
   }
 };
 
-/* ================= GET ALL NOTIFICATIONS (HISTORY) ================= */
+/* ================= GET ALL (HISTORY) ================= */
 /**
- * GET /api/notifications/all?driverId=XXX OR parentId=XXX
+ * GET /api/notifications/all?driverId=XXX OR parentId=XXX OR childId=XXX
  */
 export const getAllNotifications = async (req, res) => {
   try {
-    const { driverId, parentId } = req.query;
+    const { driverId, parentId, childId, type, priority } = req.query;
 
-    if (!driverId && !parentId) {
+    if (!driverId && !parentId && !childId) {
       return res.status(400).json({
         success: false,
-        message: "driverId or parentId is required",
+        message: "driverId or parentId or childId is required",
       });
     }
 
@@ -61,6 +61,9 @@ export const getAllNotifications = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
+    if (childId) filter.childId = childId;
+    if (type) filter.type = type;
+    if (priority) filter.priority = priority;
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -73,7 +76,6 @@ export const getAllNotifications = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Get all notifications error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch notifications",
@@ -81,7 +83,7 @@ export const getAllNotifications = async (req, res) => {
   }
 };
 
-/* ================= MARK SINGLE AS READ ================= */
+/* ================= MARK SINGLE ================= */
 /**
  * PUT /api/notifications/:id/read
  */
@@ -109,7 +111,6 @@ export const markAsRead = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Mark read error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to update notification",
@@ -117,18 +118,18 @@ export const markAsRead = async (req, res) => {
   }
 };
 
-/* ================= MARK ALL AS READ ================= */
+/* ================= MARK ALL ================= */
 /**
- * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX
+ * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX OR childId=XXX
  */
 export const markAllAsRead = async (req, res) => {
   try {
-    const { driverId, parentId } = req.query;
+    const { driverId, parentId, childId } = req.query;
 
-    if (!driverId && !parentId) {
+    if (!driverId && !parentId && !childId) {
       return res.status(400).json({
         success: false,
-        message: "driverId or parentId is required",
+        message: "driverId or parentId or childId is required",
       });
     }
 
@@ -136,6 +137,7 @@ export const markAllAsRead = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
+    if (childId) filter.childId = childId;
 
     await Notification.updateMany(filter, { read: true });
 
@@ -146,16 +148,28 @@ export const markAllAsRead = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Mark all read error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to update notifications",
     });
   }
 };
+
+/* ================= TEST FCM ================= */
+/**
+ * POST /api/notifications/test
+ * body: { parentId }
+ */
 export const sendTestNotification = async (req, res) => {
   try {
     const { parentId } = req.body;
+
+    if (!parentId) {
+      return res.status(400).json({
+        success: false,
+        message: "parentId is required",
+      });
+    }
 
     const parent = await Parent.findById(parentId);
 
@@ -168,9 +182,29 @@ export const sendTestNotification = async (req, res) => {
 
     const message = {
       token: parent.fcmToken,
+
       notification: {
         title: "Test Notification 🚀",
         body: "FCM is working properly!",
+      },
+
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+        },
+      },
+
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+          },
+        },
+      },
+
+      data: {
+        type: "test",
       },
     };
 
@@ -184,7 +218,8 @@ export const sendTestNotification = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ FCM ERROR:", err); // 🔥 VERY IMPORTANT
+    console.error("❌ FCM ERROR:", err);
+
     res.status(500).json({
       success: false,
       message: "Failed to send notification",
