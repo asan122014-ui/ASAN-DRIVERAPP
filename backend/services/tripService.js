@@ -12,14 +12,14 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new Error("driverId and tripType are required");
     }
 
-    /* ✅ FIND DRIVER */
+    /* ✅ DRIVER */
     const driver = await Driver.findOne({ driverId });
     if (!driver) throw new Error("Driver not found");
 
     /* ✅ PREVENT MULTIPLE ACTIVE TRIPS */
     const existingTrip = await Trips.findOne({
       driverId,
-      status: "in_transit"
+      status: "in_transit",
     });
 
     if (existingTrip) {
@@ -29,24 +29,35 @@ export const startTripService = async (driverId, tripType, io) => {
 
     /* ✅ FETCH CHILDREN */
     const children = await Child.find({ driverId });
-    const firstChild = children?.[0];
 
-    /* ✅ CREATE TRIP */
+    if (!children.length) {
+      throw new Error("No children assigned to this driver");
+    }
+
+    const firstChild = children[0];
+
+    /* ✅ CREATE TRIP (🔥 ADD PARENT + CHILD) */
     const trip = await Trips.create({
       driverId,
       tripType,
       status: "in_transit",
+
       students: children.map((c) => c._id),
       totalStudents: children.length,
 
-      childName: firstChild?.name || "Student",
+      // 🔥 IMPORTANT
+      parent: firstChild.parentId,
+      child: firstChild._id,
+
+      childName: firstChild.name,
+
       route: {
         from: firstChild?.pickupLocation || "Home",
-        to: firstChild?.schoolName || "School"
+        to: firstChild?.schoolName || "School",
       },
 
       eta: "30 mins",
-      startTime: new Date()
+      startTime: new Date(),
     });
 
     /* ✅ RESET CHILD STATUS */
@@ -55,38 +66,35 @@ export const startTripService = async (driverId, tripType, io) => {
       { status: "waiting" }
     );
 
-    /* 🔥 SEND NOTIFICATION (DB + PARENT SOCKET) */
+    /* 🔥 SEND NOTIFICATION (AUTO HANDLES ALL PARENTS) */
     await sendNotification({
       driverId,
       title: "Trip Started",
       message: `Trip started (${tripType}). ETA: ${trip.eta}`,
-      fcmToken: driver?.fcmToken,
-      io
+      type: "trip_start",
+      priority: "medium",
+      io,
     });
 
-    /* 🔥 EXTRA SAFETY SOCKET EMIT (NO MISS GUARANTEE) */
+    /* 🔥 SOCKET BACKUP */
     if (io) {
       const room = String(driverId);
 
-      console.log("📡 Emitting trip_started to:", room);
-
       io.to(room).emit("trip_started", trip);
 
-      // 🔥 BACKUP NOTIFICATION EMIT
       io.to(room).emit("notification", {
-        _id: new Date().getTime(),
+        _id: Date.now(),
         title: "Trip Started",
         message: `Trip started (${tripType}). ETA: ${trip.eta}`,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
     }
 
     console.log("✅ Trip created:", trip._id);
-
     return trip;
 
   } catch (error) {
-    console.error("🔥 startTripService error:", error);
+    console.error("🔥 startTripService error:", error.message);
     throw error;
   }
 };
@@ -96,10 +104,9 @@ export const endTripService = async (driverId, io) => {
   try {
     console.log("🔥 Ending trip:", driverId);
 
-    /* ✅ FIND ACTIVE TRIP */
     const trip = await Trips.findOne({
       driverId,
-      status: "in_transit"
+      status: "in_transit",
     }).sort({ createdAt: -1 });
 
     if (!trip) {
@@ -107,7 +114,7 @@ export const endTripService = async (driverId, io) => {
       return null;
     }
 
-    /* ✅ TIME CALCULATION */
+    /* ✅ TIME */
     if (!trip.startTime) {
       trip.startTime = new Date();
     }
@@ -117,50 +124,46 @@ export const endTripService = async (driverId, io) => {
     const durationMs = trip.endTime - trip.startTime;
     trip.duration = Math.max(1, Math.round(durationMs / 60000));
 
-    /* ✅ COMPLETE TRIP */
+    /* ✅ COMPLETE */
     trip.status = "completed";
     await trip.save();
 
     console.log("✅ Trip ended:", trip._id);
 
     /* ✅ RESET CHILD STATUS */
-    /* ✅ RESET CHILD STATUS (ONLY AFTER COMPLETION) */
-await Child.updateMany(
-  { driverId },
-  {
-    $set: { status: "waiting" }
-  }
-);
+    await Child.updateMany(
+      { driverId },
+      { status: "waiting" }
+    );
 
     /* 🔥 SEND NOTIFICATION */
     await sendNotification({
       driverId,
       title: "Trip Completed",
       message: `Trip completed in ${trip.duration} mins`,
-      io
+      type: "trip_end",
+      priority: "low",
+      io,
     });
 
-    /* 🔥 EXTRA SAFETY SOCKET EMIT */
+    /* 🔥 SOCKET BACKUP */
     if (io) {
       const room = String(driverId);
 
-      console.log("📡 Emitting trip_ended to:", room);
-
       io.to(room).emit("trip_ended", trip);
 
-      // 🔥 BACKUP NOTIFICATION EMIT
       io.to(room).emit("notification", {
-        _id: new Date().getTime(),
+        _id: Date.now(),
         title: "Trip Completed",
         message: `Trip completed in ${trip.duration} mins`,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
     }
 
     return trip;
 
   } catch (error) {
-    console.error("🔥 endTripService error:", error);
+    console.error("🔥 endTripService error:", error.message);
     throw error;
   }
 };
@@ -170,9 +173,11 @@ export const getActiveTripService = async (driverId) => {
   try {
     return await Trips.findOne({
       driverId,
-      status: "in_transit"
+      status: "in_transit",
     })
       .populate("students")
+      .populate("child")
+      .populate("parent")
       .lean();
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
@@ -188,6 +193,19 @@ export const getDriverTripsService = async (driverId) => {
       .lean();
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
+    throw error;
+  }
+};
+
+/* ================= 🔥 NEW: PARENT TRIPS ================= */
+export const getParentTripsService = async (parentId) => {
+  try {
+    return await Trips.find({ parent: parentId })
+      .sort({ createdAt: -1 })
+      .populate("child")
+      .lean();
+  } catch (error) {
+    console.error("🔥 getParentTripsService error:", error);
     throw error;
   }
 };
