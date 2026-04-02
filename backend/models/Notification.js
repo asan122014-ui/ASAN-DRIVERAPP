@@ -14,13 +14,14 @@ const notificationSchema = new mongoose.Schema(
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
-      default: null,
+      required: true, // 🔥 IMPORTANT (no more null)
       index: true,
     },
 
-    /* ================= CHILD (NEW 👶) ================= */
-    childId: {
-      type: String, // studentId / childId
+    /* ================= 🔥 CHILD ================= */
+    child: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Child",
       default: null,
       index: true,
     },
@@ -42,12 +43,20 @@ const notificationSchema = new mongoose.Schema(
     /* ================= TYPE ================= */
     type: {
       type: String,
-      enum: ["pickup", "drop", "trip_start", "trip_end", "delay", "emergency", "general"],
+      enum: [
+        "pickup",
+        "drop",
+        "trip_start",
+        "trip_end",
+        "delay",
+        "emergency",
+        "general",
+      ],
       default: "general",
       index: true,
     },
 
-    /* ================= PRIORITY (🔥 NEW) ================= */
+    /* ================= PRIORITY ================= */
     priority: {
       type: String,
       enum: ["low", "medium", "high"],
@@ -62,11 +71,11 @@ const notificationSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= EXTRA DATA (OPTIONAL 🔥) ================= */
+    /* ================= EXTRA DATA ================= */
     meta: {
       type: Object,
       default: {},
-    }
+    },
   },
   {
     timestamps: true,
@@ -75,22 +84,19 @@ const notificationSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
-// 🔥 Fast driver queries
+// 🔥 driver queries
 notificationSchema.index({ driver: 1, createdAt: -1 });
 
-// 🔥 Fast parent queries
-notificationSchema.index({ parent: 1, createdAt: -1 });
+// 🔥 parent queries (MOST IMPORTANT)
+notificationSchema.index({ parent: 1, read: 1, createdAt: -1 });
 
-// 🔥 Fast child queries
-notificationSchema.index({ childId: 1, createdAt: -1 });
+// 🔥 child queries
+notificationSchema.index({ child: 1, createdAt: -1 });
 
-// 🔥 Priority filtering
+// 🔥 filtering
+notificationSchema.index({ type: 1 });
 notificationSchema.index({ priority: 1 });
 
-// 🔥 Type filtering
-notificationSchema.index({ type: 1 });
-
-/* ================= MODEL ================= */
+/* ================= EXPORT ================= */
 const Notification = mongoose.model("Notification", notificationSchema);
-
 export default Notification;
