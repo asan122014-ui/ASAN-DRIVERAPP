@@ -151,6 +151,7 @@ router.post("/login", async (req, res) => {
 });
 
 /* ================= SAVE FCM TOKEN (🔥 NEW) ================= */
+/* ================= SAVE FCM TOKEN (FINAL) ================= */
 router.post("/save-token", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
@@ -162,11 +163,7 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    const parent = await Parent.findByIdAndUpdate(
-      parentId,
-      { fcmToken },
-      { new: true }
-    );
+    const parent = await Parent.findById(parentId);
 
     if (!parent) {
       return res.status(404).json({
@@ -175,7 +172,13 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    console.log("✅ FCM token saved for parent:", parentId);
+    // ✅ ADD TOKEN (NO DUPLICATES)
+    if (!parent.fcmTokens.includes(fcmToken)) {
+      parent.fcmTokens.push(fcmToken);
+      await parent.save();
+    }
+
+    console.log("✅ FCM token stored:", fcmToken);
 
     res.json({
       success: true,
