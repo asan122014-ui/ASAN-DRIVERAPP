@@ -27,8 +27,8 @@ export const startTripService = async (driverId, tripType, io) => {
       return existingTrip;
     }
 
-    /* ✅ FETCH CHILDREN */
-    const children = await Child.find({ driverId });
+    /* ✅ FETCH CHILDREN WITH PARENT */
+    const children = await Child.find({ driverId }).populate("parentId");
 
     if (!children.length) {
       throw new Error("No children assigned to this driver");
@@ -36,7 +36,7 @@ export const startTripService = async (driverId, tripType, io) => {
 
     const firstChild = children[0];
 
-    /* ✅ CREATE TRIP (🔥 ADD PARENT + CHILD) */
+    /* ================= CREATE TRIP ================= */
     const trip = await Trips.create({
       driverId,
       tripType,
@@ -45,8 +45,8 @@ export const startTripService = async (driverId, tripType, io) => {
       students: children.map((c) => c._id),
       totalStudents: children.length,
 
-      // 🔥 IMPORTANT
-      parent: firstChild.parentId,
+      // 🔥 IMPORTANT: store relation
+      parent: firstChild.parentId?._id,
       child: firstChild._id,
 
       childName: firstChild.name,
@@ -66,7 +66,7 @@ export const startTripService = async (driverId, tripType, io) => {
       { status: "waiting" }
     );
 
-    /* 🔥 SEND NOTIFICATION (AUTO HANDLES ALL PARENTS) */
+    /* 🔥 SEND NOTIFICATION */
     await sendNotification({
       driverId,
       title: "Trip Started",
@@ -175,10 +175,11 @@ export const getActiveTripService = async (driverId) => {
       driverId,
       status: "in_transit",
     })
-      .populate("students")
-      .populate("child")
-      .populate("parent")
+      .populate("students", "name status")
+      .populate("child", "name status")
+      .populate("parent", "name")
       .lean();
+
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -191,19 +192,21 @@ export const getDriverTripsService = async (driverId) => {
     return await Trips.find({ driverId })
       .sort({ createdAt: -1 })
       .lean();
+
   } catch (error) {
     console.error("🔥 getDriverTripsService error:", error);
     throw error;
   }
 };
 
-/* ================= 🔥 NEW: PARENT TRIPS ================= */
+/* ================= 🔥 PARENT TRIPS (FINAL FIX) ================= */
 export const getParentTripsService = async (parentId) => {
   try {
     return await Trips.find({ parent: parentId })
       .sort({ createdAt: -1 })
-      .populate("child")
+      .populate("child", "name status pickupLocation schoolName")
       .lean();
+
   } catch (error) {
     console.error("🔥 getParentTripsService error:", error);
     throw error;
