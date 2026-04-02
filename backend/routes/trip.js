@@ -3,14 +3,31 @@ import {
   startTrip,
   endTrip,
   getActiveTrip,
-  getTripHistory
+  getTripHistory,
+  getParentTripHistory, // 🔥 NEW
 } from "../controllers/tripController.js";
 
 const router = express.Router();
 
+/* ================= DRIVER ROUTES ================= */
+
+// START TRIP
 router.post("/start", startTrip);
+
+// END TRIP
 router.post("/end", endTrip);
+
+// ACTIVE TRIP (driver)
 router.get("/active/:driverId", getActiveTrip);
-router.get("/history/:driverId", getTripHistory); // ✅ THIS LINE IMPORTANT
+
+// DRIVER TRIP HISTORY (OLD - keep if needed)
+router.get("/history/:driverId", getTripHistory);
+
+
+/* ================= 🔥 NEW: PARENT ROUTE ================= */
+
+// ✅ VERY IMPORTANT (this is what you will use in frontend)
+router.get("/parent/:parentId", getParentTripHistory);
+
 
 export default router;
