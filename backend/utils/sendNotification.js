@@ -35,7 +35,6 @@ export const sendNotification = async ({
 
       if (child?.parentId) {
         const parent = await Parent.findById(child.parentId);
-
         if (parent) {
           parents = [parent];
         }
@@ -94,10 +93,16 @@ export const sendNotification = async ({
       });
     }
 
-    /* ================= FCM TOKENS ================= */
+    /* ================= FCM TOKENS (🔥 FIXED) ================= */
     const tokenSet = new Set();
 
     parents.forEach((p) => {
+      // ✅ SINGLE TOKEN (IMPORTANT FIX)
+      if (p.fcmToken) {
+        tokenSet.add(p.fcmToken);
+      }
+
+      // ✅ MULTIPLE TOKENS (optional)
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((token) => {
           if (token) tokenSet.add(token);
@@ -105,6 +110,7 @@ export const sendNotification = async ({
       }
     });
 
+    // ✅ DRIVER TOKEN (optional)
     if (driver?.fcmToken) {
       tokenSet.add(driver.fcmToken);
     }
