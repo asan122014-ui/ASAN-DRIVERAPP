@@ -9,55 +9,53 @@ const router = express.Router();
 /* ================= REGISTER ================= */
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, phone, password } = req.body;
 
-    if (!name || !email || !password || !phone) {
+    /* ✅ VALIDATION */
+    if (!name || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required",
+        message: "All fields required",
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-
+    /* ✅ CHECK EXISTING */
     const existing = await Parent.findOne({
-      $or: [{ email: normalizedEmail }, { phone }],
+      $or: [{ email }, { phone }],
     });
 
     if (existing) {
       return res.status(400).json({
         success: false,
-        message: "User already exists",
+        message: "Email or phone already registered",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
+    /* ✅ CREATE */
     const parent = await Parent.create({
       name,
-      email: normalizedEmail,
+      email,
       phone,
-      password: hashedPassword,
+      password,
     });
 
-    const parentObj = parent.toObject();
-    delete parentObj.password;
-
-    console.log("✅ Registered:", parentObj.email);
+    const data = parent.toObject();
+    delete data.password;
 
     res.status(201).json({
       success: true,
-      data: parentObj,
+      data,
     });
-  } catch (err) {
-    console.error("❌ REGISTER ERROR:", err);
+
+  } catch (error) {
+    console.error("❌ REGISTER ERROR:", error.message);
+
     res.status(500).json({
       success: false,
-      message: err.message || "Signup failed",
+      message: error.message, // 🔥 IMPORTANT (shows real error)
     });
   }
 });
-
 /* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
   try {
