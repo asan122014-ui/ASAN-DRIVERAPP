@@ -20,6 +20,14 @@ const studentSchema = new mongoose.Schema(
       trim: true
     },
 
+    /* 🔥 IMPORTANT: LINK TO PARENT */
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Parent",
+      required: true,
+      index: true
+    },
+
     parentName: {
       type: String,
       trim: true,
@@ -46,7 +54,7 @@ const studentSchema = new mongoose.Schema(
       address: { type: String, default: "" }
     },
 
-    /* ===== DRIVER ASSIGNMENT ===== */
+    /* ===== DRIVER ===== */
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
@@ -54,7 +62,7 @@ const studentSchema = new mongoose.Schema(
       default: null
     },
 
-    /* ===== TRIP STATUS ===== */
+    /* ===== STATUS ===== */
     status: {
       type: String,
       enum: ["waiting", "onboard", "dropped"],
@@ -62,41 +70,17 @@ const studentSchema = new mongoose.Schema(
       index: true
     },
 
-    pickupTime: {
-      type: Date,
-      default: null
-    },
+    pickupTime: { type: Date, default: null },
+    dropTime: { type: Date, default: null },
 
-    dropTime: {
-      type: Date,
-      default: null
-    },
-
-    /* ===== SAFETY ===== */
-    emergencyContact: {
-      type: String,
-      trim: true,
-      default: ""
-    },
-
-    /* ===== SYSTEM ===== */
     active: {
       type: Boolean,
-      default: true,
-      index: true
+      default: true
     }
   },
   { timestamps: true }
 );
 
-/* ================= INDEXES ================= */
-
-// Driver + status (fast filtering during trips)
 studentSchema.index({ driver: 1, status: 1 });
 
-// Optional: active students per driver
-studentSchema.index({ driver: 1, active: 1 });
-
-const Student = mongoose.model("Student", studentSchema);
-
-export default Student;
+export default mongoose.model("Student", studentSchema);
