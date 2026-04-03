@@ -250,9 +250,9 @@ router.get("/tracking/:driverId", async (req, res) => {
 });
 
 /* ================= UPDATE DRIVER PROFILE ================= */
-router.put("/update", upload.single("profilePhoto"), async (req, res) => {
+router.put("/update", async (req, res) => {
   try {
-    const { driverId } = req.body;
+    const { driverId, ...updates } = req.body;
 
     if (!driverId) {
       return res.status(400).json({
@@ -270,53 +270,18 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
       });
     }
 
-    // ✅ UPDATE NORMAL FIELDS
-    Object.keys(req.body).forEach((key) => {
-      if (key !== "driverId") {
-        driver[key] = req.body[key];
+    // ❌ REMOVE unwanted fields
+    delete updates._id;
+    delete updates.__v;
+    delete updates.password;
+
+    // ✅ UPDATE ONLY PROVIDED FIELDS
+    Object.keys(updates).forEach((key) => {
+      if (updates[key] !== undefined) {
+        driver[key] = updates[key];
       }
     });
 
-    // ✅ HANDLE IMAGE
-    if (req.file) {
-
-      // 🔥 DELETE OLD IMAGE FROM CLOUDINARY
-      if (driver.profilePhotoPublicId) {
-        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
-      }
-
-      // 🔥 COMPRESS IMAGE USING SHARP
-      const compressedBuffer = await sharp(req.file.path)
-        .resize(500, 500) // optional resize
-        .jpeg({ quality: 70 })
-        .toBuffer();
-
-      // 🔥 UPLOAD COMPRESSED IMAGE
-      const uploaded = await cloudinary.uploader.upload_stream(
-        { folder: "drivers" },
-        async (error, result) => {
-          if (error) throw error;
-
-          // SAVE URL + PUBLIC ID
-          driver.profilePhoto = result.secure_url;
-          driver.profilePhotoPublicId = result.public_id;
-
-          await driver.save();
-
-          return res.json({
-            success: true,
-            message: "Driver updated successfully",
-            data: driver,
-          });
-        }
-      );
-
-      uploaded.end(compressedBuffer);
-
-      return; // important
-    }
-
-    // ✅ IF NO IMAGE
     await driver.save();
 
     res.json({
@@ -326,14 +291,14 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 Update error:", error);
+    console.error("🔥 UPDATE ERROR:", error); // <-- IMPORTANT
     res.status(500).json({
       success: false,
       message: "Update failed",
+      error: error.message, // 👈 helps debugging
     });
   }
 });
-
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
