@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Child from "../models/Child.js"; // ✅ FIXED (IMPORTANT)
+import Child from "../models/Child.js";
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
@@ -14,7 +14,7 @@ export const sendNotification = async ({
   io,
 }) => {
   try {
-    console.log("sendNotification CALLED");
+    console.log("🔥 sendNotification CALLED");
 
     if (!driverId || !title || !message) {
       throw new Error("Missing fields");
@@ -27,20 +27,25 @@ export const sendNotification = async ({
     let parents = [];
 
     if (childId) {
-      const child = await Child.findById(childId).populate("parentId"); // ✅ FIXED
+      const child = await Child.findById(childId);
 
       if (!child) {
         console.log("❌ Child not found");
       }
 
       if (child?.parentId) {
-        parents = [child.parentId];
+        const parent = await Parent.findById(child.parentId);
+
+        if (parent) {
+          parents = [parent];
+        }
       }
     } else {
       parents = await Parent.find({ driverId });
     }
 
-    console.log("PARENTS FOUND:", parents.length);
+    console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
+    console.log("👤 Parent data:", parents);
 
     if (parents.length === 0) {
       console.log("❌ No parents found → notification skipped");
@@ -69,12 +74,10 @@ export const sendNotification = async ({
     if (io) {
       const driverRoom = String(driverId);
 
-      // DRIVER (optional)
       if (notifications[0]) {
         io.to(driverRoom).emit("new_notification", notifications[0]);
       }
 
-      // PARENTS
       notifications.forEach((notif) => {
         if (!notif.parent) return;
 
@@ -94,7 +97,6 @@ export const sendNotification = async ({
     /* ================= FCM TOKENS ================= */
     const tokenSet = new Set();
 
-    // Parents (multiple devices)
     parents.forEach((p) => {
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((token) => {
@@ -103,14 +105,13 @@ export const sendNotification = async ({
       }
     });
 
-    // Driver (optional)
     if (driver?.fcmToken) {
       tokenSet.add(driver.fcmToken);
     }
 
     const tokens = Array.from(tokenSet);
 
-    console.log("FCM TOKENS:", tokens);
+    console.log("📱 FCM TOKENS:", tokens);
 
     /* ================= FIREBASE ================= */
     if (!admin.apps.length) {
@@ -119,7 +120,7 @@ export const sendNotification = async ({
     }
 
     if (tokens.length === 0) {
-      console.log("⚠️ No tokens found");
+      console.log("❌ No tokens found → FCM skipped");
       return notifications;
     }
 
@@ -151,7 +152,7 @@ export const sendNotification = async ({
         },
       });
 
-      console.log("FCM sent:", response.successCount);
+      console.log("✅ FCM sent:", response.successCount);
 
       /* ================= CLEAN INVALID TOKENS ================= */
       const invalidTokens = tokens.filter(
@@ -159,7 +160,7 @@ export const sendNotification = async ({
       );
 
       if (invalidTokens.length > 0) {
-        console.log("Cleaning invalid tokens:", invalidTokens.length);
+        console.log("🧹 Cleaning invalid tokens:", invalidTokens.length);
 
         await Promise.all([
           Parent.updateMany(
