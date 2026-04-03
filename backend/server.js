@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
 
@@ -21,7 +20,6 @@ import childRoutes from "./routes/child.js";
 
 /* ================= INIT ================= */
 dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
@@ -51,49 +49,45 @@ const io = new Server(server, {
   },
 });
 
+/* 🔥 IMPORTANT: make io available in controllers */
 app.set("io", io);
 
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
-  console.log("🔌 Socket connected:", socket.id);
+  console.log("Socket connected:", socket.id);
 
   /* ===== JOIN DRIVER ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
     if (!driverId) return;
-
     const room = String(driverId);
     socket.join(room);
-
-    console.log("🚐 Joined driver room:", room);
+    console.log("Joined driver room:", room);
   });
 
-  /* ===== JOIN PARENT ROOM ===== */
-  socket.on("join_parent", (parentId) => {
+  /* ===== JOIN PARENT ROOM (FIXED) ===== */
+  socket.on("join_parent_room", (parentId) => {
     if (!parentId) return;
-
     const room = String(parentId);
     socket.join(room);
-
-    console.log("👨‍👩‍👧 Parent joined:", room);
+    console.log("Parent joined:", room);
   });
 
-  /* ===== LIVE LOCATION + ETA ===== */
+  /* ===== LIVE LOCATION ===== */
   socket.on("send_location", async (data) => {
     try {
       const { driverId, lat, lng, eta } = data;
 
-      // ✅ allow 0 values
       if (!driverId || lat === undefined || lng === undefined) return;
 
       const room = String(driverId);
 
-      /* 🔥 SAVE TO DB */
+      /* 🔥 SAVE LOCATION */
       await Driver.findOneAndUpdate(
         { driverId },
         {
           lastLocation: {
-            lat: lat,
-            lng: lng,
+            lat,
+            lng,
             eta: eta || "--",
             updatedAt: new Date(),
           },
@@ -104,40 +98,23 @@ io.on("connection", (socket) => {
         }
       );
 
-      /* 🔥 EMIT TO CLIENTS */
+      /* 🔥 SEND TO ALL LISTENERS */
       io.to(room).emit("live_location", {
         lat,
         lng,
         eta: eta || "--",
       });
 
-      console.log("📍 Location + ETA updated:", room, eta);
+      console.log("Location updated:", room);
 
     } catch (err) {
-      console.error("❌ Location socket error:", err.message);
+      console.error("Location socket error:", err.message);
     }
-  });
-
-  /* ===== NOTIFICATIONS ===== */
-  socket.on("child_picked", (data) => {
-    io.emit("notification", {
-      title: "Pickup",
-      message: "Child has been picked up",
-      ...data,
-    });
-  });
-
-  socket.on("child_dropped", (data) => {
-    io.emit("notification", {
-      title: "Drop",
-      message: "Child has been dropped",
-      ...data,
-    });
   });
 
   /* ===== DISCONNECT ===== */
   socket.on("disconnect", () => {
-    console.log("❌ Socket disconnected:", socket.id);
+    console.log("Socket disconnected:", socket.id);
   });
 });
 
@@ -151,8 +128,7 @@ app.get("/api/health", (req, res) => {
 
 /* ================= ERROR HANDLER ================= */
 app.use((err, req, res, next) => {
-  console.error("🔥 ERROR:", err);
-
+  console.error("ERROR:", err);
   res.status(500).json({
     success: false,
     message: err.message || "Internal error",
@@ -173,10 +149,10 @@ const PORT = process.env.PORT || 5000;
 connectDB()
   .then(() => {
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on ${PORT}`);
+      console.log(`Server running on ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("❌ DB CONNECTION FAILED:", err);
+    console.error("DB CONNECTION FAILED:", err);
     process.exit(1);
   });
