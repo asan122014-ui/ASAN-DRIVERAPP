@@ -20,7 +20,6 @@ export const sendNotification = async ({
       throw new Error("Missing fields");
     }
 
-    /* ================= FETCH DRIVER ================= */
     const driver = await Driver.findOne({ driverId });
 
     /* ================= FETCH PARENTS ================= */
@@ -29,28 +28,15 @@ export const sendNotification = async ({
     if (childId) {
       const child = await Child.findById(childId);
 
-      if (!child) {
-        console.log("❌ Child not found");
-        return [];
-      }
-
-      if (child.parentId) {
-        const parent = await Parent.findById(child.parentId)
-          .select("fcmTokens");
-
+      if (child?.parentId) {
+        const parent = await Parent.findById(child.parentId);
         if (parent) parents = [parent];
       }
     } else {
-      parents = await Parent.find({ driverId })
-        .select("fcmTokens"); // ✅ ONLY ARRAY
+      parents = await Parent.find({ driverId }); // ✅ CORRECT
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
-
-    if (!parents.length) {
-      console.log("❌ No parents → skipped");
-      return [];
-    }
 
     /* ================= SAVE TO DB ================= */
     const notifications = await Promise.all(
@@ -82,13 +68,16 @@ export const sendNotification = async ({
       });
     }
 
-    /* ================= TOKEN COLLECTION (ARRAY ONLY) ================= */
+    /* ================= TOKEN COLLECTION ================= */
     const tokenSet = new Set();
 
     parents.forEach((p) => {
+      console.log("🔍 Parent:", p._id);
+      console.log("🔍 Tokens:", p.fcmTokens);
+
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((t) => {
-          if (t && typeof t === "string" && t.trim() !== "") {
+          if (t && t.trim() !== "") {
             tokenSet.add(t.trim());
           }
         });
@@ -135,20 +124,6 @@ export const sendNotification = async ({
       });
 
       console.log("✅ FCM sent:", response.successCount);
-
-      /* ================= CLEAN INVALID ================= */
-      const invalidTokens = tokens.filter(
-        (_, i) => !response.responses[i].success
-      );
-
-      if (invalidTokens.length) {
-        console.log("🧹 Removing invalid:", invalidTokens);
-
-        await Parent.updateMany(
-          { fcmTokens: { $in: invalidTokens } },
-          { $pull: { fcmTokens: { $in: invalidTokens } } }
-        );
-      }
 
     } catch (err) {
       console.error("❌ Firebase error:", err.message);
