@@ -1,4 +1,4 @@
-import Students from "../models/Students.js";
+import Student from "../models/Students.js"; // ✅ FIXED
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import { sendNotification } from "../utils/sendNotification.js";
@@ -52,66 +52,20 @@ export const addStudent = async (req, res) => {
     });
   }
 };
-/* ================= GET ALL STUDENTS ================= */
-export const getAllStudents = async (req, res) => {
+
+/* ================= PICKUP STUDENT ================= */
+export const pickupStudent = async (req, res) => {
   try {
-    const students = await Students.find().lean();
+    const { childId } = req.body; // ✅ FIXED
 
-    res.json({
-      success: true,
-      data: students
-    });
-
-  } catch (error) {
-    console.error("Fetch students error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch students"
-    });
-  }
-};
-
-/* ================= GET ACTIVE TRIP STUDENTS ================= */
-export const getActiveStudents = async (req, res) => {
-  try {
-    const driverId = req.params.driverId;
-
-    const trip = await Trips.findOne({
-      driverId,
-      status: "active"
-    });
-
-    if (!trip) {
-      return res.json({
-        success: true,
-        data: []
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "childId required"
       });
     }
 
-    const students = await Students.find({
-      _id: { $in: trip.students }
-    }).lean();
-
-    res.json({
-      success: true,
-      data: students
-    });
-
-  } catch (error) {
-    console.error("Active students error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch active students"
-    });
-  }
-};
-
-/* ================= PICKUP STUDENT ================= */
-import { sendNotification } from "../utils/sendNotification.js";
-
-export const pickupStudent = async (req, res) => {
-  try {
-    const student = await Student.findById(req.params.id);
+    const student = await Student.findById(childId); // ✅ FIXED
 
     if (!student) {
       return res.status(404).json({
@@ -130,11 +84,13 @@ export const pickupStudent = async (req, res) => {
       driverId: student.driver,
       childId: student._id,
       title: "Pickup Update",
-      message: "Your child has been picked up",
+      message: `${student.name} has been picked up`,
       type: "pickup",
       priority: "high",
       io
     });
+
+    console.log("✅ PICKUP NOTIFICATION SENT");
 
     res.json({
       success: true,
@@ -142,7 +98,7 @@ export const pickupStudent = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Pickup error:", err);
+    console.error("❌ Pickup error:", err);
     res.status(500).json({
       success: false,
       message: "Pickup failed"
@@ -153,7 +109,16 @@ export const pickupStudent = async (req, res) => {
 /* ================= DROP STUDENT ================= */
 export const dropStudent = async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id);
+    const { childId } = req.body; // ✅ FIXED
+
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "childId required"
+      });
+    }
+
+    const student = await Student.findById(childId); // ✅ FIXED
 
     if (!student) {
       return res.status(404).json({
@@ -172,11 +137,13 @@ export const dropStudent = async (req, res) => {
       driverId: student.driver,
       childId: student._id,
       title: "Drop Update",
-      message: "Your child has been dropped safely",
+      message: `${student.name} has been dropped safely`,
       type: "drop",
       priority: "high",
       io
     });
+
+    console.log("✅ DROP NOTIFICATION SENT");
 
     res.json({
       success: true,
@@ -184,95 +151,10 @@ export const dropStudent = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Drop error:", err);
+    console.error("❌ Drop error:", err);
     res.status(500).json({
       success: false,
       message: "Drop failed"
-    });
-  }
-};
-
-/* ================= ASSIGN STUDENT TO TRIP ================= */
-export const assignStudent = async (req, res) => {
-  try {
-    const { driverId, studentId } = req.body;
-
-    if (!driverId || !studentId) {
-      return res.status(400).json({
-        success: false,
-        message: "driverId and studentId are required"
-      });
-    }
-
-    const trip = await Trips.findOne({
-      driverId,
-      status: "active"
-    });
-
-    if (!trip) {
-      return res.status(404).json({
-        success: false,
-        message: "Active trip not found"
-      });
-    }
-
-    if (!trip.students.includes(studentId)) {
-      trip.students.push(studentId);
-      await trip.save();
-    }
-
-    res.json({
-      success: true,
-      message: "Student assigned to trip"
-    });
-
-  } catch (error) {
-    console.error("Assign student error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to assign student"
-    });
-  }
-};
-
-/* ================= UPDATE STUDENT LOCATION ================= */
-export const updateStudentLocation = async (req, res) => {
-  try {
-    const { latitude, longitude } = req.body;
-
-    if (!latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        message: "Latitude and longitude are required"
-      });
-    }
-
-    const student = await Students.findById(req.params.id);
-
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        message: "Student not found"
-      });
-    }
-
-    student.location = {
-      type: "Point",
-      coordinates: [longitude, latitude]
-    };
-
-    await student.save();
-
-    res.json({
-      success: true,
-      message: "Student location updated"
-    });
-
-  } catch (error) {
-    console.error("Update location error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update location"
     });
   }
 };
