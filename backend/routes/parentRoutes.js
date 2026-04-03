@@ -108,42 +108,42 @@ router.post("/save-token", async (req, res) => {
   try {
     const { parentId, token } = req.body;
 
-    console.log("🔥 BODY:", req.body);
+    console.log("🔥 Saving token for:", parentId);
+    console.log("🔥 Token:", token);
 
     if (!parentId || !token) {
-      console.log("❌ Missing fields");
       return res.status(400).json({
         success: false,
         message: "parentId and token required",
       });
     }
 
-    const parent = await Parent.findById(parentId);
+    const updatedParent = await Parent.findByIdAndUpdate(
+      parentId,
+      {
+        $addToSet: { fcmTokens: token }, // ✅ NO duplicates + atomic
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
-    if (!parent) {
-      console.log("❌ Parent not found:", parentId);
+    if (!updatedParent) {
       return res.status(404).json({
         success: false,
         message: "Parent not found",
       });
     }
 
-    // ✅ SAFE PUSH
-    if (!parent.fcmTokens.includes(token)) {
-      parent.fcmTokens.push(token);
-    }
-
-    await parent.save();
-
-    console.log("✅ TOKEN SAVED:", parent.fcmTokens);
+    console.log("✅ UPDATED TOKENS:", updatedParent.fcmTokens);
 
     res.json({
       success: true,
-      data: parent.fcmTokens,
+      data: updatedParent.fcmTokens,
     });
-
   } catch (error) {
-    console.error("❌ SAVE TOKEN ERROR FULL:", error); // 🔥 IMPORTANT
+    console.error("❌ SAVE TOKEN ERROR:", error.message);
     res.status(500).json({
       success: false,
       message: error.message,
