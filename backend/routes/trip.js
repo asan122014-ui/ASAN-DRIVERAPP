@@ -6,7 +6,7 @@ import {
   getTripHistory,
   getParentTripHistory, // 🔥 NEW
 } from "../controllers/tripController.js";
-
+import Parent from "../models/Parent.js";
 const router = express.Router();
 
 /* ================= DRIVER ROUTES ================= */
