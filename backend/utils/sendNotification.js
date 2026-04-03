@@ -33,7 +33,7 @@ export const sendNotification = async ({
         if (parent) parents = [parent];
       }
     } else {
-      parents = await Parent.find({ driverId }); // ✅ CORRECT
+      parents = await Parent.find({ driverId }).select("+fcmTokens"); // ✅ CORRECT
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
