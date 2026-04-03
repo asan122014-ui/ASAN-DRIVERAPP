@@ -1,52 +1,82 @@
-import express from "express";
-import Parent from "../models/Parent.js";
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
-const router = express.Router();
+const parentSchema = new mongoose.Schema(
+  {
+    /* ================= BASIC DETAILS ================= */
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-/* ================= SAVE FCM TOKEN ================= */
-router.post("/save-token", async (req, res) => {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    phone: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+
+    password: {
+      type: String,
+      required: true,
+      minlength: 6,
+      select: false,
+    },
+
+    /* ================= DRIVER LINK ================= */
+    driverId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    /* ================= 🔥 FCM TOKENS ================= */
+    fcmTokens: {
+      type: [String], // ✅ supports multiple devices
+      default: [],
+    },
+
+    /* ================= OPTIONAL ================= */
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+/* ================= INDEXES ================= */
+parentSchema.index({ driverId: 1 });
+
+/* ================= HASH PASSWORD ================= */
+parentSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+
   try {
-    const { parentId, token } = req.body;
-
-    if (!parentId || !token) {
-      return res.status(400).json({
-        success: false,
-        message: "parentId and token required",
-      });
-    }
-
-    console.log("👉 Saving token for:", parentId);
-    console.log("👉 Token:", token);
-
-    const parent = await Parent.findByIdAndUpdate(
-      parentId,
-      {
-        $addToSet: { fcmTokens: token }, // ✅ ARRAY BASED
-      },
-      { returnDocument: "after" } // ✅ UPDATED (no warning)
-    );
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    console.log("✅ TOKEN SAVED IN DB:", parent.fcmTokens);
-
-    res.json({
-      success: true,
-      data: parent.fcmTokens,
-    });
-
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
   } catch (error) {
-    console.error("❌ Save token error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to save token",
-    });
+    console.error("❌ Password hash error:", error);
   }
 });
 
-export default router;
+/* ================= COMPARE PASSWORD ================= */
+parentSchema.methods.comparePassword = function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
+};
+
+/* ================= EXPORT ================= */
+const Parent = mongoose.model("Parent", parentSchema);
+
+export default Parent;
