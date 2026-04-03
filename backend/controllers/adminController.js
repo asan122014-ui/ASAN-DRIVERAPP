@@ -90,11 +90,14 @@ export const getDriverById = async (req, res) => {
   }
 };
 
-/* ================= APPROVE DRIVER ================= */
 export const approveDriver = async (req, res) => {
   try {
+    const { id } = req.params;
+
+    console.log("👉 Approving driver:", id);
+
     const driver = await Driver.findByIdAndUpdate(
-      req.params.id,
+      id,
       { status: "approved", rejectionReason: null },
       { new: true }
     );
@@ -106,24 +109,30 @@ export const approveDriver = async (req, res) => {
       });
     }
 
-    // Optional logging
-    await AdminLog.create({
-      action: "DRIVER_APPROVED",
-      driverId: driver._id,
-      message: `Driver ${driver.name} approved`
-    });
+    /* 🔥 SAFE LOGGING (will NOT crash API) */
+    try {
+      await AdminLog.create({
+        action: "DRIVER_APPROVED",
+        driverId: driver._id,
+        message: `Driver ${driver.name} approved`
+        // 👉 add adminId here if you have it
+      });
+    } catch (logError) {
+      console.warn("⚠️ AdminLog failed:", logError.message);
+    }
 
     res.json({
       success: true,
-      message: "Driver approved successfully"
+      message: "Driver approved successfully",
+      data: driver
     });
 
   } catch (error) {
-    console.error("Approve Error:", error);
+    console.error("🔥 APPROVE ERROR FULL:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to approve driver"
+      message: error.message || "Failed to approve driver"
     });
   }
 };
@@ -131,10 +140,13 @@ export const approveDriver = async (req, res) => {
 /* ================= REJECT DRIVER ================= */
 export const rejectDriver = async (req, res) => {
   try {
+    const { id } = req.params;
     const { reason } = req.body;
 
+    console.log("👉 Rejecting driver:", id);
+
     const driver = await Driver.findByIdAndUpdate(
-      req.params.id,
+      id,
       {
         status: "rejected",
         rejectionReason: reason || "Rejected"
@@ -149,28 +161,32 @@ export const rejectDriver = async (req, res) => {
       });
     }
 
-    await AdminLog.create({
-      action: "DRIVER_REJECTED",
-      driverId: driver._id,
-      message: `Driver ${driver.name} rejected`
-    });
+    /* 🔥 SAFE LOGGING */
+    try {
+      await AdminLog.create({
+        action: "DRIVER_REJECTED",
+        driverId: driver._id,
+        message: `Driver ${driver.name} rejected`
+      });
+    } catch (logError) {
+      console.warn("⚠️ AdminLog failed:", logError.message);
+    }
 
     res.json({
       success: true,
-      message: "Driver rejected successfully"
+      message: "Driver rejected successfully",
+      data: driver
     });
 
   } catch (error) {
-    console.error("Reject Error:", error);
+    console.error("🔥 REJECT ERROR FULL:", error);
 
     res.status(500).json({
       success: false,
-      message: "Failed to reject driver"
+      message: error.message || "Failed to reject driver"
     });
   }
-};
-
-/* ================= GET LOGS ================= */
+};/* ================= GET LOGS ================= */
 export const getLogs = async (req, res) => {
   try {
     const logs = await AdminLog
