@@ -115,15 +115,17 @@ router.post("/save-token", async (req, res) => {
     await Parent.findByIdAndUpdate(
       parentId,
       {
-        $addToSet: { fcmTokens: token }, // ✅ ONLY ARRAY
+        $addToSet: { fcmTokens: token }, // ✅ STORE IN ARRAY
       },
       { new: true }
     );
 
+    console.log("✅ Token saved to DB");
+
     res.json({ success: true });
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ Save token error:", err);
     res.status(500).json({ message: "Error" });
   }
 });
