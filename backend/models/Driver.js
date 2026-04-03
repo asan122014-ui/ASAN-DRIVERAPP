@@ -66,6 +66,7 @@ const driverSchema = new mongoose.Schema(
     idFront: { type: String, required: true },
     idBack: { type: String, required: true },
     profilePhoto: { type: String, required: true },
+    profilePhotoPublicId: String,,
 
     /* ================= SYSTEM ================= */
     driverId: {
