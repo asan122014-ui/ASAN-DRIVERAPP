@@ -1,120 +1,8 @@
 import express from "express";
 import Child from "../models/Child.js";
+import { sendNotification } from "../utils/sendNotification.js"; // ✅ ADD THIS
 
 const router = express.Router();
-
-/* ================= ADD CHILD ================= */
-router.post("/add", async (req, res) => {
-  try {
-    const {
-      name,
-      age,
-      school,
-      grade,
-      pickupTime,
-      dropoffTime,
-      eveningPickup,
-      eveningDrop,
-      pickupLocation,
-      dropoffLocation,
-      location,
-      dropLocationCoords,
-      parentId,
-      driverId,
-    } = req.body;
-
-    if (!name || !parentId || !driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, parentId, and driverId are required",
-      });
-    }
-
-    const child = await Child.create({
-      name,
-      age,
-      school,
-      grade,
-      pickupTime,
-      dropoffTime,
-      eveningPickup,
-      eveningDrop,
-      pickupLocation,
-      dropoffLocation,
-
-      // ✅ SAFE LOCATION
-      location: {
-        lat: location?.lat ?? null,
-        lng: location?.lng ?? null,
-      },
-
-      dropLocationCoords: {
-        lat: dropLocationCoords?.lat ?? null,
-        lng: dropLocationCoords?.lng ?? null,
-      },
-
-      parentId,
-      driverId,
-
-      // ✅ DEFAULT STATUS
-      status: "waiting",
-    });
-
-    res.status(201).json({
-      success: true,
-      data: child,
-    });
-
-  } catch (err) {
-    console.error("🔥 Add child error:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message || "Failed to add child",
-    });
-  }
-});
-
-/* ================= GET BY PARENT ================= */
-router.get("/parent/:parentId", async (req, res) => {
-  try {
-    const children = await Child.find({
-      parentId: req.params.parentId,
-    }).sort({ createdAt: -1 });
-
-    res.json({
-      success: true,
-      data: children,
-    });
-
-  } catch (err) {
-    console.error("Parent fetch error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
-  }
-});
-
-/* ================= GET BY DRIVER ================= */
-router.get("/driver/:driverId", async (req, res) => {
-  try {
-    const children = await Child.find({
-      driverId: req.params.driverId,
-    });
-
-    res.json({
-      success: true,
-      data: children,
-    });
-
-  } catch (err) {
-    console.error("Driver fetch error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
-  }
-});
 
 /* ================= PICKUP STUDENT ================= */
 router.post("/pickup", async (req, res) => {
@@ -137,7 +25,6 @@ router.post("/pickup", async (req, res) => {
       });
     }
 
-    // ✅ PREVENT DOUBLE PICKUP
     if (child.status !== "waiting") {
       return res.status(400).json({
         success: false,
@@ -147,6 +34,21 @@ router.post("/pickup", async (req, res) => {
 
     child.status = "onboard";
     await child.save();
+
+    /* 🔥 SEND NOTIFICATION */
+    const io = req.app.get("io");
+
+    await sendNotification({
+      driverId: child.driverId,
+      childId: child._id,
+      title: "Pickup Update",
+      message: `${child.name} has been picked up`,
+      type: "pickup",
+      priority: "high",
+      io,
+    });
+
+    console.log("✅ PICKUP NOTIFICATION SENT");
 
     res.json({
       success: true,
@@ -184,7 +86,6 @@ router.post("/drop", async (req, res) => {
       });
     }
 
-    // ✅ PREVENT WRONG DROP
     if (child.status !== "onboard") {
       return res.status(400).json({
         success: false,
@@ -194,6 +95,21 @@ router.post("/drop", async (req, res) => {
 
     child.status = "dropped";
     await child.save();
+
+    /* 🔥 SEND NOTIFICATION */
+    const io = req.app.get("io");
+
+    await sendNotification({
+      driverId: child.driverId,
+      childId: child._id,
+      title: "Drop Update",
+      message: `${child.name} has been dropped safely`,
+      type: "drop",
+      priority: "high",
+      io,
+    });
+
+    console.log("✅ DROP NOTIFICATION SENT");
 
     res.json({
       success: true,
@@ -206,30 +122,6 @@ router.post("/drop", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Drop failed",
-    });
-  }
-});
-
-/* ================= RESET ALL (END TRIP) ================= */
-router.post("/reset/:driverId", async (req, res) => {
-  try {
-    const { driverId } = req.params;
-
-    await Child.updateMany(
-      { driverId },
-      { status: "waiting" }
-    );
-
-    res.json({
-      success: true,
-      message: "All students reset to waiting",
-    });
-
-  } catch (err) {
-    console.error("Reset error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Reset failed",
     });
   }
 });
