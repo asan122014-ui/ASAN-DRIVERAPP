@@ -21,9 +21,9 @@ export const sendNotification = async ({
     }
 
     /* ================= FETCH DRIVER ================= */
-    const driver = await Driver.findOne({ driverId }).select("+fcmToken");
+    const driver = await Driver.findOne({ driverId });
 
-    /* ================= FETCH PARENTS (🔥 FIX HERE) ================= */
+    /* ================= FETCH PARENTS ================= */
     let parents = [];
 
     if (childId) {
@@ -36,23 +36,19 @@ export const sendNotification = async ({
 
       if (child.parentId) {
         const parent = await Parent.findById(child.parentId)
-          .select("+fcmToken +fcmTokens");
+          .select("fcmTokens");
 
         if (parent) parents = [parent];
       }
     } else {
       parents = await Parent.find({ driverId })
-        .select("+fcmToken +fcmTokens"); // ✅ CRITICAL FIX
+        .select("fcmTokens"); // ✅ ONLY ARRAY
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
 
-    parents.forEach(p => {
-      console.log("🔍 DEBUG TOKEN:", p.fcmToken, p.fcmTokens);
-    });
-
-    if (parents.length === 0) {
-      console.log("❌ No parents found → skipped");
+    if (!parents.length) {
+      console.log("❌ No parents → skipped");
       return [];
     }
 
@@ -72,44 +68,24 @@ export const sendNotification = async ({
       )
     );
 
-    /* ================= SOCKET.IO ================= */
+    /* ================= SOCKET ================= */
     if (io) {
       const driverRoom = String(driverId);
 
-      if (notifications[0]) {
-        io.to(driverRoom).emit("new_notification", notifications[0]);
-      }
+      io.to(driverRoom).emit("new_notification", notifications[0]);
 
       notifications.forEach((notif) => {
-        if (!notif.parent) return;
-
         io.to(notif.parent.toString()).emit("notification", {
-          _id: notif._id,
-          title: notif.title,
-          message: notif.message,
-          type: notif.type,
-          priority: notif.priority,
-          childId: notif.childId,
-          createdAt: notif.createdAt,
+          ...notif._doc,
           driverId: notif.driver,
         });
       });
     }
 
-    /* ================= TOKEN COLLECTION (🔥 FINAL FIX) ================= */
+    /* ================= TOKEN COLLECTION (ARRAY ONLY) ================= */
     const tokenSet = new Set();
 
     parents.forEach((p) => {
-      // ✅ SINGLE TOKEN
-      if (
-        p.fcmToken &&
-        typeof p.fcmToken === "string" &&
-        p.fcmToken.trim() !== ""
-      ) {
-        tokenSet.add(p.fcmToken.trim());
-      }
-
-      // ✅ MULTIPLE TOKENS
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((t) => {
           if (t && typeof t === "string" && t.trim() !== "") {
@@ -119,20 +95,11 @@ export const sendNotification = async ({
       }
     });
 
-    // ✅ DRIVER TOKEN
-    if (
-      driver?.fcmToken &&
-      typeof driver.fcmToken === "string" &&
-      driver.fcmToken.trim() !== ""
-    ) {
-      tokenSet.add(driver.fcmToken.trim());
-    }
-
     const tokens = [...tokenSet];
 
     console.log("📱 FINAL TOKENS:", tokens);
 
-    /* ================= FCM SEND ================= */
+    /* ================= FCM ================= */
     if (!admin.apps.length) {
       console.log("⚠️ Firebase not initialized");
       return notifications;
@@ -169,29 +136,20 @@ export const sendNotification = async ({
 
       console.log("✅ FCM sent:", response.successCount);
 
-      /* ================= CLEAN INVALID TOKENS ================= */
+      /* ================= CLEAN INVALID ================= */
       const invalidTokens = tokens.filter(
         (_, i) => !response.responses[i].success
       );
 
-      if (invalidTokens.length > 0) {
-        console.log("🧹 Removing invalid tokens:", invalidTokens);
+      if (invalidTokens.length) {
+        console.log("🧹 Removing invalid:", invalidTokens);
 
-        await Promise.all([
-          Parent.updateMany(
-            { fcmTokens: { $in: invalidTokens } },
-            { $pull: { fcmTokens: { $in: invalidTokens } } }
-          ),
-          Parent.updateMany(
-            { fcmToken: { $in: invalidTokens } },
-            { $unset: { fcmToken: "" } }
-          ),
-          Driver.updateMany(
-            { fcmToken: { $in: invalidTokens } },
-            { $unset: { fcmToken: "" } }
-          ),
-        ]);
+        await Parent.updateMany(
+          { fcmTokens: { $in: invalidTokens } },
+          { $pull: { fcmTokens: { $in: invalidTokens } } }
+        );
       }
+
     } catch (err) {
       console.error("❌ Firebase error:", err.message);
     }
