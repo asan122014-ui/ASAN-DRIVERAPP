@@ -4,7 +4,7 @@ import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
 import { cloudinary, upload } from "../config/cloudinary.js";
-import sharp from "sharp";
+
 const router = express.Router();
 
 /* ================= HELPER FUNCTION ================= */
@@ -277,29 +277,15 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
 
     /* ===== IMAGE UPDATE ===== */
     if (req.file) {
-      if (driver.profilePhotoPublicId) {
-        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
-      }
+  // delete old image
+  if (driver.profilePhotoPublicId) {
+    await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+  }
 
-      const buffer = await sharp(req.file.buffer)
-        .resize(500)
-        .jpeg({ quality: 70 })
-        .toBuffer();
-
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder: "asan-drivers" },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-        stream.end(buffer);
-      });
-
-      driver.profilePhoto = result.secure_url;
-      driver.profilePhotoPublicId = result.public_id;
-    }
+  // use already uploaded file from multer-cloudinary
+  driver.profilePhoto = req.file.path;
+  driver.profilePhotoPublicId = req.file.filename;
+}
 
     /* ===== UPDATE FIELDS ===== */
     Object.keys(updates).forEach((key) => {
