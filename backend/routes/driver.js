@@ -3,7 +3,9 @@ import mongoose from "mongoose";
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
+import multer from "multer";
 
+const upload = multer({ dest: "uploads/" });
 const router = express.Router();
 
 /* ================= HELPER FUNCTION ================= */
@@ -249,9 +251,10 @@ router.get("/tracking/:driverId", async (req, res) => {
 });
 
 /* ================= UPDATE DRIVER PROFILE ================= */
-router.put("/update", async (req, res) => {
+/* ================= UPDATE DRIVER PROFILE ================= */
+router.put("/update", upload.single("profilePhoto"), async (req, res) => {
   try {
-    const { driverId, ...updates } = req.body;
+    const driverId = req.body.driverId;
 
     if (!driverId) {
       return res.status(400).json({
@@ -269,7 +272,18 @@ router.put("/update", async (req, res) => {
       });
     }
 
-    Object.assign(driver, updates);
+    // ✅ update normal fields
+    Object.keys(req.body).forEach((key) => {
+      if (key !== "driverId") {
+        driver[key] = req.body[key];
+      }
+    });
+
+    // ✅ update photo if exists
+    if (req.file) {
+      driver.profilePhoto = req.file.path;
+    }
+
     await driver.save();
 
     res.json({
@@ -277,15 +291,15 @@ router.put("/update", async (req, res) => {
       message: "Driver updated",
       data: driver,
     });
+
   } catch (error) {
-    console.error("Update error:", error);
+    console.error("🔥 Update error:", error);
     res.status(500).json({
       success: false,
       message: "Update failed",
     });
   }
 });
-
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
