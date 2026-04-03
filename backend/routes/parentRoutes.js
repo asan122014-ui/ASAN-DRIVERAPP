@@ -109,24 +109,43 @@ router.post("/save-token", async (req, res) => {
     const { parentId, token } = req.body;
 
     if (!parentId || !token) {
-      return res.status(400).json({ message: "Missing fields" });
+      return res.status(400).json({
+        success: false,
+        message: "parentId and token required",
+      });
     }
 
-    await Parent.findByIdAndUpdate(
-      parentId,
+    console.log("👉 Saving token for:", parentId);
+    console.log("👉 Token:", token);
+
+    const parent = await Parent.findByIdAndUpdate(
+      parentId, // ✅ FIXED (use _id)
       {
-        $addToSet: { fcmTokens: token }, // ✅ STORE IN ARRAY
+        $addToSet: { fcmTokens: token }, // avoids duplicates
       },
       { new: true }
     );
 
-    console.log("✅ Token saved to DB");
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
 
-    res.json({ success: true });
+    console.log("✅ TOKEN SAVED IN DB:", parent.fcmTokens);
 
-  } catch (err) {
-    console.error("❌ Save token error:", err);
-    res.status(500).json({ message: "Error" });
+    res.json({
+      success: true,
+      data: parent.fcmTokens,
+    });
+
+  } catch (error) {
+    console.error("❌ Save token error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to save token",
+    });
   }
 });
 /* ================= DASHBOARD ================= */
