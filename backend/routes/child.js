@@ -1,8 +1,117 @@
 import express from "express";
 import Child from "../models/Child.js";
-import { sendNotification } from "../utils/sendNotification.js"; // ✅ ADD THIS
+import { sendNotification } from "../utils/sendNotification.js";
 
 const router = express.Router();
+
+/* ================= ADD CHILD ================= */
+router.post("/add", async (req, res) => {
+  try {
+    const {
+      name,
+      age,
+      school,
+      grade,
+      pickupTime,
+      dropoffTime,
+      eveningPickup,
+      eveningDrop,
+      pickupLocation,
+      dropoffLocation,
+      location,
+      dropLocationCoords,
+      parentId,
+      driverId,
+    } = req.body;
+
+    if (!name || !parentId || !driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, parentId, and driverId are required",
+      });
+    }
+
+    const child = await Child.create({
+      name,
+      age,
+      school,
+      grade,
+      pickupTime,
+      dropoffTime,
+      eveningPickup,
+      eveningDrop,
+      pickupLocation,
+      dropoffLocation,
+      location: {
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
+      },
+      dropLocationCoords: {
+        lat: dropLocationCoords?.lat ?? null,
+        lng: dropLocationCoords?.lng ?? null,
+      },
+      parentId,
+      driverId,
+      status: "waiting",
+    });
+
+    res.status(201).json({
+      success: true,
+      data: child,
+    });
+
+  } catch (err) {
+    console.error("🔥 Add child error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to add child",
+    });
+  }
+});
+
+/* ================= GET BY PARENT ================= */
+router.get("/parent/:parentId", async (req, res) => {
+  try {
+    const children = await Child.find({
+      parentId: req.params.parentId,
+    }).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: children,
+    });
+
+  } catch (err) {
+    console.error("❌ Parent fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch children",
+    });
+  }
+});
+
+/* ================= GET BY DRIVER (FIXED - NO 404) ================= */
+router.get("/driver/:driverId", async (req, res) => {
+  try {
+    const driverId = String(req.params.driverId);
+
+    console.log("📌 Fetch children for driver:", driverId);
+
+    const children = await Child.find({ driverId });
+
+    res.json({
+      success: true,
+      data: children,
+    });
+
+  } catch (err) {
+    console.error("❌ Driver fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch children",
+    });
+  }
+});
 
 /* ================= PICKUP STUDENT ================= */
 router.post("/pickup", async (req, res) => {
@@ -57,7 +166,7 @@ router.post("/pickup", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Pickup error:", err);
+    console.error("❌ Pickup error:", err);
     res.status(500).json({
       success: false,
       message: "Pickup failed",
@@ -118,34 +227,34 @@ router.post("/drop", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Drop error:", err);
+    console.error("❌ Drop error:", err);
     res.status(500).json({
       success: false,
       message: "Drop failed",
     });
   }
 });
-/* ================= GET CHILDREN BY DRIVER ================= */
-router.get("/driver/:driverId", async (req, res) => {
+
+/* ================= RESET ALL (END TRIP) ================= */
+router.post("/reset/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
 
-    console.log("📌 Fetch children for driver:", driverId);
-
-    const children = await Child.find({
-      driverId: String(driverId), // ensure string match
-    });
+    await Child.updateMany(
+      { driverId },
+      { status: "waiting" }
+    );
 
     res.json({
       success: true,
-      data: children,
+      message: "All students reset to waiting",
     });
 
   } catch (err) {
-    console.error("❌ Driver fetch error:", err);
+    console.error("❌ Reset error:", err);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch children",
+      message: "Reset failed",
     });
   }
 });
