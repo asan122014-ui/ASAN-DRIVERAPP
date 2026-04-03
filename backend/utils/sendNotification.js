@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Student from "../models/Students.js"; // ✅ correct import
+import Child from "../models/Child.js"; // ✅ FIXED (IMPORTANT)
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
@@ -27,7 +27,11 @@ export const sendNotification = async ({
     let parents = [];
 
     if (childId) {
-      const child = await Student.findById(childId).populate("parentId"); // ✅ FIXED
+      const child = await Child.findById(childId).populate("parentId"); // ✅ FIXED
+
+      if (!child) {
+        console.log("❌ Child not found");
+      }
 
       if (child?.parentId) {
         parents = [child.parentId];
@@ -37,6 +41,11 @@ export const sendNotification = async ({
     }
 
     console.log("PARENTS FOUND:", parents.length);
+
+    if (parents.length === 0) {
+      console.log("❌ No parents found → notification skipped");
+      return [];
+    }
 
     /* ================= SAVE TO DB ================= */
     const notifications = [];
@@ -60,7 +69,7 @@ export const sendNotification = async ({
     if (io) {
       const driverRoom = String(driverId);
 
-      // DRIVER
+      // DRIVER (optional)
       if (notifications[0]) {
         io.to(driverRoom).emit("new_notification", notifications[0]);
       }
@@ -85,7 +94,7 @@ export const sendNotification = async ({
     /* ================= FCM TOKENS ================= */
     const tokenSet = new Set();
 
-    // Parents
+    // Parents (multiple devices)
     parents.forEach((p) => {
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((token) => {
@@ -105,12 +114,12 @@ export const sendNotification = async ({
 
     /* ================= FIREBASE ================= */
     if (!admin.apps.length) {
-      console.log("Firebase not initialized");
+      console.log("⚠️ Firebase not initialized");
       return notifications;
     }
 
     if (tokens.length === 0) {
-      console.log("No tokens found");
+      console.log("⚠️ No tokens found");
       return notifications;
     }
 
@@ -150,6 +159,8 @@ export const sendNotification = async ({
       );
 
       if (invalidTokens.length > 0) {
+        console.log("Cleaning invalid tokens:", invalidTokens.length);
+
         await Promise.all([
           Parent.updateMany(
             { fcmTokens: { $in: invalidTokens } },
@@ -163,13 +174,13 @@ export const sendNotification = async ({
       }
 
     } catch (err) {
-      console.error("Firebase error:", err.message);
+      console.error("❌ Firebase error:", err.message);
     }
 
     return notifications;
 
   } catch (error) {
-    console.error("sendNotification FAILED:", error.message);
+    console.error("❌ sendNotification FAILED:", error.message);
     throw error;
   }
 };
