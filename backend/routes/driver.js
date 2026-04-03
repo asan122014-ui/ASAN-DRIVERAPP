@@ -248,8 +248,7 @@ router.get("/tracking/:driverId", async (req, res) => {
   }
 });
 
-/* ================= UPDATE DRIVER PROFILE ================= */
-router.put("/update", async (req, res) => {
+router.put("/update", upload.single("profilePhoto"), async (req, res) => {
   try {
     const { driverId, ...updates } = req.body;
 
@@ -269,32 +268,27 @@ router.put("/update", async (req, res) => {
       });
     }
 
-    /* ================= REMOVE UNWANTED FIELDS ================= */
+    /* ===== REMOVE UNWANTED ===== */
     delete updates._id;
     delete updates.__v;
     delete updates.password;
     delete updates.profilePhoto;
     delete updates.profilePhotoPublicId;
 
-    /* ================= HANDLE IMAGE UPDATE ================= */
+    /* ===== IMAGE UPDATE ===== */
     if (req.file) {
-      // ✅ DELETE OLD IMAGE FROM CLOUDINARY
       if (driver.profilePhotoPublicId) {
         await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
       }
 
-      // ✅ COMPRESS IMAGE
       const buffer = await sharp(req.file.buffer)
         .resize(500)
         .jpeg({ quality: 70 })
         .toBuffer();
 
-      // ✅ UPLOAD TO CLOUDINARY
       const result = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "asan-drivers",
-          },
+          { folder: "asan-drivers" },
           (error, result) => {
             if (error) reject(error);
             else resolve(result);
@@ -303,12 +297,11 @@ router.put("/update", async (req, res) => {
         stream.end(buffer);
       });
 
-      // ✅ SAVE NEW IMAGE
       driver.profilePhoto = result.secure_url;
       driver.profilePhotoPublicId = result.public_id;
     }
 
-    /* ================= UPDATE OTHER FIELDS ================= */
+    /* ===== UPDATE FIELDS ===== */
     Object.keys(updates).forEach((key) => {
       if (updates[key] !== undefined) {
         driver[key] = updates[key];
@@ -325,7 +318,6 @@ router.put("/update", async (req, res) => {
 
   } catch (error) {
     console.error("🔥 UPDATE ERROR:", error);
-
     res.status(500).json({
       success: false,
       message: "Update failed",
@@ -333,7 +325,6 @@ router.put("/update", async (req, res) => {
     });
   }
 });
-
     /* ================= UPDATE OTHER FIELDS ================= */
     Object.keys(updates).forEach((key) => {
       if (updates[key] !== undefined) {
