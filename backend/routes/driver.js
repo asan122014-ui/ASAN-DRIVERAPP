@@ -289,10 +289,14 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
 
     /* ===== UPDATE FIELDS ===== */
     Object.keys(updates).forEach((key) => {
-      if (updates[key] !== undefined) {
-        driver[key] = updates[key];
-      }
-    });
+  if (
+    updates[key] !== undefined &&
+    key !== "location" &&
+    key !== "lastLocation"
+  ) {
+    driver[key] = updates[key];
+  }
+});
 
     await driver.save();
 
