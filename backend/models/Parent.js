@@ -51,14 +51,17 @@ const parentSchema = new mongoose.Schema(
 
 /* ================= HASH PASSWORD ================= */
 parentSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-
   try {
+    if (!this.isModified("password")) return next();
+
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
+
+    next(); // ✅ OK
+
   } catch (err) {
-    next(err);
+    console.error("❌ HASH ERROR:", err);
+    next(err); // ✅ MUST PASS ERROR
   }
 });
 
