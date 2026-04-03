@@ -21,9 +21,9 @@ export const sendNotification = async ({
     }
 
     /* ================= FETCH DRIVER ================= */
-    const driver = await Driver.findOne({ driverId });
+    const driver = await Driver.findOne({ driverId }).select("+fcmToken");
 
-    /* ================= FETCH PARENTS ================= */
+    /* ================= FETCH PARENTS (🔥 FIX HERE) ================= */
     let parents = [];
 
     if (childId) {
@@ -35,14 +35,21 @@ export const sendNotification = async ({
       }
 
       if (child.parentId) {
-        const parent = await Parent.findById(child.parentId);
+        const parent = await Parent.findById(child.parentId)
+          .select("+fcmToken +fcmTokens");
+
         if (parent) parents = [parent];
       }
     } else {
-      parents = await Parent.find({ driverId });
+      parents = await Parent.find({ driverId })
+        .select("+fcmToken +fcmTokens"); // ✅ CRITICAL FIX
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
+
+    parents.forEach(p => {
+      console.log("🔍 DEBUG TOKEN:", p.fcmToken, p.fcmTokens);
+    });
 
     if (parents.length === 0) {
       console.log("❌ No parents found → skipped");
@@ -89,28 +96,36 @@ export const sendNotification = async ({
       });
     }
 
-    /* ================= TOKEN COLLECTION (🔥 FIXED) ================= */
+    /* ================= TOKEN COLLECTION (🔥 FINAL FIX) ================= */
     const tokenSet = new Set();
 
     parents.forEach((p) => {
-      // ✅ OLD SINGLE TOKEN SUPPORT
-      if (p.fcmToken && typeof p.fcmToken === "string") {
-        tokenSet.add(p.fcmToken);
+      // ✅ SINGLE TOKEN
+      if (
+        p.fcmToken &&
+        typeof p.fcmToken === "string" &&
+        p.fcmToken.trim() !== ""
+      ) {
+        tokenSet.add(p.fcmToken.trim());
       }
 
-      // ✅ NEW MULTI TOKEN SUPPORT
+      // ✅ MULTIPLE TOKENS
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((t) => {
-          if (t && typeof t === "string") {
-            tokenSet.add(t);
+          if (t && typeof t === "string" && t.trim() !== "") {
+            tokenSet.add(t.trim());
           }
         });
       }
     });
 
-    // ✅ OPTIONAL DRIVER TOKEN
-    if (driver?.fcmToken) {
-      tokenSet.add(driver.fcmToken);
+    // ✅ DRIVER TOKEN
+    if (
+      driver?.fcmToken &&
+      typeof driver.fcmToken === "string" &&
+      driver.fcmToken.trim() !== ""
+    ) {
+      tokenSet.add(driver.fcmToken.trim());
     }
 
     const tokens = [...tokenSet];
@@ -167,13 +182,10 @@ export const sendNotification = async ({
             { fcmTokens: { $in: invalidTokens } },
             { $pull: { fcmTokens: { $in: invalidTokens } } }
           ),
-
-          // also remove old single tokens
           Parent.updateMany(
             { fcmToken: { $in: invalidTokens } },
             { $unset: { fcmToken: "" } }
           ),
-
           Driver.updateMany(
             { fcmToken: { $in: invalidTokens } },
             { $unset: { fcmToken: "" } }
@@ -185,6 +197,7 @@ export const sendNotification = async ({
     }
 
     return notifications;
+
   } catch (error) {
     console.error("❌ sendNotification FAILED:", error.message);
     throw error;
