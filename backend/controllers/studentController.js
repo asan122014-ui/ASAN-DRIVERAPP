@@ -1,20 +1,21 @@
 import Students from "../models/Students.js";
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
+import { sendNotification } from "../utils/sendNotification.js";
 
 /* ================= ADD STUDENT ================= */
 export const addStudent = async (req, res) => {
   try {
     const {
-  name,
-  age,
-  school,
-  grade,
-  parentId,
-  driverId,
-  location,
-  dropLocationCoords
-} = req.body;
+      name,
+      age,
+      school,
+      grade,
+      parentId,
+      driverId,
+      location,
+      dropLocationCoords
+    } = req.body;
 
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
@@ -24,28 +25,25 @@ export const addStudent = async (req, res) => {
     }
 
     const student = new Students({
-  name,
-  age,
-  school,
-  grade,
-  parentId,
+      name,
+      age,
+      school,
+      grade,
+      parentId,
+      driver: driverId,
+      location: {
+        type: "Point",
+        coordinates: [
+          location?.lng || 0,
+          location?.lat || 0
+        ]
+      },
+      dropLocationCoords: {
+        lat: dropLocationCoords?.lat || 0,
+        lng: dropLocationCoords?.lng || 0
+      }
+    });
 
-  // 🔥 THIS LINE FIXES EVERYTHING
-  driver: driverId,
-
-  location: {
-    type: "Point",
-    coordinates: [
-      location?.lng || 0,
-      location?.lat || 0
-    ]
-  },
-
-  dropLocationCoords: {
-    lat: dropLocationCoords?.lat || 0,
-    lng: dropLocationCoords?.lng || 0
-  }
-});
     await student.save();
 
     res.status(201).json({
@@ -54,14 +52,14 @@ export const addStudent = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 Add student error:", error);
-
+    console.error("Add student error:", error);
     res.status(500).json({
       success: false,
       message: error.message
     });
   }
 };
+
 /* ================= GET ALL STUDENTS ================= */
 export const getAllStudents = async (req, res) => {
   try {
@@ -87,7 +85,7 @@ export const getActiveStudents = async (req, res) => {
     const driverId = req.params.driverId;
 
     const trip = await Trips.findOne({
-      driverId: driverId, // 🔥 FIXED (was driver)
+      driverId,
       status: "active"
     });
 
@@ -131,6 +129,19 @@ export const pickupStudent = async (req, res) => {
     student.status = "onboard";
     await student.save();
 
+    /* 🔥 SEND NOTIFICATION */
+    const io = req.app.get("io");
+
+    await sendNotification({
+      driverId: student.driver,
+      childId: student._id,
+      title: "Pickup Update",
+      message: "Your child has been picked up",
+      type: "pickup",
+      priority: "high",
+      io
+    });
+
     res.json({
       success: true,
       message: "Student picked up successfully"
@@ -160,6 +171,19 @@ export const dropStudent = async (req, res) => {
     student.status = "dropped";
     await student.save();
 
+    /* 🔥 SEND NOTIFICATION */
+    const io = req.app.get("io");
+
+    await sendNotification({
+      driverId: student.driver,
+      childId: student._id,
+      title: "Drop Update",
+      message: "Your child has been dropped safely",
+      type: "drop",
+      priority: "high",
+      io
+    });
+
     res.json({
       success: true,
       message: "Student dropped successfully"
@@ -187,7 +211,7 @@ export const assignStudent = async (req, res) => {
     }
 
     const trip = await Trips.findOne({
-      driverId: driverId, // 🔥 FIXED
+      driverId,
       status: "active"
     });
 
@@ -198,7 +222,6 @@ export const assignStudent = async (req, res) => {
       });
     }
 
-    // prevent duplicates
     if (!trip.students.includes(studentId)) {
       trip.students.push(studentId);
       await trip.save();
