@@ -3,8 +3,7 @@ import mongoose from "mongoose";
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
-import upload from "../middleware/upload.js";
-import cloudinary from "../config/cloudinary.js";
+import { cloudinary, upload } from "../config/cloudinary.js";
 import sharp from "sharp";
 const router = express.Router();
 
