@@ -20,25 +20,32 @@ export const sendNotification = async ({
       throw new Error("Missing fields");
     }
 
-    const driver = await Driver.findOne({ driverId });
+    /* ================= DRIVER ================= */
+    const driver = await Driver.findOne({ driverId }).lean();
 
     /* ================= FETCH PARENTS ================= */
     let parents = [];
 
     if (childId) {
-      const child = await Child.findById(childId);
+      const child = await Child.findById(childId).lean();
 
       if (child?.parentId) {
-        const parent = await Parent.findById(child.parentId);
+        const parent = await Parent.findById(child.parentId).lean();
         if (parent) parents = [parent];
       }
     } else {
-      parents = await Parent.find({ driverId }).select("+fcmTokens"); // ✅ CORRECT
+      // 🔥 IMPORTANT: lean() ensures fresh data (fixes your issue)
+      parents = await Parent.find({ driverId }).lean();
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
 
-    /* ================= SAVE TO DB ================= */
+    if (!parents.length) {
+      console.log("❌ No parents found → skipped");
+      return [];
+    }
+
+    /* ================= SAVE NOTIFICATIONS ================= */
     const notifications = await Promise.all(
       parents.map((parent) =>
         Notification.create({
@@ -58,11 +65,19 @@ export const sendNotification = async ({
     if (io) {
       const driverRoom = String(driverId);
 
-      io.to(driverRoom).emit("new_notification", notifications[0]);
+      if (notifications[0]) {
+        io.to(driverRoom).emit("new_notification", notifications[0]);
+      }
 
       notifications.forEach((notif) => {
-        io.to(notif.parent.toString()).emit("notification", {
-          ...notif._doc,
+        io.to(String(notif.parent)).emit("notification", {
+          _id: notif._id,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type,
+          priority: notif.priority,
+          childId: notif.childId,
+          createdAt: notif.createdAt,
           driverId: notif.driver,
         });
       });
@@ -77,12 +92,17 @@ export const sendNotification = async ({
 
       if (Array.isArray(p.fcmTokens)) {
         p.fcmTokens.forEach((t) => {
-          if (t && t.trim() !== "") {
+          if (t && typeof t === "string" && t.trim() !== "") {
             tokenSet.add(t.trim());
           }
         });
       }
     });
+
+    // ✅ optional driver token
+    if (driver?.fcmToken) {
+      tokenSet.add(driver.fcmToken);
+    }
 
     const tokens = [...tokenSet];
 
@@ -125,6 +145,24 @@ export const sendNotification = async ({
 
       console.log("✅ FCM sent:", response.successCount);
 
+      /* ================= CLEAN INVALID TOKENS ================= */
+      const invalidTokens = tokens.filter(
+        (_, i) => !response.responses[i].success
+      );
+
+      if (invalidTokens.length > 0) {
+        console.log("🧹 Removing invalid tokens:", invalidTokens);
+
+        await Parent.updateMany(
+          { fcmTokens: { $in: invalidTokens } },
+          { $pull: { fcmTokens: { $in: invalidTokens } } }
+        );
+
+        await Driver.updateMany(
+          { fcmToken: { $in: invalidTokens } },
+          { $unset: { fcmToken: "" } }
+        );
+      }
     } catch (err) {
       console.error("❌ Firebase error:", err.message);
     }
