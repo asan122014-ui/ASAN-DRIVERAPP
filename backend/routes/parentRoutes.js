@@ -11,7 +11,6 @@ router.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
 
-    /* ✅ VALIDATION */
     if (!name || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
@@ -19,7 +18,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    /* ✅ CHECK EXISTING */
     const existing = await Parent.findOne({
       $or: [{ email }, { phone }],
     });
@@ -31,7 +29,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    /* ✅ CREATE */
     const parent = await Parent.create({
       name,
       email,
@@ -52,7 +49,7 @@ router.post("/register", async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: error.message, // 🔥 IMPORTANT (shows real error)
+      message: error.message,
     });
   }
 });
