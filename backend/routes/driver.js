@@ -145,7 +145,6 @@ router.get("/location", async (req, res) => {
     });
   }
 });
-
 /* ================= DRIVER DASHBOARD ================= */
 router.get("/dashboard/:driverId", async (req, res) => {
   try {
@@ -286,10 +285,15 @@ const handleUpdate = async () => {
     setIsEditing(false);
     setNewPhoto(null);
 
-  } catch (err) {
-    console.error("Update failed", err);
+   } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Update failed",
+    });
   }
-};
+});
+
     /* ================= UPDATE OTHER FIELDS ================= */
     Object.keys(updates).forEach((key) => {
       if (updates[key] !== undefined) {
