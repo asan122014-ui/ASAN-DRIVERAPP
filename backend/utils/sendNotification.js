@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Child from "../models/Child.js"; // ✅ FIXED
+import Student from "../models/Students.js"; // ✅ FIXED
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
