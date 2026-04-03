@@ -261,7 +261,7 @@ router.put("/update", async (req, res) => {
       });
     }
 
-    const driver = await findDriver(driverId);
+    const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
       return res.status(404).json({
@@ -270,12 +270,46 @@ router.put("/update", async (req, res) => {
       });
     }
 
-    // ❌ REMOVE unwanted fields
+    /* ================= REMOVE UNWANTED FIELDS ================= */
     delete updates._id;
     delete updates.__v;
     delete updates.password;
+    delete updates.profilePhoto;
+    delete updates.profilePhotoPublicId;
 
-    // ✅ UPDATE ONLY PROVIDED FIELDS
+    /* ================= HANDLE IMAGE UPDATE ================= */
+    if (req.file) {
+      // ✅ DELETE OLD IMAGE FROM CLOUDINARY
+      if (driver.profilePhotoPublicId) {
+        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+      }
+
+      // ✅ COMPRESS IMAGE
+      const buffer = await sharp(req.file.buffer)
+        .resize(500)
+        .jpeg({ quality: 70 })
+        .toBuffer();
+
+      // ✅ UPLOAD TO CLOUDINARY
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: "asan-drivers",
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(buffer);
+      });
+
+      // ✅ SAVE NEW IMAGE
+      driver.profilePhoto = result.secure_url;
+      driver.profilePhotoPublicId = result.public_id;
+    }
+
+    /* ================= UPDATE OTHER FIELDS ================= */
     Object.keys(updates).forEach((key) => {
       if (updates[key] !== undefined) {
         driver[key] = updates[key];
@@ -291,14 +325,16 @@ router.put("/update", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("🔥 UPDATE ERROR:", error); // <-- IMPORTANT
+    console.error("🔥 UPDATE ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: "Update failed",
-      error: error.message, // 👈 helps debugging
+      error: error.message,
     });
   }
 });
+
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
