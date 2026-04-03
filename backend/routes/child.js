@@ -125,5 +125,29 @@ router.post("/drop", async (req, res) => {
     });
   }
 });
+/* ================= GET CHILDREN BY DRIVER ================= */
+router.get("/driver/:driverId", async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    console.log("📌 Fetch children for driver:", driverId);
+
+    const children = await Child.find({
+      driverId: String(driverId), // ensure string match
+    });
+
+    res.json({
+      success: true,
+      data: children,
+    });
+
+  } catch (err) {
+    console.error("❌ Driver fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch children",
+    });
+  }
+});
 
 export default router;
