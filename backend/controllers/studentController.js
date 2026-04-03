@@ -8,40 +8,33 @@ export const addStudent = async (req, res) => {
   try {
     const {
       name,
-      age,
-      school,
-      grade,
+      className,
+      schoolName,
       parentId,
+      parentName,
+      parentPhone,
       driverId,
-      location,
-      dropLocationCoords
+      pickupLocation,
+      dropLocation
     } = req.body;
 
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
-        message: "Name, parentId, and driverId are required"
+        message: "Name, parentId, driverId required"
       });
     }
 
-    const student = new Students({
+    const student = new Student({
       name,
-      age,
-      school,
-      grade,
+      className,
+      schoolName,
       parentId,
+      parentName,
+      parentPhone,
       driver: driverId,
-      location: {
-        type: "Point",
-        coordinates: [
-          location?.lng || 0,
-          location?.lat || 0
-        ]
-      },
-      dropLocationCoords: {
-        lat: dropLocationCoords?.lat || 0,
-        lng: dropLocationCoords?.lng || 0
-      }
+      pickupLocation,
+      dropLocation
     });
 
     await student.save();
@@ -51,15 +44,14 @@ export const addStudent = async (req, res) => {
       data: student
     });
 
-  } catch (error) {
-    console.error("Add student error:", error);
+  } catch (err) {
+    console.error("Add student error:", err);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: err.message
     });
   }
 };
-
 /* ================= GET ALL STUDENTS ================= */
 export const getAllStudents = async (req, res) => {
   try {
@@ -115,9 +107,11 @@ export const getActiveStudents = async (req, res) => {
 };
 
 /* ================= PICKUP STUDENT ================= */
+import { sendNotification } from "../utils/sendNotification.js";
+
 export const pickupStudent = async (req, res) => {
   try {
-    const student = await Students.findById(req.params.id);
+    const student = await Student.findById(req.params.id);
 
     if (!student) {
       return res.status(404).json({
@@ -127,9 +121,9 @@ export const pickupStudent = async (req, res) => {
     }
 
     student.status = "onboard";
+    student.pickupTime = new Date();
     await student.save();
 
-    /* 🔥 SEND NOTIFICATION */
     const io = req.app.get("io");
 
     await sendNotification({
@@ -144,14 +138,14 @@ export const pickupStudent = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Student picked up successfully"
+      message: "Student picked up"
     });
 
-  } catch (error) {
-    console.error("Pickup error:", error);
+  } catch (err) {
+    console.error("Pickup error:", err);
     res.status(500).json({
       success: false,
-      message: "Failed to pickup student"
+      message: "Pickup failed"
     });
   }
 };
@@ -159,7 +153,7 @@ export const pickupStudent = async (req, res) => {
 /* ================= DROP STUDENT ================= */
 export const dropStudent = async (req, res) => {
   try {
-    const student = await Students.findById(req.params.id);
+    const student = await Student.findById(req.params.id);
 
     if (!student) {
       return res.status(404).json({
@@ -169,9 +163,9 @@ export const dropStudent = async (req, res) => {
     }
 
     student.status = "dropped";
+    student.dropTime = new Date();
     await student.save();
 
-    /* 🔥 SEND NOTIFICATION */
     const io = req.app.get("io");
 
     await sendNotification({
@@ -186,14 +180,14 @@ export const dropStudent = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Student dropped successfully"
+      message: "Student dropped"
     });
 
-  } catch (error) {
-    console.error("Drop error:", error);
+  } catch (err) {
+    console.error("Drop error:", err);
     res.status(500).json({
       success: false,
-      message: "Failed to drop student"
+      message: "Drop failed"
     });
   }
 };
