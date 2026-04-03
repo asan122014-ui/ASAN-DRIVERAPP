@@ -3,9 +3,9 @@ import mongoose from "mongoose";
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
-import multer from "multer";
-
-const upload = multer({ dest: "uploads/" });
+import upload from "../middleware/upload.js";
+import cloudinary from "../config/cloudinary.js";
+import sharp from "sharp";
 const router = express.Router();
 
 /* ================= HELPER FUNCTION ================= */
@@ -271,21 +271,55 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
       });
     }
 
-    // ✅ UPDATE ALL FIELDS (except driverId)
+    // ✅ UPDATE NORMAL FIELDS
     Object.keys(req.body).forEach((key) => {
       if (key !== "driverId") {
         driver[key] = req.body[key];
       }
     });
 
-    // ✅ HANDLE PROFILE PHOTO
+    // ✅ HANDLE IMAGE
     if (req.file) {
-      driver.profilePhoto = `/uploads/${req.file.filename}`;
+
+      // 🔥 DELETE OLD IMAGE FROM CLOUDINARY
+      if (driver.profilePhotoPublicId) {
+        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+      }
+
+      // 🔥 COMPRESS IMAGE USING SHARP
+      const compressedBuffer = await sharp(req.file.path)
+        .resize(500, 500) // optional resize
+        .jpeg({ quality: 70 })
+        .toBuffer();
+
+      // 🔥 UPLOAD COMPRESSED IMAGE
+      const uploaded = await cloudinary.uploader.upload_stream(
+        { folder: "drivers" },
+        async (error, result) => {
+          if (error) throw error;
+
+          // SAVE URL + PUBLIC ID
+          driver.profilePhoto = result.secure_url;
+          driver.profilePhotoPublicId = result.public_id;
+
+          await driver.save();
+
+          return res.json({
+            success: true,
+            message: "Driver updated successfully",
+            data: driver,
+          });
+        }
+      );
+
+      uploaded.end(compressedBuffer);
+
+      return; // important
     }
 
+    // ✅ IF NO IMAGE
     await driver.save();
 
-    // ✅ SEND UPDATED DATA BACK
     res.json({
       success: true,
       message: "Driver updated successfully",
@@ -300,6 +334,7 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
     });
   }
 });
+
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
