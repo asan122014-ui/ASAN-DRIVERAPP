@@ -251,10 +251,9 @@ router.get("/tracking/:driverId", async (req, res) => {
 });
 
 /* ================= UPDATE DRIVER PROFILE ================= */
-/* ================= UPDATE DRIVER PROFILE ================= */
 router.put("/update", upload.single("profilePhoto"), async (req, res) => {
   try {
-    const driverId = req.body.driverId;
+    const { driverId } = req.body;
 
     if (!driverId) {
       return res.status(400).json({
@@ -272,23 +271,24 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
       });
     }
 
-    // ✅ update normal fields
+    // ✅ UPDATE ALL FIELDS (except driverId)
     Object.keys(req.body).forEach((key) => {
       if (key !== "driverId") {
         driver[key] = req.body[key];
       }
     });
 
-    // ✅ update photo if exists
+    // ✅ HANDLE PROFILE PHOTO
     if (req.file) {
-      driver.profilePhoto = req.file.path;
+      driver.profilePhoto = `/uploads/${req.file.filename}`;
     }
 
     await driver.save();
 
+    // ✅ SEND UPDATED DATA BACK
     res.json({
       success: true,
-      message: "Driver updated",
+      message: "Driver updated successfully",
       data: driver,
     });
 
