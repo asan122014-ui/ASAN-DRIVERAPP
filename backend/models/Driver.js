@@ -173,15 +173,15 @@ driverSchema.index({ location: "2dsphere" });
 driverSchema.index({ driverId: 1 });
 
 /* ================= HASH PASSWORD ================= */
-driverSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+/* ================= HASH PASSWORD ================= */
+driverSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
 
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
   } catch (error) {
-    next(error);
+    console.error("Password hash error:", error);
   }
 });
 
