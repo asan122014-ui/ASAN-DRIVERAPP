@@ -106,55 +106,27 @@ router.post("/login", async (req, res) => {
 /* ================= SAVE FCM TOKEN (🔥 IMPROVED) ================= */
 router.post("/save-token", async (req, res) => {
   try {
-    const { parentId, driverId, token } = req.body;
+    const { parentId, token } = req.body;
 
-    console.log("👉 SAVE TOKEN API HIT");
-
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: "Token is required",
-      });
+    if (!parentId || !token) {
+      return res.status(400).json({ message: "Missing fields" });
     }
 
-    /* ================= SAVE FOR PARENT ================= */
-    if (parentId) {
-      await Parent.findByIdAndUpdate(
-        parentId,
-        {
-          $addToSet: { fcmTokens: token }, // 🔥 ARRAY SUPPORT
-        },
-        { new: true }
-      );
+    await Parent.findByIdAndUpdate(
+      parentId,
+      {
+        $addToSet: { fcmTokens: token }, // ✅ ONLY ARRAY
+      },
+      { new: true }
+    );
 
-      console.log("✅ Parent token saved");
-    }
+    res.json({ success: true });
 
-    /* ================= SAVE FOR DRIVER ================= */
-    if (driverId) {
-      await Driver.findOneAndUpdate(
-        { driverId },
-        {
-          $addToSet: { fcmTokens: token }, // 🔥 ARRAY SUPPORT
-        }
-      );
-
-      console.log("✅ Driver token saved");
-    }
-
-    res.json({
-      success: true,
-      message: "FCM token saved successfully",
-    });
   } catch (err) {
-    console.error("❌ SAVE TOKEN ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to save token",
-    });
+    console.error(err);
+    res.status(500).json({ message: "Error" });
   }
 });
-
 /* ================= DASHBOARD ================= */
 router.get("/dashboard/:parentId", async (req, res) => {
   try {
