@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Student from "../models/Students.js"; // ✅ FIXED
+import Student from "../models/Students.js"; // ✅ correct import
 import admin from "../config/firebaseAdmin.js";
 
 export const sendNotification = async ({
@@ -27,7 +27,7 @@ export const sendNotification = async ({
     let parents = [];
 
     if (childId) {
-      const child = await Students.findById(childId).populate("parentId");
+      const child = await Student.findById(childId).populate("parentId"); // ✅ FIXED
 
       if (child?.parentId) {
         parents = [child.parentId];
@@ -94,7 +94,7 @@ export const sendNotification = async ({
       }
     });
 
-    // Driver
+    // Driver (optional)
     if (driver?.fcmToken) {
       tokenSet.add(driver.fcmToken);
     }
