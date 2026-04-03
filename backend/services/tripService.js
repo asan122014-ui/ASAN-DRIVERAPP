@@ -1,6 +1,7 @@
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
+import Parent from "../models/Parent.js";
 import { sendNotification } from "../utils/sendNotification.js";
 
 /* ================= START TRIP ================= */
