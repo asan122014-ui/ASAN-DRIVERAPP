@@ -5,7 +5,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
-
+import path from "path";
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
 import parentRoutes from "./routes/parentRoutes.js";
@@ -29,7 +29,7 @@ app.use(cors());
 /* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use("/uploads", express.static("uploads"));
 /* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
