@@ -325,32 +325,6 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
     });
   }
 });
-    /* ================= UPDATE OTHER FIELDS ================= */
-    Object.keys(updates).forEach((key) => {
-      if (updates[key] !== undefined) {
-        driver[key] = updates[key];
-      }
-    });
-
-    await driver.save();
-
-    res.json({
-      success: true,
-      message: "Driver updated successfully",
-      data: driver,
-    });
-
-  } catch (error) {
-    console.error("🔥 UPDATE ERROR:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Update failed",
-      error: error.message,
-    });
-  }
-});
-
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
