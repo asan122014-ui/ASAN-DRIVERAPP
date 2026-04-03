@@ -5,6 +5,9 @@ import cors from "cors";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
+import "./models/Parent.js";
+import "./models/Child.js";
+import "./models/Trips.js";
 import path from "path";
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
