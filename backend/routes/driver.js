@@ -249,47 +249,87 @@ router.get("/tracking/:driverId", async (req, res) => {
 });
 
 /* ================= UPDATE DRIVER PROFILE ================= */
-const handleUpdate = async () => {
+router.put("/update", async (req, res) => {
   try {
-    const driverDataLocal = localStorage.getItem("driver");
-    const driver = driverDataLocal ? JSON.parse(driverDataLocal) : null;
+    const { driverId, ...updates } = req.body;
 
-    if (!driver?.driverId) return;
-
-    const data = new FormData();
-
-    data.append("driverId", driver.driverId);
-    data.append("name", formData.name || "");
-    data.append("email", formData.email || "");
-    data.append("address", formData.address || "");
-    data.append("vehicleType", formData.vehicleType || "");
-    data.append("vehicleNumber", formData.vehicleNumber || "");
-    data.append("licenseNumber", formData.licenseNumber || "");
-
-    // ✅ ONLY if image selected
-    if (newPhoto) {
-      data.append("profilePhoto", newPhoto);
+    if (!driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Driver ID required",
+      });
     }
 
-    console.log("SENDING:", [...data]); // 🔥 debug
+    const driver = await Driver.findOne({ driverId });
 
-    await axios.put(`${API}/api/driver/update`, data, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    /* ================= REMOVE UNWANTED FIELDS ================= */
+    delete updates._id;
+    delete updates.__v;
+    delete updates.password;
+    delete updates.profilePhoto;
+    delete updates.profilePhotoPublicId;
+
+    /* ================= HANDLE IMAGE UPDATE ================= */
+    if (req.file) {
+      // ✅ DELETE OLD IMAGE FROM CLOUDINARY
+      if (driver.profilePhotoPublicId) {
+        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+      }
+
+      // ✅ COMPRESS IMAGE
+      const buffer = await sharp(req.file.buffer)
+        .resize(500)
+        .jpeg({ quality: 70 })
+        .toBuffer();
+
+      // ✅ UPLOAD TO CLOUDINARY
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: "asan-drivers",
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(buffer);
+      });
+
+      // ✅ SAVE NEW IMAGE
+      driver.profilePhoto = result.secure_url;
+      driver.profilePhotoPublicId = result.public_id;
+    }
+
+    /* ================= UPDATE OTHER FIELDS ================= */
+    Object.keys(updates).forEach((key) => {
+      if (updates[key] !== undefined) {
+        driver[key] = updates[key];
+      }
     });
 
-    // ✅ REFRESH FROM DB (IMPORTANT)
-    await fetchProfile();
+    await driver.save();
 
-    setIsEditing(false);
-    setNewPhoto(null);
+    res.json({
+      success: true,
+      message: "Driver updated successfully",
+      data: driver,
+    });
 
-   } catch (error) {
-    console.error("Update error:", error);
+  } catch (error) {
+    console.error("🔥 UPDATE ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: "Update failed",
+      error: error.message,
     });
   }
 });
