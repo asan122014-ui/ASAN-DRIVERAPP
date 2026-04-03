@@ -3,9 +3,6 @@ import admin from "../config/firebaseAdmin.js";
 import Parent from "../models/Parent.js";
 
 /* ================= GET UNREAD (BADGE) ================= */
-/**
- * GET /api/notifications?driverId=XXX OR parentId=XXX OR childId=XXX
- */
 export const getNotifications = async (req, res) => {
   try {
     const { driverId, parentId, childId } = req.query;
@@ -21,7 +18,7 @@ export const getNotifications = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    if (childId) filter.childId = childId; // ✅ FIXED
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -34,8 +31,7 @@ export const getNotifications = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Get notifications error:", error.message);
-
+    console.error("Get notifications error:", error.message);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch notifications",
@@ -44,9 +40,6 @@ export const getNotifications = async (req, res) => {
 };
 
 /* ================= GET ALL (HISTORY) ================= */
-/**
- * GET /api/notifications/all?driverId=XXX OR parentId=XXX OR childId=XXX
- */
 export const getAllNotifications = async (req, res) => {
   try {
     const { driverId, parentId, childId, type, priority } = req.query;
@@ -62,7 +55,7 @@ export const getAllNotifications = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    if (childId) filter.childId = childId; // ✅ FIXED
     if (type) filter.type = type;
     if (priority) filter.priority = priority;
 
@@ -76,8 +69,7 @@ export const getAllNotifications = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Get all notifications error:", error.message);
-
+    console.error("Get all notifications error:", error.message);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch notifications",
@@ -85,10 +77,7 @@ export const getAllNotifications = async (req, res) => {
   }
 };
 
-/* ================= 🔥 NEW: PARENT NOTIFICATIONS ================= */
-/**
- * GET /api/notifications/parent/:parentId
- */
+/* ================= PARENT NOTIFICATIONS ================= */
 export const getParentNotifications = async (req, res) => {
   try {
     const { parentId } = req.params;
@@ -102,7 +91,6 @@ export const getParentNotifications = async (req, res) => {
 
     const notifications = await Notification.find({ parent: parentId })
       .sort({ createdAt: -1 })
-      .populate("child", "name") // optional
       .lean();
 
     return res.json({
@@ -111,8 +99,7 @@ export const getParentNotifications = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Parent notifications error:", error.message);
-
+    console.error("Parent notifications error:", error.message);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch parent notifications",
@@ -121,9 +108,6 @@ export const getParentNotifications = async (req, res) => {
 };
 
 /* ================= MARK SINGLE ================= */
-/**
- * PUT /api/notifications/:id/read
- */
 export const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -147,8 +131,7 @@ export const markAsRead = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Mark read error:", error.message);
-
+    console.error("Mark read error:", error.message);
     return res.status(500).json({
       success: false,
       message: "Failed to update notification",
@@ -157,9 +140,6 @@ export const markAsRead = async (req, res) => {
 };
 
 /* ================= MARK ALL ================= */
-/**
- * PUT /api/notifications/read-all?driverId=XXX OR parentId=XXX OR childId=XXX
- */
 export const markAllAsRead = async (req, res) => {
   try {
     const { driverId, parentId, childId } = req.query;
@@ -175,7 +155,7 @@ export const markAllAsRead = async (req, res) => {
 
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    if (childId) filter.childId = childId; // ✅ FIXED
 
     await Notification.updateMany(filter, { read: true });
 
@@ -185,8 +165,7 @@ export const markAllAsRead = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Mark all read error:", error.message);
-
+    console.error("Mark all read error:", error.message);
     return res.status(500).json({
       success: false,
       message: "Failed to update notifications",
@@ -195,10 +174,6 @@ export const markAllAsRead = async (req, res) => {
 };
 
 /* ================= TEST FCM ================= */
-/**
- * POST /api/notifications/test
- * body: { parentId }
- */
 export const sendTestNotification = async (req, res) => {
   try {
     const { parentId } = req.body;
@@ -212,40 +187,24 @@ export const sendTestNotification = async (req, res) => {
 
     const parent = await Parent.findById(parentId);
 
-    if (!parent?.fcmToken) {
+    if (!parent?.fcmTokens?.length) {
       return res.status(400).json({
         success: false,
-        message: "FCM token not found",
+        message: "FCM tokens not found",
       });
     }
 
-    const message = {
-      token: parent.fcmToken,
+    const tokens = parent.fcmTokens;
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens,
       notification: {
-        title: "Test Notification 🚀",
-        body: "FCM is working properly!",
+        title: "Test Notification",
+        body: "FCM is working properly",
       },
-      android: {
-        priority: "high",
-        notification: {
-          sound: "default",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-          },
-        },
-      },
-      data: {
-        type: "test",
-      },
-    };
+    });
 
-    const response = await admin.messaging().send(message);
-
-    console.log("✅ Firebase response:", response);
+    console.log("FCM response:", response.successCount);
 
     return res.json({
       success: true,
@@ -253,8 +212,7 @@ export const sendTestNotification = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ FCM ERROR:", err.message);
-
+    console.error("FCM ERROR:", err.message);
     return res.status(500).json({
       success: false,
       message: "Failed to send notification",
