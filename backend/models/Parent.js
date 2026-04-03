@@ -50,19 +50,11 @@ const parentSchema = new mongoose.Schema(
 );
 
 /* ================= HASH PASSWORD ================= */
-parentSchema.pre("save", async function (next) {
-  try {
-    if (!this.isModified("password")) return next();
+parentSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
 
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-
-    next(); // ✅ OK
-
-  } catch (err) {
-    console.error("❌ HASH ERROR:", err);
-    next(err); // ✅ MUST PASS ERROR
-  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 /* ================= COMPARE PASSWORD ================= */
