@@ -69,6 +69,38 @@ router.post("/add", async (req, res) => {
   }
 });
 
+/* ================= DELETE CHILD ================= */
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log("🗑️ Delete request for child:", id);
+
+    const child = await Child.findByIdAndDelete(id);
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Child deleted successfully",
+      data: child,
+    });
+
+  } catch (err) {
+    console.error("❌ Delete error:", err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message || "Delete failed",
+    });
+  }
+});
+
 /* ================= GET BY PARENT ================= */
 router.get("/parent/:parentId", async (req, res) => {
   try {
