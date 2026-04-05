@@ -267,6 +267,69 @@ router.post("/drop", async (req, res) => {
   }
 });
 
+/* ================= MARK ABSENT ================= */
+router.post("/absent", async (req, res) => {
+  try {
+    const { childId } = req.body;
+
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "Child ID is required",
+      });
+    }
+
+    const child = await Child.findById(childId);
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    // prevent wrong state
+    if (child.status !== "waiting") {
+      return res.status(400).json({
+        success: false,
+        message: "Only waiting students can be marked absent",
+      });
+    }
+
+    child.status = "absent";
+    await child.save();
+
+    /* 🔥 SEND NOTIFICATION */
+    const io = req.app.get("io");
+
+    await sendNotification({
+      driverId: child.driverId,
+      childId: child._id,
+      title: "Attendance Update",
+      message: `${child.name} marked as absent`,
+      type: "absent",
+      priority: "high",
+      io,
+    });
+
+    console.log("✅ ABSENT NOTIFICATION SENT");
+
+    res.json({
+      success: true,
+      message: "Student marked as absent",
+      data: child,
+    });
+
+  } catch (err) {
+    console.error("❌ Absent error:", err);
+
+    res.status(500).json({
+      success: false,
+      message: "Absent update failed",
+    });
+  }
+});
+
 /* ================= RESET ALL (END TRIP) ================= */
 router.post("/reset/:driverId", async (req, res) => {
   try {
