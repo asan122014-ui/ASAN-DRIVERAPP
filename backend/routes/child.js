@@ -159,35 +159,65 @@ router.post("/absent", async (req, res) => {
   try {
     const { childId } = req.body;
 
+    if (!childId) {
+      return res.status(400).json({
+        success: false,
+        message: "Child ID is required",
+      });
+    }
+
     const child = await Child.findById(childId);
-    if (!child) return res.status(404).json({ message: "Not found" });
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
 
     if (child.status !== "waiting") {
       return res.status(400).json({
-        message: "Only waiting students can be absent",
+        success: false,
+        message: "Only waiting students can be marked absent",
       });
     }
 
     child.status = "absent";
-    child.absentAt = new Date();
     await child.save();
 
-    await safeNotify(req, {
-      driverId: child.driverId,
-      childId: child._id,
-      title: "Absent Update",
-      message: `${child.name} marked absent`,
-      type: "absent",
-      priority: "high",
+    /* ✅ SAFE NOTIFICATION (NO CRASH) */
+    try {
+      const io = req.app.get("io");
+
+      if (io) {
+        await sendNotification({
+          driverId: child.driverId,
+          childId: child._id,
+          title: "Absent Update",
+          message: `${child.name} marked absent`,
+          type: "absent",
+          priority: "high",
+          io,
+        });
+      }
+    } catch (err) {
+      console.warn("⚠️ Notification failed:", err.message);
+    }
+
+    res.json({
+      success: true,
+      message: "Student marked as absent",
+      data: child,
     });
 
-    res.json({ success: true, data: child });
   } catch (err) {
-    console.error("❌ Absent error:", err);
-    res.status(500).json({ message: err.message });
+    console.error("❌ ABSENT FULL ERROR:", err); // 🔥 IMPORTANT
+    res.status(500).json({
+      success: false,
+      message: err.message || "Absent failed",
+    });
   }
 });
-
 /* ================= RESET ================= */
 router.post("/reset/:driverId", async (req, res) => {
   try {
