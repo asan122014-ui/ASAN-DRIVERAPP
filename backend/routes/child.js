@@ -4,6 +4,22 @@ import { sendNotification } from "../utils/sendNotification.js";
 
 const router = express.Router();
 
+/* ================= SAFE NOTIFICATION ================= */
+const safeNotify = async (req, payload) => {
+  try {
+    const io = req.app.get("io");
+
+    if (io) {
+      await sendNotification({ ...payload, io });
+      console.log("✅ Notification sent");
+    } else {
+      console.warn("⚠️ IO not available");
+    }
+  } catch (err) {
+    console.error("⚠️ Notification failed:", err.message);
+  }
+};
+
 /* ================= ADD CHILD ================= */
 router.post("/add", async (req, res) => {
   try {
@@ -55,302 +71,135 @@ router.post("/add", async (req, res) => {
       status: "waiting",
     });
 
-    res.status(201).json({
-      success: true,
-      data: child,
-    });
-
+    res.status(201).json({ success: true, data: child });
   } catch (err) {
     console.error("🔥 Add child error:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message || "Failed to add child",
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-/* ================= DELETE CHILD ================= */
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    console.log("🗑️ Delete request for child:", id);
-
-    const child = await Child.findByIdAndDelete(id);
-
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Child deleted successfully",
-      data: child,
-    });
-
-  } catch (err) {
-    console.error("❌ Delete error:", err);
-
-    res.status(500).json({
-      success: false,
-      message: err.message || "Delete failed",
-    });
-  }
-});
-
-/* ================= GET BY PARENT ================= */
-router.get("/parent/:parentId", async (req, res) => {
-  try {
-    const children = await Child.find({
-      parentId: req.params.parentId,
-    }).sort({ createdAt: -1 });
-
-    res.json({
-      success: true,
-      data: children,
-    });
-
-  } catch (err) {
-    console.error("❌ Parent fetch error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
-  }
-});
-
-/* ================= GET BY DRIVER (FIXED - NO 404) ================= */
+/* ================= GET BY DRIVER ================= */
 router.get("/driver/:driverId", async (req, res) => {
   try {
-    const driverId = String(req.params.driverId);
-
-    console.log("📌 Fetch children for driver:", driverId);
-
-    const children = await Child.find({ driverId });
-
-    res.json({
-      success: true,
-      data: children,
+    const children = await Child.find({
+      driverId: String(req.params.driverId),
     });
 
+    res.json({ success: true, data: children });
   } catch (err) {
     console.error("❌ Driver fetch error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch children",
-    });
+    res.status(500).json({ success: false });
   }
 });
 
-/* ================= PICKUP STUDENT ================= */
+/* ================= PICKUP ================= */
 router.post("/pickup", async (req, res) => {
   try {
     const { childId } = req.body;
 
-    if (!childId) {
-      return res.status(400).json({
-        success: false,
-        message: "Child ID is required",
-      });
-    }
-
     const child = await Child.findById(childId);
-
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
+    if (!child) return res.status(404).json({ message: "Not found" });
 
     if (child.status !== "waiting") {
-      return res.status(400).json({
-        success: false,
-        message: "Student already picked or completed",
-      });
+      return res.status(400).json({ message: "Already picked" });
     }
 
     child.status = "onboard";
     await child.save();
 
-    /* 🔥 SEND NOTIFICATION */
-    const io = req.app.get("io");
-
-    await sendNotification({
+    await safeNotify(req, {
       driverId: child.driverId,
       childId: child._id,
       title: "Pickup Update",
-      message: `${child.name} has been picked up`,
+      message: `${child.name} picked up`,
       type: "pickup",
       priority: "high",
-      io,
     });
 
-    console.log("✅ PICKUP NOTIFICATION SENT");
-
-    res.json({
-      success: true,
-      message: "Student picked up",
-      data: child,
-    });
-
+    res.json({ success: true, data: child });
   } catch (err) {
     console.error("❌ Pickup error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Pickup failed",
-    });
+    res.status(500).json({ message: err.message });
   }
 });
 
-/* ================= DROP STUDENT ================= */
+/* ================= DROP ================= */
 router.post("/drop", async (req, res) => {
   try {
     const { childId } = req.body;
 
-    if (!childId) {
-      return res.status(400).json({
-        success: false,
-        message: "Child ID is required",
-      });
-    }
-
     const child = await Child.findById(childId);
-
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
+    if (!child) return res.status(404).json({ message: "Not found" });
 
     if (child.status !== "onboard") {
-      return res.status(400).json({
-        success: false,
-        message: "Student not onboard",
-      });
+      return res.status(400).json({ message: "Not onboard" });
     }
 
     child.status = "dropped";
     await child.save();
 
-    /* 🔥 SEND NOTIFICATION */
-    const io = req.app.get("io");
-
-    await sendNotification({
+    await safeNotify(req, {
       driverId: child.driverId,
       childId: child._id,
       title: "Drop Update",
-      message: `${child.name} has been dropped safely`,
+      message: `${child.name} dropped`,
       type: "drop",
       priority: "high",
-      io,
     });
 
-    console.log("✅ DROP NOTIFICATION SENT");
-
-    res.json({
-      success: true,
-      message: "Student dropped",
-      data: child,
-    });
-
+    res.json({ success: true, data: child });
   } catch (err) {
     console.error("❌ Drop error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Drop failed",
-    });
+    res.status(500).json({ message: err.message });
   }
 });
 
-/* ================= MARK ABSENT ================= */
+/* ================= ABSENT ================= */
 router.post("/absent", async (req, res) => {
   try {
     const { childId } = req.body;
 
-    if (!childId) {
-      return res.status(400).json({
-        success: false,
-        message: "Child ID is required",
-      });
-    }
-
     const child = await Child.findById(childId);
+    if (!child) return res.status(404).json({ message: "Not found" });
 
-    if (!child) {
-      return res.status(404).json({
-        success: false,
-        message: "Child not found",
-      });
-    }
-
-    // prevent wrong state
     if (child.status !== "waiting") {
       return res.status(400).json({
-        success: false,
-        message: "Only waiting students can be marked absent",
+        message: "Only waiting students can be absent",
       });
     }
 
     child.status = "absent";
+    child.absentAt = new Date();
     await child.save();
 
-    /* 🔥 SEND NOTIFICATION */
-    const io = req.app.get("io");
-
-    await sendNotification({
+    await safeNotify(req, {
       driverId: child.driverId,
       childId: child._id,
-      title: "Attendance Update",
-      message: `${child.name} marked as absent`,
+      title: "Absent Update",
+      message: `${child.name} marked absent`,
       type: "absent",
       priority: "high",
-      io,
     });
 
-    console.log("✅ ABSENT NOTIFICATION SENT");
-
-    res.json({
-      success: true,
-      message: "Student marked as absent",
-      data: child,
-    });
-
+    res.json({ success: true, data: child });
   } catch (err) {
     console.error("❌ Absent error:", err);
-
-    res.status(500).json({
-      success: false,
-      message: "Absent update failed",
-    });
+    res.status(500).json({ message: err.message });
   }
 });
 
-/* ================= RESET ALL (END TRIP) ================= */
+/* ================= RESET ================= */
 router.post("/reset/:driverId", async (req, res) => {
   try {
-    const { driverId } = req.params;
-
     await Child.updateMany(
-      { driverId },
+      { driverId: req.params.driverId },
       { status: "waiting" }
     );
 
-    res.json({
-      success: true,
-      message: "All students reset to waiting",
-    });
-
+    res.json({ success: true });
   } catch (err) {
     console.error("❌ Reset error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Reset failed",
-    });
+    res.status(500).json({ message: err.message });
   }
 });
 
