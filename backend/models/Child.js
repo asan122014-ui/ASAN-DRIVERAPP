@@ -2,26 +2,10 @@ import mongoose from "mongoose";
 
 const childSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      trim: true
-    },
-
-    age: {
-      type: Number,
-      default: null
-    },
-
-    school: {
-      type: String,
-      default: ""
-    },
-
-    grade: {
-      type: String,
-      default: ""
-    },
+    name: { type: String, required: true, trim: true },
+    age: { type: Number, default: null },
+    school: { type: String, default: "" },
+    grade: { type: String, default: "" },
 
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -29,20 +13,19 @@ const childSchema = new mongoose.Schema(
       required: true
     },
 
-    // 🔥 SIMPLE STRING DRIVER ID
     driverId: {
       type: String,
       required: true,
       index: true
     },
 
+    // ✅ FIXED
     status: {
       type: String,
-      enum: ["waiting", "onboard", "dropped"],
+      enum: ["waiting", "onboard", "dropped", "absent"],
       default: "waiting"
     },
 
-    /* ================= LOCATION ================= */
     location: {
       lat: { type: Number, default: null },
       lng: { type: Number, default: null }
@@ -53,12 +36,12 @@ const childSchema = new mongoose.Schema(
       lng: { type: Number, default: null }
     },
 
-    /* ================= TIMINGS ================= */
     pickupTime: String,
     dropoffTime: String,
     eveningPickup: String,
     eveningDrop: String,
 
+    // ✅ for showing place names
     pickupLocation: String,
     dropoffLocation: String
   },
