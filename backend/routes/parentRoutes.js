@@ -230,4 +230,32 @@ router.post("/link-driver", async (req, res) => {
   }
 });
 
+router.post("/check-email", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    });
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified",
+      parentId: parent._id, // optional
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
+
 export default router;
