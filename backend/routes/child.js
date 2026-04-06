@@ -92,6 +92,26 @@ router.get("/driver/:driverId", async (req, res) => {
   }
 });
 
+/* ================= GET BY PARENT ================= */
+router.get("/parent/:parentId", async (req, res) => {
+  try {
+    const children = await Child.find({
+      parentId: String(req.params.parentId),
+    });
+
+    res.json({
+      success: true,
+      data: children,
+    });
+  } catch (err) {
+    console.error("❌ Parent fetch error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
+
 /* ================= PICKUP ================= */
 router.post("/pickup", async (req, res) => {
   try {
