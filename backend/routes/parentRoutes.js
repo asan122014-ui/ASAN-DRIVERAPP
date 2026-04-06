@@ -258,4 +258,32 @@ router.post("/check-email", async (req, res) => {
   }
 });
 
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    });
+
+    if (!parent) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    parent.password = newPassword; // (hash if using bcrypt)
+    await parent.save();
+
+    res.json({
+      success: true,
+      message: "Password updated",
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+});
+
 export default router;
