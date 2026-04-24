@@ -176,4 +176,45 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+/* ================= ASSIGN DRIVER ================= */
+router.put("/assign-driver", async (req, res) => {
+  try {
+    const { parentId, driverId } = req.body;
+
+    if (!parentId || !driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "parentId and driverId required",
+      });
+    }
+
+    const driver = await Driver.findOne({ driverId });
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+    }
+
+    const updated = await Parent.findByIdAndUpdate(
+      parentId,
+      { driverId },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      data: updated,
+    });
+
+  } catch (err) {
+    console.error("❌ ASSIGN DRIVER ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to assign driver",
+    });
+  }
+});
+
 export default router;
