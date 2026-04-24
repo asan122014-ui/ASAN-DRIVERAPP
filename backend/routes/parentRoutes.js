@@ -286,4 +286,22 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
+/* ================= GET ALL PARENTS (ADMIN) ================= */
+router.get("/", async (req, res) => {
+  try {
+    const parents = await Parent.find().select("-password");
+
+    res.json({
+      success: true,
+      data: parents,
+    });
+  } catch (err) {
+    console.error("❌ FETCH PARENTS ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch parents",
+    });
+  }
+});
+
 export default router;
