@@ -36,7 +36,7 @@ app.use("/uploads", express.static("uploads"));
 /* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
-app.use("/api/parent", parentRoutes);
+app.use("/api/parents", parentRoutes);
 app.use("/api/driver", driverRoutes);
 app.use("/api/trip", tripRoutes);
 app.use("/api/notifications", notificationRoutes);
