@@ -1,9 +1,8 @@
 import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
-import Trip from "../models/Trips.js";
-import bcrypt from "bcryptjs";
 import Child from "../models/Child.js";
+import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
@@ -96,7 +95,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= GET ALL PARENTS ================= */
+/* ================= GET ALL PARENTS (WITH CHILDREN + DRIVER) ================= */
 router.get("/", async (req, res) => {
   try {
     const parents = await Parent.find().select("-password");
@@ -105,11 +104,9 @@ router.get("/", async (req, res) => {
       parents.map(async (p) => {
         const children = await Child.find({ parentId: p._id });
 
-        let driver = null;
-
-        if (p.driverId) {
-          driver = await Driver.findOne({ driverId: p.driverId }).select("-password");
-        }
+        const driver = p.driverId
+          ? await Driver.findOne({ driverId: p.driverId }).select("-password")
+          : null;
 
         return {
           ...p.toObject(),
@@ -123,7 +120,6 @@ router.get("/", async (req, res) => {
       success: true,
       data: enrichedParents,
     });
-
   } catch (err) {
     console.error("❌ FETCH PARENTS ERROR:", err);
     res.status(500).json({
@@ -133,39 +129,49 @@ router.get("/", async (req, res) => {
   }
 });
 
-/* ================= DELETE PARENT ================= */
-router.get("/", async (req, res) => {
+/* ================= UPDATE PARENT ================= */
+router.put("/:id", async (req, res) => {
   try {
-    const parents = await Parent.find().select("-password");
-
-    const enrichedParents = await Promise.all(
-      parents.map(async (p) => {
-        const children = await Child.find({ parentId: p._id });
-
-        let driver = null;
-
-        if (p.driverId) {
-          driver = await Driver.findOne({ driverId: p.driverId }).select("-password");
-        }
-
-        return {
-          ...p.toObject(),
-          children,
-          driver,
-        };
-      })
-    );
+    const updated = await Parent.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    ).select("-password");
 
     res.json({
       success: true,
-      data: enrichedParents,
+      data: updated,
     });
-
   } catch (err) {
-    console.error("❌ FETCH PARENTS ERROR:", err);
+    console.error("❌ UPDATE ERROR:", err);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch parents",
+      message: "Update failed",
+    });
+  }
+});
+
+/* ================= DELETE PARENT ================= */
+router.delete("/:id", async (req, res) => {
+  try {
+    const deleted = await Parent.findByIdAndDelete(req.params.id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Parent deleted",
+    });
+  } catch (err) {
+    console.error("❌ DELETE ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Delete failed",
     });
   }
 });
