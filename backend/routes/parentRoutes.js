@@ -134,26 +134,38 @@ router.get("/", async (req, res) => {
 });
 
 /* ================= DELETE PARENT ================= */
-router.delete("/:id", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const deleted = await Parent.findByIdAndDelete(req.params.id);
+    const parents = await Parent.find().select("-password");
 
-    if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
+    const enrichedParents = await Promise.all(
+      parents.map(async (p) => {
+        const children = await Child.find({ parentId: p._id });
+
+        let driver = null;
+
+        if (p.driverId) {
+          driver = await Driver.findOne({ driverId: p.driverId }).select("-password");
+        }
+
+        return {
+          ...p.toObject(),
+          children,
+          driver,
+        };
+      })
+    );
 
     res.json({
       success: true,
-      message: "Parent deleted",
+      data: enrichedParents,
     });
+
   } catch (err) {
-    console.error("❌ DELETE ERROR:", err);
+    console.error("❌ FETCH PARENTS ERROR:", err);
     res.status(500).json({
       success: false,
-      message: "Delete failed",
+      message: "Failed to fetch parents",
     });
   }
 });
