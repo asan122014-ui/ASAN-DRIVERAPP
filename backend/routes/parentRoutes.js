@@ -3,6 +3,7 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Trip from "../models/Trips.js";
 import bcrypt from "bcryptjs";
+import Child from "../models/Child.js";
 
 const router = express.Router();
 
@@ -100,10 +101,29 @@ router.get("/", async (req, res) => {
   try {
     const parents = await Parent.find().select("-password");
 
+    const enrichedParents = await Promise.all(
+      parents.map(async (p) => {
+        const children = await Child.find({ parentId: p._id });
+
+        let driver = null;
+
+        if (p.driverId) {
+          driver = await Driver.findOne({ driverId: p.driverId }).select("-password");
+        }
+
+        return {
+          ...p.toObject(),
+          children,
+          driver,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: parents,
+      data: enrichedParents,
     });
+
   } catch (err) {
     console.error("❌ FETCH PARENTS ERROR:", err);
     res.status(500).json({
