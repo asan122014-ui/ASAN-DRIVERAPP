@@ -286,7 +286,7 @@ router.post("/reset-password", async (req, res) => {
   }
 });
 
-/* ================= GET ALL PARENTS (ADMIN) ================= */
+/* ================= GET ALL PARENTS ================= */
 router.get("/", async (req, res) => {
   try {
     const parents = await Parent.find().select("-password");
@@ -300,6 +300,24 @@ router.get("/", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch parents",
+    });
+  }
+});
+
+/* ================= DELETE PARENT ================= */
+router.delete("/:id", async (req, res) => {
+  try {
+    await Parent.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: "Parent deleted",
+    });
+  } catch (err) {
+    console.error("❌ DELETE ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Delete failed",
     });
   }
 });
