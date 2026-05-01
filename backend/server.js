@@ -5,10 +5,11 @@ import cors from "cors";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
+
 import "./models/Parent.js";
 import "./models/Child.js";
 import "./models/Trips.js";
-import path from "path";
+
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
 import parentRoutes from "./routes/parentRoutes.js";
@@ -26,13 +27,12 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-/* ================= CORS ================= */
+/* ================= MIDDLEWARE ================= */
 app.use(cors());
-
-/* ================= BODY ================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static("uploads"));
+
 /* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/otp", otpRoutes);
@@ -56,14 +56,14 @@ app.set("io", io);
 
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
+  console.log("✅ Socket connected:", socket.id);
 
   /* ===== JOIN DRIVER ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
     if (!driverId) return;
     const room = String(driverId);
     socket.join(room);
-    console.log("Joined driver room:", room);
+    console.log("🚗 Driver joined:", room);
   });
 
   /* ===== JOIN PARENT ROOM ===== */
@@ -71,17 +71,19 @@ io.on("connection", (socket) => {
     if (!parentId) return;
     const room = String(parentId);
     socket.join(room);
-    console.log("Parent joined:", room);
+    console.log("👨‍👩‍👧 Parent joined:", room);
   });
 
   /* ===== LIVE LOCATION ===== */
   socket.on("send_location", async (data) => {
     try {
       const { driverId, lat, lng, eta } = data;
+
       if (!driverId || lat === undefined || lng === undefined) return;
 
       const room = String(driverId);
 
+      // Save in DB
       await Driver.findOneAndUpdate(
         { driverId },
         {
@@ -98,14 +100,17 @@ io.on("connection", (socket) => {
         }
       );
 
+      // Emit to parents
       io.to(room).emit("live_location", {
         lat,
         lng,
         eta: eta || "--",
       });
 
+      console.log("📍 Location:", room);
+
     } catch (err) {
-      console.error("Location socket error:", err.message);
+      console.error("❌ Location error:", err.message);
     }
   });
 
@@ -116,9 +121,12 @@ io.on("connection", (socket) => {
     if (!driverId) return;
 
     const room = String(driverId);
-    io.to(room).emit("camera_control", { action: "start" });
 
-    console.log("📸 Camera START:", room);
+    console.log("📸 START CAMERA:", room);
+
+    io.to(room).emit("camera_control", {
+      action: "start",
+    });
   });
 
   // 🔥 STOP CAMERA
@@ -126,27 +134,38 @@ io.on("connection", (socket) => {
     if (!driverId) return;
 
     const room = String(driverId);
-    io.to(room).emit("camera_control", { action: "stop" });
 
-    console.log("🛑 Camera STOP:", room);
+    console.log("🛑 STOP CAMERA:", room);
+
+    io.to(room).emit("camera_control", {
+      action: "stop",
+    });
   });
 
   // 🔥 RECEIVE FRAME FROM DRIVER
-  socket.on("camera_frame", ({ driverId, frame }) => {
-    if (!driverId || !frame) return;
+  socket.on("camera_frame", (data) => {
+    try {
+      const { driverId, frame } = data;
 
-    const room = String(driverId);
+      if (!driverId || !frame) return;
 
-    io.to(room).emit("camera_update", {
-      driverId,
-      frame,
-    });
+      const room = String(driverId);
 
-    console.log("📡 Frame broadcast:", driverId);
+      io.to(room).emit("camera_update", {
+        driverId,
+        frame,
+      });
+
+      console.log("🎥 Frame sent:", room);
+
+    } catch (err) {
+      console.error("❌ Camera error:", err.message);
+    }
   });
 
+  /* ===== DISCONNECT ===== */
   socket.on("disconnect", () => {
-    console.log("Socket disconnected:", socket.id);
+    console.log("❌ Socket disconnected:", socket.id);
   });
 });
 
@@ -181,10 +200,10 @@ const PORT = process.env.PORT || 5000;
 connectDB()
   .then(() => {
     server.listen(PORT, () => {
-      console.log(`Server running on ${PORT}`);
+      console.log(`🚀 Server running on ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("DB CONNECTION FAILED:", err);
+    console.error("❌ DB CONNECTION FAILED:", err);
     process.exit(1);
   });
