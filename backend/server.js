@@ -3,12 +3,9 @@ import dotenv from "dotenv";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
+
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
-
-import "./models/Parent.js";
-import "./models/Child.js";
-import "./models/Trips.js";
 
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
@@ -24,6 +21,7 @@ import childRoutes from "./routes/child.js";
 
 /* ================= INIT ================= */
 dotenv.config();
+
 const app = express();
 const server = http.createServer(app);
 
@@ -61,17 +59,21 @@ io.on("connection", (socket) => {
   /* ===== JOIN DRIVER ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
     if (!driverId) return;
+
     const room = String(driverId);
     socket.join(room);
-    console.log("🚗 Driver joined:", room);
+
+    console.log("🚗 Driver joined room:", room);
   });
 
   /* ===== JOIN PARENT ROOM ===== */
   socket.on("join_parent_room", (parentId) => {
     if (!parentId) return;
+
     const room = String(parentId);
     socket.join(room);
-    console.log("👨‍👩‍👧 Parent joined:", room);
+
+    console.log("👨‍👩‍👧 Parent joined room:", room);
   });
 
   /* ===== LIVE LOCATION ===== */
@@ -83,7 +85,7 @@ io.on("connection", (socket) => {
 
       const room = String(driverId);
 
-      // Save in DB
+      // save in DB
       await Driver.findOneAndUpdate(
         { driverId },
         {
@@ -93,21 +95,17 @@ io.on("connection", (socket) => {
             eta: eta || "--",
             updatedAt: new Date(),
           },
-          location: {
-            type: "Point",
-            coordinates: [lng, lat],
-          },
         }
       );
 
-      // Emit to parents
+      // send to parents
       io.to(room).emit("live_location", {
         lat,
         lng,
         eta: eta || "--",
       });
 
-      console.log("📍 Location:", room);
+      console.log("📍 Location sent:", room);
 
     } catch (err) {
       console.error("❌ Location error:", err.message);
@@ -156,7 +154,7 @@ io.on("connection", (socket) => {
         frame,
       });
 
-      console.log("🎥 Frame sent:", room);
+      console.log("🎥 Frame broadcast:", room);
 
     } catch (err) {
       console.error("❌ Camera error:", err.message);
