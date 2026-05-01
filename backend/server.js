@@ -52,7 +52,6 @@ const io = new Server(server, {
   },
 });
 
-/* 🔥 IMPORTANT: make io available in controllers */
 app.set("io", io);
 
 /* ================= SOCKET EVENTS ================= */
@@ -67,7 +66,7 @@ io.on("connection", (socket) => {
     console.log("Joined driver room:", room);
   });
 
-  /* ===== JOIN PARENT ROOM (FIXED) ===== */
+  /* ===== JOIN PARENT ROOM ===== */
   socket.on("join_parent_room", (parentId) => {
     if (!parentId) return;
     const room = String(parentId);
@@ -79,12 +78,10 @@ io.on("connection", (socket) => {
   socket.on("send_location", async (data) => {
     try {
       const { driverId, lat, lng, eta } = data;
-
       if (!driverId || lat === undefined || lng === undefined) return;
 
       const room = String(driverId);
 
-      /* 🔥 SAVE LOCATION */
       await Driver.findOneAndUpdate(
         { driverId },
         {
@@ -101,21 +98,53 @@ io.on("connection", (socket) => {
         }
       );
 
-      /* 🔥 SEND TO ALL LISTENERS */
       io.to(room).emit("live_location", {
         lat,
         lng,
         eta: eta || "--",
       });
 
-      console.log("Location updated:", room);
-
     } catch (err) {
       console.error("Location socket error:", err.message);
     }
   });
 
-  /* ===== DISCONNECT ===== */
+  /* ================= CAMERA ================= */
+
+  // 🔥 START CAMERA
+  socket.on("start_camera", (driverId) => {
+    if (!driverId) return;
+
+    const room = String(driverId);
+    io.to(room).emit("camera_control", { action: "start" });
+
+    console.log("📸 Camera START:", room);
+  });
+
+  // 🔥 STOP CAMERA
+  socket.on("stop_camera", (driverId) => {
+    if (!driverId) return;
+
+    const room = String(driverId);
+    io.to(room).emit("camera_control", { action: "stop" });
+
+    console.log("🛑 Camera STOP:", room);
+  });
+
+  // 🔥 RECEIVE FRAME FROM DRIVER
+  socket.on("camera_frame", ({ driverId, frame }) => {
+    if (!driverId || !frame) return;
+
+    const room = String(driverId);
+
+    io.to(room).emit("camera_update", {
+      driverId,
+      frame,
+    });
+
+    console.log("📡 Frame broadcast:", driverId);
+  });
+
   socket.on("disconnect", () => {
     console.log("Socket disconnected:", socket.id);
   });
