@@ -30,23 +30,33 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    // ✅ Save for Driver
+    /* ================= DRIVER ================= */
     if (driverId) {
-      await Driver.findByIdAndUpdate(driverId, {
-        fcmToken: token,
-      });
+      await Driver.findByIdAndUpdate(
+        driverId,
+        {
+          $addToSet: { fcmTokens: token }, // ✅ ARRAY SUPPORT
+        },
+        { new: true }
+      );
+
       console.log("✅ Driver token saved");
     }
 
-    // ✅ Save for Parent
+    /* ================= PARENT ================= */
     if (parentId) {
-      await Parent.findByIdAndUpdate(parentId, {
-        fcmToken: token,
-      });
+      await Parent.findByIdAndUpdate(
+        parentId,
+        {
+          $addToSet: { fcmTokens: token }, // ✅ ARRAY SUPPORT
+        },
+        { new: true }
+      );
+
       console.log("✅ Parent token saved");
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: "Token saved successfully",
     });
@@ -54,7 +64,7 @@ router.post("/save-token", async (req, res) => {
   } catch (err) {
     console.error("❌ Save token error:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: err.message,
     });
@@ -63,21 +73,21 @@ router.post("/save-token", async (req, res) => {
 
 /* ================= FETCH ================= */
 
-// DRIVER notifications
+// Driver notifications
 router.get("/", getNotifications);
 
-// ALL notifications
+// All notifications
 router.get("/all", getAllNotifications);
 
-// 🔥 Parent-specific notifications
+// Parent-specific notifications
 router.get("/parent/:parentId", getParentNotifications);
 
 /* ================= UPDATE ================= */
 
-// mark single
+// mark one as read
 router.put("/:id/read", markAsRead);
 
-// mark all
+// mark all as read
 router.put("/read-all", markAllAsRead);
 
 export default router;
