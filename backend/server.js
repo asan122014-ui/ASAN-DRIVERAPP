@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
 
@@ -21,7 +20,6 @@ import childRoutes from "./routes/child.js";
 
 /* ================= INIT ================= */
 dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
@@ -45,9 +43,7 @@ app.use("/api/children", childRoutes);
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-  },
+  cors: { origin: "*" },
 });
 
 app.set("io", io);
@@ -59,33 +55,52 @@ io.on("connection", (socket) => {
   /* ===== JOIN DRIVER ROOM ===== */
   socket.on("join_driver_room", (driverId) => {
     if (!driverId) return;
-
     const room = String(driverId);
     socket.join(room);
-
-    console.log("🚗 Driver joined room:", room);
+    console.log("🚗 Joined driver room:", room);
   });
 
-  /* ===== JOIN PARENT ROOM ===== */
+  /* ===== JOIN PARENT ROOM (optional) ===== */
   socket.on("join_parent_room", (parentId) => {
     if (!parentId) return;
-
     const room = String(parentId);
     socket.join(room);
-
-    console.log("👨‍👩‍👧 Parent joined room:", room);
+    console.log("👨‍👩‍👧 Joined parent room:", room);
   });
 
-  /* ===== LIVE LOCATION ===== */
+  /* ================= WEBRTC SIGNALING ================= */
+
+  // 📤 DRIVER → OFFER
+  socket.on("offer", ({ offer, driverId }) => {
+    const room = String(driverId);
+    console.log("📤 Offer → room:", room);
+
+    socket.to(room).emit("offer", { offer });
+  });
+
+  // 📩 PARENT → ANSWER
+  socket.on("answer", ({ answer, driverId }) => {
+    const room = String(driverId);
+    console.log("📩 Answer → room:", room);
+
+    socket.to(room).emit("answer", { answer });
+  });
+
+  // 📡 ICE (both sides)
+  socket.on("ice-candidate", ({ candidate, driverId }) => {
+    const room = String(driverId);
+
+    socket.to(room).emit("ice-candidate", { candidate });
+  });
+
+  /* ================= LOCATION ================= */
   socket.on("send_location", async (data) => {
     try {
       const { driverId, lat, lng, eta } = data;
-
       if (!driverId || lat === undefined || lng === undefined) return;
 
       const room = String(driverId);
 
-      // save in DB
       await Driver.findOneAndUpdate(
         { driverId },
         {
@@ -98,67 +113,39 @@ io.on("connection", (socket) => {
         }
       );
 
-      // send to parents
-      io.to(room).emit("live_location", {
-        lat,
-        lng,
-        eta: eta || "--",
-      });
+      io.to(room).emit("live_location", { lat, lng, eta: eta || "--" });
 
       console.log("📍 Location sent:", room);
-
     } catch (err) {
       console.error("❌ Location error:", err.message);
     }
   });
 
-  /* ================= CAMERA ================= */
-
-  // 🔥 START CAMERA
+  /* ================= CAMERA CONTROL ================= */
   socket.on("start_camera", (driverId) => {
-    if (!driverId) return;
-
     const room = String(driverId);
-
     console.log("📸 START CAMERA:", room);
 
-    io.to(room).emit("camera_control", {
-      action: "start",
-    });
+    io.to(room).emit("camera_control", { action: "start" });
   });
 
-  // 🔥 STOP CAMERA
   socket.on("stop_camera", (driverId) => {
-    if (!driverId) return;
+    const room = String(driverId);
+    console.log("🛑 STOP CAMERA:", room);
+
+    io.to(room).emit("camera_control", { action: "stop" });
+  });
+
+  /* ================= OLD FRAME (optional) ================= */
+  socket.on("camera_frame", (data) => {
+    const { driverId, frame } = data;
+    if (!driverId || !frame) return;
 
     const room = String(driverId);
 
-    console.log("🛑 STOP CAMERA:", room);
+    io.to(room).emit("camera_update", { driverId, frame });
 
-    io.to(room).emit("camera_control", {
-      action: "stop",
-    });
-  });
-
-  // 🔥 RECEIVE FRAME FROM DRIVER
-  socket.on("camera_frame", (data) => {
-    try {
-      const { driverId, frame } = data;
-
-      if (!driverId || !frame) return;
-
-      const room = String(driverId);
-
-      io.to(room).emit("camera_update", {
-        driverId,
-        frame,
-      });
-
-      console.log("🎥 Frame broadcast:", room);
-
-    } catch (err) {
-      console.error("❌ Camera error:", err.message);
-    }
+    console.log("🎥 Frame broadcast:", room);
   });
 
   /* ===== DISCONNECT ===== */
@@ -169,10 +156,7 @@ io.on("connection", (socket) => {
 
 /* ================= HEALTH ================= */
 app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    time: new Date(),
-  });
+  res.json({ status: "OK", time: new Date() });
 });
 
 /* ================= ERROR HANDLER ================= */
