@@ -149,11 +149,10 @@ export const generateInvoice = async (req, res) => {
     const oneWayDistance = child.routeDistance || 0;
 
     /* ================= COMPLETED DAYS ================= */
-
-    const completedDays = await Trip.countDocuments({
-      students: child._id,
-      status: "completed",
-    });
+const completedDays = await Trip.countDocuments({
+  child: child._id,
+  status: "completed",
+});
 
     /* ================= BILL CALCULATION ================= */
 
