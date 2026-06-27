@@ -40,6 +40,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/children", childRoutes);
+app.use("/api/admin/billing", billingRoutes);
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
