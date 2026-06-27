@@ -1,12 +1,11 @@
-const BillingSettings = require("../models/BillingSettings");
+import BillingSettings from "../models/BillingSettings.js";
 
-/*
-GET Billing Settings
-*/
-exports.getBillingSettings = async (req, res) => {
+/* ================= GET BILLING SETTINGS ================= */
+export const getBillingSettings = async (req, res) => {
   try {
     let settings = await BillingSettings.findOne();
 
+    // Create default settings if none exist
     if (!settings) {
       settings = await BillingSettings.create({
         ratePerKm: 3,
@@ -21,25 +20,19 @@ exports.getBillingSettings = async (req, res) => {
       success: true,
       data: settings,
     });
-
   } catch (error) {
+    console.error("Get Billing Settings Error:", error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
-
-/*
-UPDATE Billing Settings
-*/
-exports.updateBillingSettings = async (req, res) => {
-
+/* ================= UPDATE BILLING SETTINGS ================= */
+export const updateBillingSettings = async (req, res) => {
   try {
-
     const {
       ratePerKm,
       platformCommission,
@@ -51,9 +44,7 @@ exports.updateBillingSettings = async (req, res) => {
     let settings = await BillingSettings.findOne();
 
     if (!settings) {
-
       settings = new BillingSettings();
-
     }
 
     settings.ratePerKm = ratePerKm;
@@ -66,17 +57,15 @@ exports.updateBillingSettings = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Billing Settings Updated",
+      message: "Billing settings updated successfully",
       data: settings,
     });
-
   } catch (error) {
+    console.error("Update Billing Settings Error:", error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
-
 };
