@@ -214,3 +214,47 @@ export const endTripService = async (driverId, io) => {
     throw error;
   }
 };
+
+/* ================= ACTIVE TRIP ================= */
+export const getActiveTripService = async (driverId) => {
+  try {
+    return await Trips.find({
+      driverId,
+      status: "in_transit",
+    })
+      .populate("child", "name status")
+      .populate("parent", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+  } catch (error) {
+    console.error("🔥 getActiveTripService error:", error);
+    throw error;
+  }
+};
+
+/* ================= DRIVER TRIPS ================= */
+export const getDriverTripsService = async (driverId) => {
+  try {
+    return await Trips.find({ driverId })
+      .sort({ createdAt: -1 })
+      .populate("child", "name")
+      .populate("parent", "name")
+      .lean();
+  } catch (error) {
+    console.error("🔥 getDriverTripsService error:", error);
+    throw error;
+  }
+};
+
+/* ================= PARENT TRIPS ================= */
+export const getParentTripsService = async (parentId) => {
+  try {
+    return await Trips.find({ parent: parentId })
+      .sort({ createdAt: -1 })
+      .populate("child", "name status pickupLocation dropoffLocation")
+      .lean();
+  } catch (error) {
+    console.error("🔥 getParentTripsService error:", error);
+    throw error;
+  }
+};
