@@ -9,7 +9,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= 🔥 PARENT ================= */
+    /* ================= PARENT ================= */
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -17,7 +17,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= 🔥 CHILD ================= */
+    /* ================= CHILD ================= */
     child: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Child",
@@ -40,7 +40,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= STUDENTS (ALL CHILDREN UNDER DRIVER) ================= */
+    /* ================= DRIVER CHILDREN SNAPSHOT ================= */
     students: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -51,26 +51,23 @@ const tripSchema = new mongoose.Schema(
     totalStudents: {
       type: Number,
       default: 0,
-      min: 0,
     },
 
-    /* ================= UI DATA ================= */
+    /* ================= UI ================= */
+
     childName: {
       type: String,
-      default: "Student",
-      trim: true,
+      default: "",
     },
 
     route: {
       from: {
         type: String,
-        default: "--",
-        trim: true,
+        default: "",
       },
       to: {
         type: String,
-        default: "--",
-        trim: true,
+        default: "",
       },
     },
 
@@ -79,14 +76,13 @@ const tripSchema = new mongoose.Schema(
       default: "--",
     },
 
-    /* ================= OPTIONAL ================= */
     amount: {
       type: Number,
       default: 0,
-      min: 0,
     },
 
     /* ================= TIME ================= */
+
     startTime: {
       type: Date,
       default: Date.now,
@@ -100,7 +96,6 @@ const tripSchema = new mongoose.Schema(
     duration: {
       type: Number,
       default: 0,
-      min: 0,
     },
   },
   {
@@ -108,18 +103,8 @@ const tripSchema = new mongoose.Schema(
   }
 );
 
-/* ================= INDEXES ================= */
-
-// 🔥 driver queries
 tripSchema.index({ driverId: 1, status: 1 });
-tripSchema.index({ driverId: 1, createdAt: -1 });
-
-// 🔥 parent queries (VERY IMPORTANT)
 tripSchema.index({ parent: 1, createdAt: -1 });
-
-// 🔥 child queries
 tripSchema.index({ child: 1, createdAt: -1 });
 
-/* ================= EXPORT ================= */
-const Trips = mongoose.model("Trips", tripSchema);
-export default Trips;
+export default mongoose.model("Trips", tripSchema);
