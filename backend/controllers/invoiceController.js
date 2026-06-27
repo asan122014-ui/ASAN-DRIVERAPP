@@ -1,6 +1,10 @@
 import Invoice from "../models/Invoice.js";
 import BillingSettings from "../models/BillingSettings.js";
 import SecurityDeposit from "../models/SecurityDeposit.js";
+import Student from "../models/Students.js";
+import Trip from "../models/Trips.js";
+
+import { calculateInvoice } from "../services/billingService.js";
 
 /* ==================================================
    GET ALL INVOICES (ADMIN)
@@ -75,7 +79,7 @@ export const getParentInvoices = async (req, res) => {
 };
 
 /* ==================================================
-   MARK AS PAID
+   MARK INVOICE AS PAID
 ================================================== */
 export const markInvoicePaid = async (req, res) => {
   try {
@@ -109,8 +113,7 @@ export const markInvoicePaid = async (req, res) => {
 };
 
 /* ==================================================
-   GENERATE MONTHLY INVOICE
-   (Calculation logic will be added later)
+   GENERATE MONTHLY INVOICE (AUTOMATIC)
 ================================================== */
 export const generateInvoice = async (req, res) => {
   try {
@@ -119,9 +122,9 @@ export const generateInvoice = async (req, res) => {
       childId,
       driverId,
       month,
-      completedDays,
-      totalDistance,
     } = req.body;
+
+    /* Billing Settings */
 
     const billing = await BillingSettings.findOne();
 
@@ -132,32 +135,81 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    const baseAmount =
-      totalDistance * billing.ratePerKm;
+    /* Student */
 
-    const platformCommission =
-      (baseAmount * billing.platformCommission) / 100;
+    const student = await Student.findById(childId);
 
-    const totalAmount =
-      baseAmount + platformCommission;
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    const oneWayDistance = student.distanceKm || 0;
+
+    /* Completed Trips */
+
+    const completedDays = await Trip.countDocuments({
+      childId,
+      status: "completed",
+    });
+
+    /* Billing Calculation */
+
+    const bill = calculateInvoice({
+      completedDays,
+      oneWayDistance,
+      ratePerKm: billing.ratePerKm,
+      platformCommission: billing.platformCommission,
+    });
+
+    /* Due Date */
 
     const dueDate = new Date();
+
     dueDate.setDate(
       dueDate.getDate() + billing.paymentDueDays
     );
+
+    /* Prevent Duplicate Invoice */
+
+    const existingInvoice = await Invoice.findOne({
+      childId,
+      month,
+    });
+
+    if (existingInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice already generated for this month",
+      });
+    }
+
+    /* Create Invoice */
 
     const invoice = await Invoice.create({
       parentId,
       childId,
       driverId,
+
       month,
+
       completedDays,
-      totalDistance,
+
+      totalDistance: bill.totalDistance,
+
       ratePerKm: billing.ratePerKm,
-      baseAmount,
-      platformCommission,
-      totalAmount,
+
+      baseAmount: bill.baseAmount,
+
+      platformCommission: bill.platformCommission,
+
+      totalAmount: bill.totalAmount,
+
       dueDate,
+
+      status: "Pending",
     });
 
     res.status(201).json({
@@ -167,9 +219,13 @@ export const generateInvoice = async (req, res) => {
     });
 
   } catch (error) {
+
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: error.message,
     });
+
   }
 };
