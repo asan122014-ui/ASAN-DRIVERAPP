@@ -2,27 +2,34 @@ import mongoose from "mongoose";
 
 const invoiceSchema = new mongoose.Schema(
   {
+    /* ================= PARENT ================= */
+
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Parent",
       required: true,
     },
+
+    /* ================= CHILD ================= */
 
     childId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Students",
+      ref: "Child",
       required: true,
     },
 
+    /* ================= DRIVER ================= */
+
     driverId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
+      type: String,
       required: true,
     },
+
+    /* ================= BILL ================= */
 
     month: {
       type: String,
-      required: true, // Example: "2026-07"
+      required: true,
     },
 
     completedDays: {
@@ -32,7 +39,7 @@ const invoiceSchema = new mongoose.Schema(
 
     totalDistance: {
       type: Number,
-      default: 0, // in KM
+      default: 0,
     },
 
     ratePerKm: {
@@ -59,6 +66,8 @@ const invoiceSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+
+    /* ================= PAYMENT ================= */
 
     status: {
       type: String,
@@ -91,10 +100,16 @@ const invoiceSchema = new mongoose.Schema(
   }
 );
 
-/* Prevent duplicate invoices for the same child and month */
+/* Prevent duplicate invoice for same child and month */
+
 invoiceSchema.index(
-  { childId: 1, month: 1 },
-  { unique: true }
+  {
+    childId: 1,
+    month: 1,
+  },
+  {
+    unique: true,
+  }
 );
 
 export default mongoose.model("Invoice", invoiceSchema);
