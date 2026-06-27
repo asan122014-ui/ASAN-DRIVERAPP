@@ -13,95 +13,119 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new Error("driverId and tripType are required");
     }
 
-    /* ✅ DRIVER */
-    const driver = await Driver.findOne({ driverId });
-    if (!driver) throw new Error("Driver not found");
+    /* ================= DRIVER ================= */
 
-    /* ✅ PREVENT MULTIPLE ACTIVE TRIPS */
-    const existingTrip = await Trips.findOne({
+    const driver = await Driver.findOne({ driverId });
+
+    if (!driver) {
+      throw new Error("Driver not found");
+    }
+
+    /* ================= PREVENT MULTIPLE ACTIVE TRIPS ================= */
+
+    const existingTrips = await Trips.find({
       driverId,
       status: "in_transit",
     });
 
-    if (existingTrip) {
-      console.log("⚠️ Existing active trip found");
-      return existingTrip;
+    if (existingTrips.length > 0) {
+      console.log("⚠️ Active trips already exist");
+      return existingTrips;
     }
 
-    /* ✅ FETCH CHILDREN WITH PARENT */
-    const children = await Child.find({ driverId }).populate("parentId");
+    /* ================= GET ALL CHILDREN ================= */
+
+    const children = await Child.find({
+      driverId,
+    }).populate("parentId");
 
     if (!children.length) {
       throw new Error("No children assigned to this driver");
     }
 
-    /* 🔥 SAFE PARENT EXTRACTION */
-    const firstChild =
-      children.find((c) => c.parentId) || children[0];
+    /* ================= RESET CHILD STATUS ================= */
 
-    if (!firstChild?.parentId) {
-      throw new Error("Parent not found for child");
-    }
-
-    /* ================= CREATE TRIP ================= */
-    const trip = await Trips.create({
-      driverId,
-      tripType,
-      status: "in_transit",
-      students: children.map((c) => c._id),
-      totalStudents: children.length,
-
-      // 🔥 FIXED (safe ObjectId)
-      parent:
-        firstChild.parentId._id || firstChild.parentId,
-
-      child: firstChild._id,
-      childName: firstChild.name,
-
-      route: {
-        from: firstChild?.pickupLocation || "Home",
-        to: firstChild?.schoolName || "School",
-      },
-
-      eta: "30 mins",
-      startTime: new Date(),
-    });
-
-    /* ✅ RESET CHILD STATUS */
     await Child.updateMany(
       { driverId },
-      { status: "waiting" }
+      {
+        status: "waiting",
+      }
     );
 
-    /* 🔥 SEND NOTIFICATION */
+    /* ================= CREATE ONE TRIP PER CHILD ================= */
+
+    const createdTrips = [];
+
+    for (const child of children) {
+      if (!child.parentId) continue;
+
+      const trip = await Trips.create({
+        driverId,
+
+        parent: child.parentId._id || child.parentId,
+
+        child: child._id,
+
+        tripType,
+
+        status: "in_transit",
+
+        students: children.map((c) => c._id),
+
+        totalStudents: children.length,
+
+        childName: child.name,
+
+        route: {
+  from: child.pickupLocation || "Home",
+  to: child.dropoffLocation || child.school || "School",
+},
+
+        eta: "30 mins",
+
+        startTime: new Date(),
+      });
+
+      createdTrips.push(trip);
+    }
+
+    /* ================= SEND NOTIFICATION ================= */
+
     await sendNotification({
       driverId,
       title: "Trip Started",
-      message: `Trip started (${tripType}). ETA: ${trip.eta}`,
+      message: `Trip started (${tripType})`,
       type: "trip_start",
       priority: "medium",
       io,
     });
 
-    /* 🔥 SOCKET BACKUP */
+    /* ================= SOCKET ================= */
+
     if (io) {
-      const room = String(driverId);
+      io.to(String(driverId)).emit(
+        "trip_started",
+        createdTrips
+      );
 
-      io.to(room).emit("trip_started", trip);
-
-      io.to(room).emit("notification", {
+      io.to(String(driverId)).emit("notification", {
         _id: Date.now(),
         title: "Trip Started",
-        message: `Trip started (${tripType}). ETA: ${trip.eta}`,
+        message: `Trip started (${tripType})`,
         createdAt: new Date(),
       });
     }
 
-    console.log("✅ Trip created:", trip._id);
+    console.log(
+      `✅ ${createdTrips.length} child trips created`
+    );
 
-    return trip;
+    return createdTrips;
   } catch (error) {
-    console.error("🔥 startTripService error:", error.message);
+    console.error(
+      "🔥 startTripService error:",
+      error.message
+    );
     throw error;
   }
 };
@@ -111,116 +135,82 @@ export const endTripService = async (driverId, io) => {
   try {
     console.log("🔥 Ending trip:", driverId);
 
-    const trip = await Trips.findOne({
+    /* ================= GET ALL ACTIVE TRIPS ================= */
+
+    const trips = await Trips.find({
       driverId,
       status: "in_transit",
-    }).sort({ createdAt: -1 });
+    });
 
-    if (!trip) {
-      console.log("❌ No active trip found");
-      return null;
+    if (!trips.length) {
+      console.log("❌ No active trips found");
+      return [];
     }
 
-    /* ✅ TIME */
-    if (!trip.startTime) {
-      trip.startTime = new Date();
+    const endTime = new Date();
+
+    /* ================= COMPLETE ALL CHILD TRIPS ================= */
+
+    for (const trip of trips) {
+      if (!trip.startTime) {
+        trip.startTime = endTime;
+      }
+
+      trip.endTime = endTime;
+
+      const durationMs = endTime - trip.startTime;
+
+      trip.duration = Math.max(
+        1,
+        Math.round(durationMs / 60000)
+      );
+
+      trip.status = "completed";
+
+      await trip.save();
     }
 
-    trip.endTime = new Date();
+    console.log(`✅ ${trips.length} trips completed`);
 
-    const durationMs = trip.endTime - trip.startTime;
-    trip.duration = Math.max(
-      1,
-      Math.round(durationMs / 60000)
-    );
+    /* ================= RESET CHILD STATUS ================= */
 
-    /* ✅ COMPLETE */
-    trip.status = "completed";
-    await trip.save();
-
-    console.log("✅ Trip ended:", trip._id);
-
-    /* ✅ RESET CHILD STATUS */
     await Child.updateMany(
       { driverId },
-      { status: "waiting" }
+      {
+        status: "waiting",
+      }
     );
 
-    /* 🔥 SEND NOTIFICATION */
+    /* ================= SEND NOTIFICATION ================= */
+
     await sendNotification({
       driverId,
       title: "Trip Completed",
-      message: `Trip completed in ${trip.duration} mins`,
+      message: `${trips.length} child trips completed`,
       type: "trip_end",
       priority: "low",
       io,
     });
 
-    /* 🔥 SOCKET BACKUP */
+    /* ================= SOCKET ================= */
+
     if (io) {
-      const room = String(driverId);
+      io.to(String(driverId)).emit(
+        "trip_ended",
+        trips
+      );
 
-      io.to(room).emit("trip_ended", trip);
-
-      io.to(room).emit("notification", {
+      io.to(String(driverId)).emit("notification", {
         _id: Date.now(),
         title: "Trip Completed",
-        message: `Trip completed in ${trip.duration} mins`,
+        message: `${trips.length} child trips completed`,
         createdAt: new Date(),
       });
     }
 
-    return trip;
+    return trips;
   } catch (error) {
     console.error("🔥 endTripService error:", error.message);
-    throw error;
-  }
-};
-
-/* ================= ACTIVE TRIP ================= */
-export const getActiveTripService = async (driverId) => {
-  try {
-    return await Trips.findOne({
-      driverId,
-      status: "in_transit",
-    })
-      .populate("students", "name status")
-      .populate("child", "name status")
-      .populate("parent", "name") // 🔥 now works
-      .lean();
-  } catch (error) {
-    console.error("🔥 getActiveTripService error:", error);
-    throw error;
-  }
-};
-
-/* ================= DRIVER TRIPS ================= */
-export const getDriverTripsService = async (driverId) => {
-  try {
-    return await Trips.find({ driverId })
-      .sort({ createdAt: -1 })
-      .lean();
-  } catch (error) {
-    console.error("🔥 getDriverTripsService error:", error);
-    throw error;
-  }
-};
-
-/* ================= PARENT TRIPS ================= */
-export const getParentTripsService = async (parentId) => {
-  try {
-    return await Trips.find({ parent: parentId })
-      .sort({ createdAt: -1 })
-      .populate(
-        "child",
-        "name status pickupLocation schoolName"
-      )
-      .lean();
-  } catch (error) {
-    console.error(
-      "🔥 getParentTripsService error:",
-      error
-    );
     throw error;
   }
 };
