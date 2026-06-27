@@ -1,9 +1,8 @@
 import Invoice from "../models/Invoice.js";
 import BillingSettings from "../models/BillingSettings.js";
 import SecurityDeposit from "../models/SecurityDeposit.js";
-import Student from "../models/Students.js";
+import Student from "../models/Student.js";
 import Trip from "../models/Trips.js";
-
 import { calculateInvoice } from "../services/billingService.js";
 
 /* ==================================================
@@ -94,8 +93,7 @@ export const markInvoicePaid = async (req, res) => {
 
     invoice.status = "Paid";
     invoice.paidAt = new Date();
-    invoice.paymentMethod =
-      req.body.paymentMethod || "Manual";
+    invoice.paymentMethod = req.body.paymentMethod || "Manual";
 
     await invoice.save();
 
@@ -113,7 +111,7 @@ export const markInvoicePaid = async (req, res) => {
 };
 
 /* ==================================================
-   GENERATE MONTHLY INVOICE (AUTOMATIC)
+   GENERATE MONTHLY INVOICE
 ================================================== */
 export const generateInvoice = async (req, res) => {
   try {
@@ -124,7 +122,7 @@ export const generateInvoice = async (req, res) => {
       month,
     } = req.body;
 
-    /* Billing Settings */
+    /* ================= BILLING SETTINGS ================= */
 
     const billing = await BillingSettings.findOne();
 
@@ -135,7 +133,7 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    /* Student */
+    /* ================= STUDENT ================= */
 
     const student = await Student.findById(childId);
 
@@ -148,14 +146,30 @@ export const generateInvoice = async (req, res) => {
 
     const oneWayDistance = student.routeDistance || 0;
 
-    /* Completed Trips */
+    /* ================= COMPLETED SCHOOL DAYS ================= */
 
-    const completedDays = await Trip.countDocuments({
-      childId,
-      status: "completed",
-    });
+    const completedTrips = await Trip.aggregate([
+      {
+        $match: {
+          child: student._id,
+          status: "completed",
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAt",
+            },
+          },
+        },
+      },
+    ]);
 
-    /* Billing Calculation */
+    const completedDays = completedTrips.length;
+
+    /* ================= BILL CALCULATION ================= */
 
     const bill = calculateInvoice({
       completedDays,
@@ -164,18 +178,17 @@ export const generateInvoice = async (req, res) => {
       platformCommission: billing.platformCommission,
     });
 
-    /* Due Date */
+    /* ================= DUE DATE ================= */
 
     const dueDate = new Date();
-
     dueDate.setDate(
       dueDate.getDate() + billing.paymentDueDays
     );
 
-    /* Prevent Duplicate Invoice */
+    /* ================= CHECK DUPLICATE ================= */
 
     const existingInvoice = await Invoice.findOne({
-      childId,
+      childId: student._id,
       month,
     });
 
@@ -186,11 +199,11 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    /* Create Invoice */
+    /* ================= CREATE INVOICE ================= */
 
     const invoice = await Invoice.create({
       parentId,
-      childId,
+      childId: student._id,
       driverId,
 
       month,
@@ -212,20 +225,18 @@ export const generateInvoice = async (req, res) => {
       status: "Pending",
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Invoice generated successfully",
       data: invoice,
     });
 
   } catch (error) {
+    console.error("Invoice Generation Error:", error);
 
-    console.error(error);
-
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
