@@ -1,16 +1,22 @@
 import express from "express";
+import axios from "axios";
 import Child from "../models/Child.js";
 import { sendNotification } from "../utils/sendNotification.js";
 
 const router = express.Router();
 
 /* ================= SAFE NOTIFICATION ================= */
+
 const safeNotify = async (req, payload) => {
   try {
     const io = req.app.get("io");
 
     if (io) {
-      await sendNotification({ ...payload, io });
+      await sendNotification({
+        ...payload,
+        io,
+      });
+
       console.log("✅ Notification sent");
     } else {
       console.warn("⚠️ IO not available");
@@ -21,6 +27,7 @@ const safeNotify = async (req, payload) => {
 };
 
 /* ================= ADD CHILD ================= */
+
 router.post("/add", async (req, res) => {
   try {
     const {
@@ -43,42 +50,112 @@ router.post("/add", async (req, res) => {
     if (!name || !parentId || !driverId) {
       return res.status(400).json({
         success: false,
-        message: "Name, parentId, and driverId are required",
+        message: "Name, parentId and driverId are required",
       });
     }
+
+    /* ================= CALCULATE DISTANCE ================= */
+
+    let routeDistance = 0;
+    let estimatedDuration = 0;
+
+    if (
+      location?.lat &&
+      location?.lng &&
+      dropLocationCoords?.lat &&
+      dropLocationCoords?.lng
+    ) {
+      try {
+        const response = await axios.get(
+          "https://maps.googleapis.com/maps/api/distancematrix/json",
+          {
+            params: {
+              origins: `${location.lat},${location.lng}`,
+              destinations: `${dropLocationCoords.lat},${dropLocationCoords.lng}`,
+              key: process.env.GOOGLE_MAPS_API_KEY,
+            },
+          }
+        );
+
+        const element = response.data.rows?.[0]?.elements?.[0];
+
+        if (element && element.status === "OK") {
+          routeDistance = Number(
+            (element.distance.value / 1000).toFixed(2)
+          );
+
+          estimatedDuration = Math.ceil(
+            element.duration.value / 60
+          );
+
+          console.log("✅ Route Distance:", routeDistance, "KM");
+          console.log("✅ Estimated Duration:", estimatedDuration, "Minutes");
+        } else {
+          console.warn("⚠️ Google returned:", element?.status);
+        }
+      } catch (err) {
+        console.error(
+          "Google Distance API Error:",
+          err.response?.data || err.message
+        );
+      }
+    }
+
+    /* ================= SAVE CHILD ================= */
 
     const child = await Child.create({
       name,
       age,
       school,
       grade,
+
       pickupTime,
       dropoffTime,
       eveningPickup,
       eveningDrop,
+
       pickupLocation,
       dropoffLocation,
+
       location: {
         lat: location?.lat ?? null,
         lng: location?.lng ?? null,
       },
+
       dropLocationCoords: {
         lat: dropLocationCoords?.lat ?? null,
         lng: dropLocationCoords?.lng ?? null,
       },
+
       parentId,
       driverId,
+
+      routeDistance,
+      estimatedDuration,
+
       status: "waiting",
     });
 
-    res.status(201).json({ success: true, data: child });
+    return res.status(201).json({
+      success: true,
+      message: "Child added successfully",
+      data: child,
+    });
+
   } catch (err) {
-    console.error("🔥 Add child error:", err);
-    res.status(500).json({ success: false, message: err.message });
+
+    console.error("🔥 Add Child Error:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+
   }
 });
 
 /* ================= DELETE CHILD ================= */
+
 router.delete("/:id", async (req, res) => {
   try {
     const child = await Child.findByIdAndDelete(req.params.id);
@@ -94,30 +171,45 @@ router.delete("/:id", async (req, res) => {
       success: true,
       message: "Child deleted successfully",
     });
+
   } catch (err) {
+
     console.error("❌ Delete error:", err);
+
     res.status(500).json({
       success: false,
       message: err.message,
     });
+
   }
 });
 
 /* ================= GET BY DRIVER ================= */
+
 router.get("/driver/:driverId", async (req, res) => {
   try {
     const children = await Child.find({
       driverId: String(req.params.driverId),
     });
 
-    res.json({ success: true, data: children });
+    res.json({
+      success: true,
+      data: children,
+    });
+
   } catch (err) {
+
     console.error("❌ Driver fetch error:", err);
-    res.status(500).json({ success: false });
+
+    res.status(500).json({
+      success: false,
+    });
+
   }
 });
 
 /* ================= GET BY PARENT ================= */
+
 router.get("/parent/:parentId", async (req, res) => {
   try {
     const children = await Child.find({
@@ -128,28 +220,41 @@ router.get("/parent/:parentId", async (req, res) => {
       success: true,
       data: children,
     });
+
   } catch (err) {
+
     console.error("❌ Parent fetch error:", err);
+
     res.status(500).json({
       success: false,
       message: err.message,
     });
+
   }
 });
 
 /* ================= PICKUP ================= */
+
 router.post("/pickup", async (req, res) => {
   try {
     const { childId } = req.body;
 
     const child = await Child.findById(childId);
-    if (!child) return res.status(404).json({ message: "Not found" });
+
+    if (!child) {
+      return res.status(404).json({
+        message: "Not found",
+      });
+    }
 
     if (child.status !== "waiting") {
-      return res.status(400).json({ message: "Already picked" });
+      return res.status(400).json({
+        message: "Already picked",
+      });
     }
 
     child.status = "onboard";
+
     await child.save();
 
     await safeNotify(req, {
@@ -161,26 +266,44 @@ router.post("/pickup", async (req, res) => {
       priority: "high",
     });
 
-    res.json({ success: true, data: child });
+    res.json({
+      success: true,
+      data: child,
+    });
+
   } catch (err) {
+
     console.error("❌ Pickup error:", err);
-    res.status(500).json({ message: err.message });
+
+    res.status(500).json({
+      message: err.message,
+    });
+
   }
 });
 
 /* ================= DROP ================= */
+
 router.post("/drop", async (req, res) => {
   try {
     const { childId } = req.body;
 
     const child = await Child.findById(childId);
-    if (!child) return res.status(404).json({ message: "Not found" });
+
+    if (!child) {
+      return res.status(404).json({
+        message: "Not found",
+      });
+    }
 
     if (child.status !== "onboard") {
-      return res.status(400).json({ message: "Not onboard" });
+      return res.status(400).json({
+        message: "Not onboard",
+      });
     }
 
     child.status = "dropped";
+
     await child.save();
 
     await safeNotify(req, {
@@ -192,14 +315,24 @@ router.post("/drop", async (req, res) => {
       priority: "high",
     });
 
-    res.json({ success: true, data: child });
+    res.json({
+      success: true,
+      data: child,
+    });
+
   } catch (err) {
+
     console.error("❌ Drop error:", err);
-    res.status(500).json({ message: err.message });
+
+    res.status(500).json({
+      message: err.message,
+    });
+
   }
 });
 
 /* ================= ABSENT ================= */
+
 router.post("/absent", async (req, res) => {
   try {
     const { childId } = req.body;
@@ -228,26 +361,17 @@ router.post("/absent", async (req, res) => {
     }
 
     child.status = "absent";
+
     await child.save();
 
-    /* ✅ SAFE NOTIFICATION (NO CRASH) */
-    try {
-      const io = req.app.get("io");
-
-      if (io) {
-        await sendNotification({
-          driverId: child.driverId,
-          childId: child._id,
-          title: "Absent Update",
-          message: `${child.name} marked absent`,
-          type: "absent",
-          priority: "high",
-          io,
-        });
-      }
-    } catch (err) {
-      console.warn("⚠️ Notification failed:", err.message);
-    }
+    await safeNotify(req, {
+      driverId: child.driverId,
+      childId: child._id,
+      title: "Absent Update",
+      message: `${child.name} marked absent`,
+      type: "absent",
+      priority: "high",
+    });
 
     res.json({
       success: true,
@@ -256,25 +380,42 @@ router.post("/absent", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ ABSENT FULL ERROR:", err); // 🔥 IMPORTANT
+
+    console.error("❌ Absent error:", err);
+
     res.status(500).json({
       success: false,
-      message: err.message || "Absent failed",
+      message: err.message,
     });
+
   }
 });
+
 /* ================= RESET ================= */
+
 router.post("/reset/:driverId", async (req, res) => {
   try {
     await Child.updateMany(
-      { driverId: req.params.driverId },
-      { status: "waiting" }
+      {
+        driverId: req.params.driverId,
+      },
+      {
+        status: "waiting",
+      }
     );
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+    });
+
   } catch (err) {
+
     console.error("❌ Reset error:", err);
-    res.status(500).json({ message: err.message });
+
+    res.status(500).json({
+      message: err.message,
+    });
+
   }
 });
 
