@@ -148,28 +148,12 @@ export const generateInvoice = async (req, res) => {
 
     const oneWayDistance = child.routeDistance || 0;
 
-    /* ================= COMPLETED SCHOOL DAYS ================= */
+    /* ================= COMPLETED DAYS ================= */
 
-    const completedTrips = await Trip.aggregate([
-      {
-        $match: {
-          child: child._id,
-          status: "completed",
-        },
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: {
-              format: "%Y-%m-%d",
-              date: "$createdAt",
-            },
-          },
-        },
-      },
-    ]);
-
-    const completedDays = completedTrips.length;
+    const completedDays = await Trip.countDocuments({
+      students: child._id,
+      status: "completed",
+    });
 
     /* ================= BILL CALCULATION ================= */
 
@@ -183,11 +167,12 @@ export const generateInvoice = async (req, res) => {
     /* ================= DUE DATE ================= */
 
     const dueDate = new Date();
+
     dueDate.setDate(
       dueDate.getDate() + billing.paymentDueDays
     );
 
-    /* ================= CHECK DUPLICATE ================= */
+    /* ================= DUPLICATE CHECK ================= */
 
     const existingInvoice = await Invoice.findOne({
       childId: child._id,
@@ -234,11 +219,13 @@ export const generateInvoice = async (req, res) => {
     });
 
   } catch (error) {
+
     console.error("Invoice Generation Error:", error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
+
   }
 };
