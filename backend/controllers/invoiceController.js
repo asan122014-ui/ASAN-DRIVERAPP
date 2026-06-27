@@ -133,25 +133,27 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    /* ================= STUDENT ================= */
+    /* ================= CHILD ================= */
 
-    const student = await Student.findById(childId);
+    const child = await Child.findById(childId);
 
-    if (!student) {
+    if (!child) {
       return res.status(404).json({
         success: false,
-        message: "Student not found",
+        message: "Child not found",
       });
     }
 
-    const oneWayDistance = student.routeDistance || 0;
+    /* ================= ROUTE DISTANCE ================= */
+
+    const oneWayDistance = child.routeDistance || 0;
 
     /* ================= COMPLETED SCHOOL DAYS ================= */
 
     const completedTrips = await Trip.aggregate([
       {
         $match: {
-          child: student._id,
+          child: child._id,
           status: "completed",
         },
       },
@@ -188,7 +190,7 @@ export const generateInvoice = async (req, res) => {
     /* ================= CHECK DUPLICATE ================= */
 
     const existingInvoice = await Invoice.findOne({
-      childId: student._id,
+      childId: child._id,
       month,
     });
 
@@ -203,7 +205,7 @@ export const generateInvoice = async (req, res) => {
 
     const invoice = await Invoice.create({
       parentId,
-      childId: student._id,
+      childId: child._id,
       driverId,
 
       month,
