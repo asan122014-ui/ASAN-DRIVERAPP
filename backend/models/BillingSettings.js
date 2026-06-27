@@ -1,17 +1,20 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-const BillingSettingsSchema = new mongoose.Schema(
+const billingSettingsSchema = new mongoose.Schema(
   {
     ratePerKm: {
       type: Number,
       required: true,
       default: 3,
+      min: 0,
     },
 
     platformCommission: {
       type: Number,
       required: true,
       default: 2,
+      min: 0,
+      max: 100,
     },
 
     billingType: {
@@ -23,11 +26,13 @@ const BillingSettingsSchema = new mongoose.Schema(
     minimumFare: {
       type: Number,
       default: 50,
+      min: 0,
     },
 
     paymentDueDays: {
       type: Number,
       default: 5,
+      min: 1,
     },
 
     isActive: {
@@ -40,7 +45,9 @@ const BillingSettingsSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model(
+const BillingSettings = mongoose.model(
   "BillingSettings",
-  BillingSettingsSchema
+  billingSettingsSchema
 );
+
+export default BillingSettings;
