@@ -146,7 +146,7 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    const oneWayDistance = student.distanceKm || 0;
+    const oneWayDistance = student.routeDistance || 0;
 
     /* Completed Trips */
 
