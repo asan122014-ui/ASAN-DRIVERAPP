@@ -1,7 +1,7 @@
 import Invoice from "../models/Invoice.js";
 import BillingSettings from "../models/BillingSettings.js";
 import SecurityDeposit from "../models/SecurityDeposit.js";
-import Student from "../models/Students.js";
+import Child from "../models/Child.js";
 import Trip from "../models/Trips.js";
 import { calculateInvoice } from "../services/billingService.js";
 
