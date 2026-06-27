@@ -1,20 +1,16 @@
-const express = require("express");
+import express from "express";
+
+import {
+  getBillingSettings,
+  updateBillingSettings,
+} from "../controllers/billingController.js";
 
 const router = express.Router();
 
-const {
-  getBillingSettings,
-  updateBillingSettings,
-} = require("../controllers/billingController");
-
-/*
-GET Billing Settings
-*/
+/* ================= GET BILLING SETTINGS ================= */
 router.get("/", getBillingSettings);
 
-/*
-UPDATE Billing Settings
-*/
+/* ================= UPDATE BILLING SETTINGS ================= */
 router.put("/", updateBillingSettings);
 
-module.exports = router;
+export default router;
