@@ -17,6 +17,7 @@ import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import childRoutes from "./routes/child.js";
+import billingRoutes from "./routes/billingRoutes.js";
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -39,8 +40,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/children", childRoutes);
 app.use("/api/admin/billing", billingRoutes);
+app.use("/api/children", childRoutes);
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
