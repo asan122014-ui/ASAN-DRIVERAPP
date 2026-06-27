@@ -18,6 +18,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import childRoutes from "./routes/child.js";
 import billingRoutes from "./routes/billingRoutes.js";
+import invoiceRoutes from "./routes/invoiceRoutes.js";
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -41,6 +42,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin/billing", billingRoutes);
+app.use("/api/invoices", invoiceRoutes);
 app.use("/api/children", childRoutes);
 
 /* ================= SOCKET ================= */
