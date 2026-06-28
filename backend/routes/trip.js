@@ -10,6 +10,7 @@ import {
   dropStudent,
   getTripProgress,
   receivePayment,
+  getTripDetails,
 } from "../controllers/tripController.js";
 
 const router = express.Router();
@@ -29,6 +30,12 @@ router.get("/active/:driverId", getActiveTrip);
 
 // Driver Trip History
 router.get("/history/:driverId", getTripHistory);
+
+// Driver Trip Details
+router.get(
+  "/details/:driverId/:tripType/:date",
+  getTripDetails
+);
 
 // Trip Progress
 router.get("/progress/:driverId", getTripProgress);
