@@ -1,6 +1,5 @@
 import Invoice from "../models/Invoice.js";
 import BillingSettings from "../models/BillingSettings.js";
-import SecurityDeposit from "../models/SecurityDeposit.js";
 import Child from "../models/Child.js";
 import Trip from "../models/Trips.js";
 import { calculateInvoice } from "../services/billingService.js";
@@ -18,7 +17,7 @@ export const getAllInvoices = async (req, res) => {
       )
       .sort({ createdAt: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: invoices.length,
       data: invoices,
@@ -26,7 +25,7 @@ export const getAllInvoices = async (req, res) => {
   } catch (error) {
     console.error("Get All Invoices:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -52,20 +51,19 @@ export const getInvoiceById = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: invoice,
     });
   } catch (error) {
     console.error("Get Invoice:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
   }
 };
-
 /* ==================================================
    GET PARENT INVOICES
 ================================================== */
@@ -73,15 +71,11 @@ export const getParentInvoices = async (req, res) => {
   try {
     const { parentId } = req.params;
 
-    const invoices = await Invoice.find({
-      parentId,
-    })
+    const invoices = await Invoice.find({ parentId })
       .populate("childId", "name")
-      .sort({
-        createdAt: -1,
-      });
+      .sort({ createdAt: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: invoices.length,
       data: invoices,
@@ -89,7 +83,7 @@ export const getParentInvoices = async (req, res) => {
   } catch (error) {
     console.error("Parent Invoice:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -113,25 +107,20 @@ export const markInvoicePaid = async (req, res) => {
     invoice.status = "Paid";
     invoice.paymentStatus = "Success";
     invoice.paidAt = new Date();
-
     invoice.paymentMethod =
       req.body.paymentMethod || "Manual";
 
-    // Razorpay fields (used later)
+    // Razorpay fields (optional)
     invoice.razorpayOrderId =
       req.body.razorpayOrderId || null;
-
     invoice.razorpayPaymentId =
       req.body.razorpayPaymentId || null;
-
     invoice.razorpaySignature =
       req.body.razorpaySignature || null;
 
     await invoice.save();
 
-    const updatedInvoice = await Invoice.findById(
-      invoice._id
-    )
+    const updatedInvoice = await Invoice.findById(invoice._id)
       .populate("parentId", "name email phone")
       .populate(
         "childId",
@@ -152,9 +141,136 @@ export const markInvoicePaid = async (req, res) => {
     });
   }
 };
-
 /* ==================================================
-   GENERATE INVOICES FOR ALL CHILDREN
+   GENERATE SINGLE INVOICE
+================================================== */
+export const generateInvoice = async (req, res) => {
+  try {
+    const { parentId, childId, driverId, month } = req.body;
+
+    /* ================= BILLING SETTINGS ================= */
+    const billing = await BillingSettings.findOne();
+
+    if (!billing) {
+      return res.status(404).json({
+        success: false,
+        message: "Billing settings not found",
+      });
+    }
+
+    /* ================= CHILD ================= */
+    const child = await Child.findById(childId);
+
+    if (!child) {
+      return res.status(404).json({
+        success: false,
+        message: "Child not found",
+      });
+    }
+
+    /* ================= DUPLICATE CHECK ================= */
+    const existingInvoice = await Invoice.findOne({
+      childId: child._id,
+      month,
+    });
+
+    if (existingInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice already generated for this month",
+      });
+    }
+
+    /* ================= COMPLETED TRIPS ================= */
+    const completedDays = await Trip.countDocuments({
+      child: child._id,
+      status: "completed",
+    });
+
+    /* ================= BILL CALCULATION ================= */
+    const bill = calculateInvoice({
+      completedDays,
+      oneWayDistance: Number(child.routeDistance || 0),
+      ratePerKm: billing.ratePerKm,
+      platformCommission: billing.platformCommission,
+    });
+
+    /* ================= DUE DATE ================= */
+    const dueDate = new Date();
+    dueDate.setDate(
+      dueDate.getDate() + billing.paymentDueDays
+    );
+
+    /* ================= INVOICE NUMBER ================= */
+    const invoiceCount = await Invoice.countDocuments();
+
+    const invoiceNumber = `INV-${month.replace(
+      "-",
+      ""
+    )}-${String(invoiceCount + 1).padStart(6, "0")}`;
+
+    /* ================= CREATE INVOICE ================= */
+    const invoice = await Invoice.create({
+      invoiceNumber,
+      parentId,
+      childId: child._id,
+      driverId,
+
+      month,
+      generatedAt: new Date(),
+
+      completedDays,
+
+      totalDistance: Number(
+        bill.totalDistance.toFixed(2)
+      ),
+
+      ratePerKm: Number(
+        billing.ratePerKm.toFixed(2)
+      ),
+
+      baseAmount: Number(
+        bill.baseAmount.toFixed(2)
+      ),
+
+      platformCommission: Number(
+        bill.platformCommission.toFixed(2)
+      ),
+
+      totalAmount: Number(
+        bill.totalAmount.toFixed(2)
+      ),
+
+      dueDate,
+
+      status: "Pending",
+      paymentStatus: "Pending",
+      paymentMethod: null,
+    });
+
+    const populatedInvoice = await Invoice.findById(invoice._id)
+      .populate("parentId", "name email phone")
+      .populate(
+        "childId",
+        "name schoolName pickupLocation dropoffLocation"
+      );
+
+    return res.status(201).json({
+      success: true,
+      message: "Invoice generated successfully",
+      data: populatedInvoice,
+    });
+  } catch (error) {
+    console.error("Invoice Generation Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+/* ==================================================
+   GENERATE MONTHLY INVOICES FOR ALL CHILDREN
 ================================================== */
 export const generateAllInvoices = async (req, res) => {
   try {
@@ -188,7 +304,7 @@ export const generateAllInvoices = async (req, res) => {
     let invoiceCount = await Invoice.countDocuments();
 
     for (const child of children) {
-      /* ================= CHECK DUPLICATE ================= */
+      /* ================= DUPLICATE CHECK ================= */
       const existingInvoice = await Invoice.findOne({
         childId: child._id,
         month,
@@ -230,7 +346,6 @@ export const generateAllInvoices = async (req, res) => {
       /* ================= CREATE INVOICE ================= */
       await Invoice.create({
         invoiceNumber,
-
         parentId: child.parentId,
         childId: child._id,
         driverId: child.driverId,
@@ -286,22 +401,21 @@ export const generateAllInvoices = async (req, res) => {
     });
   }
 };
-
 /* ==================================================
    GET DRIVER INVOICES
 ================================================== */
-
 export const getDriverInvoices = async (req, res) => {
   try {
     const { driverId } = req.params;
 
     const invoices = await Invoice.find({ driverId })
-      .populate("childId", "name")
-      .populate("parentId", "name")
+      .populate("childId", "name school")
+      .populate("parentId", "name email phone")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
+      count: invoices.length,
       data: invoices,
     });
   } catch (error) {
