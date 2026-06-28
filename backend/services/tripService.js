@@ -280,7 +280,7 @@ export const pickupStudentService = async (tripId, io) => {
     await trip.save();
 
     await Child.findByIdAndUpdate(trip.child._id, {
-      status: "picked_up",
+      status: "onboard",
     });
 
     await sendNotification({
