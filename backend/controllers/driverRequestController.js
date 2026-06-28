@@ -6,7 +6,6 @@ import Driver from "../models/Driver.js";
 /* ==================================================
    DISTANCE CALCULATOR (HAVERSINE)
 ================================================== */
-
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
 
@@ -26,7 +25,6 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
 /* ==================================================
    CREATE DRIVER REQUEST
 ================================================== */
-
 export const createRequest = async (req, res) => {
   try {
     const { parentId, childId } = req.body;
@@ -67,26 +65,21 @@ export const createRequest = async (req, res) => {
       message: "Driver request submitted successfully.",
       data: request,
     });
-
   } catch (error) {
-
     console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
 /* ==================================================
    GET ALL REQUESTS WITH NEAREST DRIVERS
 ================================================== */
-
 export const getAllRequests = async (req, res) => {
   try {
-
     const requests = await DriverRequest.find()
       .populate("parentId")
       .populate("childId", "name")
@@ -96,30 +89,41 @@ export const getAllRequests = async (req, res) => {
       status: "approved",
     });
 
-    const data = requests.map((request) => {
+    const data = [];
+
+    for (const request of requests) {
+      // Parent deleted -> remove orphan request
+      if (!request.parentId) {
+        await DriverRequest.findByIdAndDelete(request._id);
+        continue;
+      }
 
       const parent = request.parentId;
 
       let nearestDrivers = [];
 
       if (
-        parent?.homeLocation?.lat &&
-        parent?.homeLocation?.lng
+        parent.homeLocation?.coordinates?.length === 2
       ) {
+        const parentLng = parent.homeLocation.coordinates[0];
+        const parentLat = parent.homeLocation.coordinates[1];
 
         nearestDrivers = approvedDrivers
           .filter(
             (driver) =>
-              driver.homeLocation?.lat &&
-              driver.homeLocation?.lng
+              driver.homeLocation?.coordinates?.length === 2
           )
           .map((driver) => {
+            const driverLng =
+              driver.homeLocation.coordinates[0];
+            const driverLat =
+              driver.homeLocation.coordinates[1];
 
             const distance = getDistance(
-              parent.homeLocation.lat,
-              parent.homeLocation.lng,
-              driver.homeLocation.lat,
-              driver.homeLocation.lng
+              parentLat,
+              parentLng,
+              driverLat,
+              driverLng
             );
 
             return {
@@ -131,44 +135,36 @@ export const getAllRequests = async (req, res) => {
               address: driver.address,
               distance: Number(distance.toFixed(2)),
             };
-
           })
           .sort((a, b) => a.distance - b.distance)
           .slice(0, 5);
-
       }
 
-      return {
+      data.push({
         ...request.toObject(),
         nearestDrivers,
-      };
-
-    });
+      });
+    }
 
     return res.status(200).json({
       success: true,
       data,
     });
-
   } catch (error) {
-
     console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
 
 /* ==================================================
    ASSIGN DRIVER
 ================================================== */
-
 export const assignDriver = async (req, res) => {
   try {
-
     const { driverId } = req.body;
 
     if (!driverId) {
@@ -200,12 +196,9 @@ export const assignDriver = async (req, res) => {
 
     await request.save();
 
-    await Parent.findByIdAndUpdate(
-      request.parentId,
-      {
-        driverId,
-      }
-    );
+    await Parent.findByIdAndUpdate(request.parentId, {
+      driverId,
+    });
 
     await Child.updateMany(
       {
@@ -227,15 +220,12 @@ export const assignDriver = async (req, res) => {
       message: "Driver assigned successfully.",
       data: request,
     });
-
   } catch (error) {
-
     console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
-
   }
 };
