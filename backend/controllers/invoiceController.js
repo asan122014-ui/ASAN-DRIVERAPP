@@ -154,14 +154,14 @@ export const markInvoicePaid = async (req, res) => {
 };
 
 /* ==================================================
-   GENERATE MONTHLY INVOICE
+   GENERATE MONTHLY INVOICES FOR ALL CHILDREN
 ================================================== */
-export const generateInvoice = async (req, res) => {
+export const generateAllInvoices = async (req, res) => {
   try {
-    const { parentId, childId, driverId, month } = req.body;
+    const month =
+      req.body.month || new Date().toISOString().slice(0, 7);
 
     /* ================= BILLING SETTINGS ================= */
-
     const billing = await BillingSettings.findOne();
 
     if (!billing) {
@@ -171,132 +171,114 @@ export const generateInvoice = async (req, res) => {
       });
     }
 
-    /* ================= CHILD ================= */
+    /* ================= GET ALL CHILDREN ================= */
+    const children = await Child.find();
 
-    const child = await Child.findById(childId);
-
-    if (!child) {
+    if (children.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Child not found",
+        message: "No children found",
       });
     }
 
-    /* ================= DUPLICATE CHECK ================= */
+    let generated = 0;
+    let skipped = 0;
 
-    const existingInvoice = await Invoice.findOne({
-      childId: child._id,
-      month,
-    });
+    // Get current invoice count once
+    let invoiceCount = await Invoice.countDocuments();
 
-    if (existingInvoice) {
-      return res.status(400).json({
-        success: false,
-        message: "Invoice already generated for this month",
+    for (const child of children) {
+      /* ================= DUPLICATE CHECK ================= */
+      const exists = await Invoice.findOne({
+        childId: child._id,
+        month,
       });
-    }
 
-    /* ================= ROUTE DISTANCE ================= */
+      if (exists) {
+        skipped++;
+        continue;
+      }
 
-    const oneWayDistance = Number(child.routeDistance || 0);
+      /* ================= COMPLETED TRIPS ================= */
+      const completedDays = await Trip.countDocuments({
+        child: child._id,
+        status: "completed",
+      });
 
-    /* ================= COMPLETED TRIPS ================= */
+      /* ================= BILL CALCULATION ================= */
+      const bill = calculateInvoice({
+        completedDays,
+        oneWayDistance: Number(child.routeDistance || 0),
+        ratePerKm: billing.ratePerKm,
+        platformCommission: billing.platformCommission,
+      });
 
-    const completedDays = await Trip.countDocuments({
-      child: child._id,
-      status: "completed",
-    });
-
-    /* ================= BILL CALCULATION ================= */
-
-    const bill = calculateInvoice({
-      completedDays,
-      oneWayDistance,
-      ratePerKm: billing.ratePerKm,
-      platformCommission: billing.platformCommission,
-    });
-
-    /* ================= DUE DATE ================= */
-
-    const dueDate = new Date();
-
-    dueDate.setDate(
-      dueDate.getDate() + billing.paymentDueDays
-    );
-
-    /* ================= INVOICE NUMBER ================= */
-
-    const totalInvoices =
-      await Invoice.countDocuments();
-
-    const invoiceNumber = `INV-${month.replace(
-      "-",
-      ""
-    )}-${String(totalInvoices + 1).padStart(6, "0")}`;
-
-    /* ================= CREATE INVOICE ================= */
-
-    const invoice = await Invoice.create({
-      invoiceNumber,
-
-      parentId,
-      childId: child._id,
-      driverId,
-
-      month,
-
-      generatedAt: new Date(),
-
-      completedDays,
-
-      totalDistance: Number(
-        bill.totalDistance.toFixed(2)
-      ),
-
-      ratePerKm: Number(
-        billing.ratePerKm.toFixed(2)
-      ),
-
-      baseAmount: Number(
-        bill.baseAmount.toFixed(2)
-      ),
-
-      platformCommission: Number(
-        bill.platformCommission.toFixed(2)
-      ),
-
-      totalAmount: Number(
-        bill.totalAmount.toFixed(2)
-      ),
-
-      dueDate,
-
-      status: "Pending",
-
-      paymentStatus: "Pending",
-
-      paymentMethod: null,
-    });
-
-    const populatedInvoice = await Invoice.findById(
-      invoice._id
-    )
-      .populate("parentId", "name email phone")
-      .populate(
-        "childId",
-        "name schoolName pickupLocation dropoffLocation"
+      /* ================= DUE DATE ================= */
+      const dueDate = new Date();
+      dueDate.setDate(
+        dueDate.getDate() + billing.paymentDueDays
       );
 
-    return res.status(201).json({
+      /* ================= INVOICE NUMBER ================= */
+      invoiceCount++;
+
+      const invoiceNumber = `INV-${month.replace(
+        "-",
+        ""
+      )}-${String(invoiceCount).padStart(6, "0")}`;
+
+      /* ================= CREATE INVOICE ================= */
+      await Invoice.create({
+        invoiceNumber,
+
+        parentId: child.parentId,
+        childId: child._id,
+        driverId: child.driverId,
+
+        month,
+        generatedAt: new Date(),
+
+        completedDays,
+
+        totalDistance: Number(
+          bill.totalDistance.toFixed(2)
+        ),
+
+        ratePerKm: Number(
+          billing.ratePerKm.toFixed(2)
+        ),
+
+        baseAmount: Number(
+          bill.baseAmount.toFixed(2)
+        ),
+
+        platformCommission: Number(
+          bill.platformCommission.toFixed(2)
+        ),
+
+        totalAmount: Number(
+          bill.totalAmount.toFixed(2)
+        ),
+
+        dueDate,
+
+        status: "Pending",
+        paymentStatus: "Pending",
+        paymentMethod: null,
+      });
+
+      generated++;
+    }
+
+    return res.status(200).json({
       success: true,
-      message: "Invoice generated successfully",
-      data: populatedInvoice,
+      message: "Monthly invoices generated successfully",
+      generated,
+      skipped,
+      totalChildren: children.length,
     });
   } catch (error) {
-    console.error(
-      "Invoice Generation Error:",
-      error
-    );
+    console.error("Generate All Invoices:", error);
 
     return res.status(500).json({
       success: false,
@@ -313,6 +295,7 @@ export const generateAllInvoices = async (req, res) => {
     const month =
       req.body.month || new Date().toISOString().slice(0, 7);
 
+    /* ================= BILLING SETTINGS ================= */
     const billing = await BillingSettings.findOne();
 
     if (!billing) {
@@ -322,66 +305,100 @@ export const generateAllInvoices = async (req, res) => {
       });
     }
 
+    /* ================= GET ALL CHILDREN ================= */
     const children = await Child.find();
+
+    if (children.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No children found",
+      });
+    }
 
     let generated = 0;
     let skipped = 0;
 
+    /* ================= CURRENT INVOICE COUNT ================= */
+    let invoiceCount = await Invoice.countDocuments();
+
     for (const child of children) {
-      const exists = await Invoice.findOne({
+      /* ================= CHECK DUPLICATE ================= */
+      const existingInvoice = await Invoice.findOne({
         childId: child._id,
         month,
       });
 
-      if (exists) {
+      if (existingInvoice) {
         skipped++;
         continue;
       }
 
+      /* ================= COMPLETED TRIPS ================= */
       const completedDays = await Trip.countDocuments({
         child: child._id,
         status: "completed",
       });
 
-      const oneWayDistance = Number(child.routeDistance || 0);
-
+      /* ================= BILL CALCULATION ================= */
       const bill = calculateInvoice({
         completedDays,
-        oneWayDistance,
+        oneWayDistance: Number(child.routeDistance || 0),
         ratePerKm: billing.ratePerKm,
         platformCommission: billing.platformCommission,
       });
 
+      /* ================= DUE DATE ================= */
       const dueDate = new Date();
       dueDate.setDate(
         dueDate.getDate() + billing.paymentDueDays
       );
 
-      const totalInvoices = await Invoice.countDocuments();
+      /* ================= INVOICE NUMBER ================= */
+      invoiceCount++;
 
       const invoiceNumber = `INV-${month.replace(
         "-",
         ""
-      )}-${String(totalInvoices + 1).padStart(6, "0")}`;
+      )}-${String(invoiceCount).padStart(6, "0")}`;
 
+      /* ================= CREATE INVOICE ================= */
       await Invoice.create({
         invoiceNumber,
-        parentId: child.parent,
+
+        parentId: child.parentId,
         childId: child._id,
         driverId: child.driverId,
+
         month,
         generatedAt: new Date(),
+
         completedDays,
-        totalDistance: Number(bill.totalDistance.toFixed(2)),
-        ratePerKm: Number(billing.ratePerKm.toFixed(2)),
-        baseAmount: Number(bill.baseAmount.toFixed(2)),
+
+        totalDistance: Number(
+          bill.totalDistance.toFixed(2)
+        ),
+
+        ratePerKm: Number(
+          billing.ratePerKm.toFixed(2)
+        ),
+
+        baseAmount: Number(
+          bill.baseAmount.toFixed(2)
+        ),
+
         platformCommission: Number(
           bill.platformCommission.toFixed(2)
         ),
-        totalAmount: Number(bill.totalAmount.toFixed(2)),
+
+        totalAmount: Number(
+          bill.totalAmount.toFixed(2)
+        ),
+
         dueDate,
+
         status: "Pending",
         paymentStatus: "Pending",
+        paymentMethod: null,
       });
 
       generated++;
@@ -389,9 +406,10 @@ export const generateAllInvoices = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `${generated} invoices generated successfully`,
+      message: "Monthly invoices generated successfully",
       generated,
       skipped,
+      totalChildren: children.length,
     });
   } catch (error) {
     console.error("Generate All Invoices:", error);
