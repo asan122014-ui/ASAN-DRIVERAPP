@@ -189,8 +189,8 @@ router.delete("/:id", async (req, res) => {
 router.get("/driver/:driverId", async (req, res) => {
   try {
     const children = await Child.find({
-      driverId: String(req.params.driverId),
-    });
+  driverId: String(req.params.driverId),
+}).sort({ createdAt: 1 });
 
     res.json({
       success: true,
