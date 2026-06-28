@@ -1,28 +1,48 @@
+/* ==================================================
+   BILLING CALCULATION SERVICE
+================================================== */
+
 export const calculateInvoice = ({
-  completedDays,
-  oneWayDistance,
-  ratePerKm,
-  platformCommission,
+  completedDays = 0,
+  oneWayDistance = 0,
+  ratePerKm = 0,
+  platformCommission = 0,
 }) => {
-  // Daily distance (pickup + drop)
-  const dailyDistance = oneWayDistance * 2;
+  /* ================= DAILY DISTANCE ================= */
 
-  // Monthly distance
-  const totalDistance = dailyDistance * completedDays;
+  const dailyDistance = Number(
+    (oneWayDistance * 2).toFixed(2)
+  );
 
-  // Base fare
-  const baseAmount = totalDistance * ratePerKm;
+  /* ================= TOTAL DISTANCE ================= */
 
-  // Platform commission
-  const commissionAmount =
-    (baseAmount * platformCommission) / 100;
+  const totalDistance = Number(
+    (dailyDistance * completedDays).toFixed(2)
+  );
 
-  // Final bill
-  const totalAmount = baseAmount + commissionAmount;
+  /* ================= BASE AMOUNT ================= */
+
+  const baseAmount = Number(
+    (totalDistance * ratePerKm).toFixed(2)
+  );
+
+  /* ================= PLATFORM COMMISSION ================= */
+
+  const commissionAmount = Number(
+    ((baseAmount * platformCommission) / 100).toFixed(2)
+  );
+
+  /* ================= FINAL AMOUNT ================= */
+
+  const totalAmount = Number(
+    (baseAmount + commissionAmount).toFixed(2)
+  );
 
   return {
+    completedDays,
     dailyDistance,
     totalDistance,
+    ratePerKm: Number(ratePerKm.toFixed(2)),
     baseAmount,
     platformCommission: commissionAmount,
     totalAmount,
