@@ -1,22 +1,33 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import twilio from "twilio";
+import NodeGeocoder from "node-geocoder";
+
 import Driver from "../models/Driver.js";
-import Parent from "../models/Parent.js"; // 🔥 IMPORTANT
+import Parent from "../models/Parent.js";
 import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
 
+/* ================= GEOCODER ================= */
+
+const geocoder = NodeGeocoder({
+  provider: "openstreetmap",
+});
+
 /* ================= TWILIO ================= */
+
 const client = twilio(
   process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
 /* ================= OTP STORE ================= */
+
 const otpStore = new Map();
 
 /* ================= DRIVER SIGNUP ================= */
+
 router.post(
   "/signup",
   upload.fields([
@@ -27,7 +38,7 @@ router.post(
     { name: "insurance", maxCount: 1 },
     { name: "idFront", maxCount: 1 },
     { name: "idBack", maxCount: 1 },
-    { name: "profilePhoto", maxCount: 1 }
+    { name: "profilePhoto", maxCount: 1 },
   ]),
   async (req, res) => {
     try {
@@ -39,26 +50,57 @@ router.post(
         address,
         vehicleNumber,
         vehicleType,
-        licenseNumber
+        licenseNumber,
       } = req.body;
 
-      if (!name || !phone || !email || !password || !address || !vehicleNumber || !vehicleType || !licenseNumber) {
+      if (
+        !name ||
+        !phone ||
+        !email ||
+        !password ||
+        !address ||
+        !vehicleNumber ||
+        !vehicleType ||
+        !licenseNumber
+      ) {
         return res.status(400).json({
           success: false,
-          message: "All fields required"
+          message: "All fields required",
         });
       }
 
       const existing = await Driver.findOne({
-        $or: [{ email }, { phone }]
+        $or: [{ email }, { phone }],
       });
 
       if (existing) {
         return res.status(400).json({
           success: false,
-          message: "Driver already exists"
+          message: "Driver already exists",
         });
       }
+
+      /* ================= GET LAT/LNG ================= */
+
+      let homeLocation = {
+        lat: null,
+        lng: null,
+      };
+
+      try {
+        const result = await geocoder.geocode(address);
+
+        if (result.length > 0) {
+          homeLocation = {
+            lat: result[0].latitude,
+            lng: result[0].longitude,
+          };
+        }
+      } catch (err) {
+        console.log("Geocoding failed:", err.message);
+      }
+
+      /* ================= CREATE DRIVER ================= */
 
       const driver = new Driver({
         name,
@@ -66,9 +108,12 @@ router.post(
         email,
         password,
         address,
+        homeLocation,
+
         vehicleNumber,
         vehicleType,
         licenseNumber,
+
         licenseFront: req.files.licenseFront[0].path,
         licenseBack: req.files.licenseBack[0].path,
         rcFront: req.files.rcFront[0].path,
@@ -77,50 +122,57 @@ router.post(
         idFront: req.files.idFront[0].path,
         idBack: req.files.idBack[0].path,
         profilePhoto: req.files.profilePhoto[0].path,
-        status: "pending"
+
+        status: "pending",
       });
 
-      driver.driverId = `ASAN-${driver._id.toString().slice(-6).toUpperCase()}`;
+      driver.driverId = `ASAN-${driver._id
+        .toString()
+        .slice(-6)
+        .toUpperCase()}`;
 
       await driver.save();
 
       const data = driver.toObject();
       delete data.password;
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: "Signup successful",
-        driver: data
+        driver: data,
       });
-
     } catch (error) {
       console.error(error);
-      res.status(500).json({
+
+      return res.status(500).json({
         success: false,
-        message: "Signup failed"
+        message: "Signup failed",
       });
     }
   }
 );
 
 /* ================= LOGIN ================= */
+
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const driver = await Driver.findOne({ email }).select("+password");
+    const driver = await Driver.findOne({
+      email,
+    }).select("+password");
 
     if (!driver) {
       return res.status(400).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
     if (driver.status !== "approved") {
       return res.status(403).json({
         success: false,
-        message: "Not approved yet"
+        message: "Not approved yet",
       });
     }
 
@@ -129,7 +181,7 @@ router.post("/login", async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
@@ -138,19 +190,20 @@ router.post("/login", async (req, res) => {
 
     res.json({
       success: true,
-      driver: data
+      driver: data,
     });
-
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
-      message: "Login failed"
+      message: "Login failed",
     });
   }
 });
 
-/* ================= SAVE FCM TOKEN (🔥 NEW) ================= */
+/* ================= SAVE FCM TOKEN ================= */
+
 router.post("/save-token", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
@@ -171,21 +224,17 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    /* ✅ ADD TOKEN SAFELY (NO DUPLICATES) */
     if (!parent.fcmTokens.includes(fcmToken)) {
       parent.fcmTokens.push(fcmToken);
       await parent.save();
     }
 
-    console.log("✅ TOKEN SAVED:", fcmToken);
-
     res.json({
       success: true,
       message: "Token saved",
     });
-
   } catch (error) {
-    console.error("❌ SAVE TOKEN ERROR:", error);
+    console.error(error);
 
     res.status(500).json({
       success: false,
@@ -194,7 +243,8 @@ router.post("/save-token", async (req, res) => {
   }
 });
 
-/* ================= OTP ================= */
+/* ================= SEND OTP ================= */
+
 router.post("/send-otp", async (req, res) => {
   try {
     const { phone } = req.body;
@@ -203,24 +253,28 @@ router.post("/send-otp", async (req, res) => {
 
     otpStore.set(phone, {
       otp,
-      expires: Date.now() + 5 * 60 * 1000
+      expires: Date.now() + 5 * 60 * 1000,
     });
 
     await client.messages.create({
       body: `Your OTP is ${otp}`,
       from: process.env.TWILIO_PHONE,
-      to: `+91${phone}`
+      to: `+91${phone}`,
     });
 
-    res.json({ success: true, message: "OTP sent" });
-
+    res.json({
+      success: true,
+      message: "OTP sent",
+    });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "OTP failed"
+      message: "OTP failed",
     });
   }
 });
+
+/* ================= VERIFY OTP ================= */
 
 router.post("/verify-otp", (req, res) => {
   const { phone, otp } = req.body;
@@ -230,41 +284,47 @@ router.post("/verify-otp", (req, res) => {
   if (!stored || stored.expires < Date.now()) {
     return res.status(400).json({
       success: false,
-      message: "OTP expired"
+      message: "OTP expired",
     });
   }
 
   if (stored.otp == otp) {
     otpStore.delete(phone);
-    return res.json({ success: true });
+
+    return res.json({
+      success: true,
+    });
   }
 
   res.status(400).json({
     success: false,
-    message: "Invalid OTP"
+    message: "Invalid OTP",
   });
 });
 
 /* ================= GET DRIVER ================= */
+
 router.get("/by-id/:driverId", async (req, res) => {
   try {
-    const driver = await Driver
-      .findOne({ driverId: req.params.driverId })
-      .select("-password");
+    const driver = await Driver.findOne({
+      driverId: req.params.driverId,
+    }).select("-password");
 
     if (!driver) {
       return res.status(404).json({
         success: false,
-        message: "Driver not found"
+        message: "Driver not found",
       });
     }
 
-    res.json({ success: true, driver });
-
+    res.json({
+      success: true,
+      driver,
+    });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Server error"
+      message: "Server error",
     });
   }
 });
