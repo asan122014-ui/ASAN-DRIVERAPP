@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 const driverSchema = new mongoose.Schema(
   {
     /* ================= PERSONAL DETAILS ================= */
+
     name: {
       type: String,
       required: true,
@@ -37,18 +38,23 @@ const driverSchema = new mongoose.Schema(
       required: true,
     },
 
+    /* ================= HOME LOCATION ================= */
+
     homeLocation: {
-  lat: {
-    type: Number,
-    default: null,
-  },
-  lng: {
-    type: Number,
-    default: null,
-  },
-},
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: [0, 0],
+      },
+    },
 
     /* ================= VEHICLE DETAILS ================= */
+
     vehicleNumber: {
       type: String,
       required: true,
@@ -69,17 +75,54 @@ const driverSchema = new mongoose.Schema(
     },
 
     /* ================= DOCUMENTS ================= */
-    licenseFront: { type: String, required: true },
-    licenseBack: { type: String, required: true },
-    rcFront: { type: String, required: true },
-    rcBack: { type: String, required: true },
-    insurance: { type: String, required: true },
-    idFront: { type: String, required: true },
-    idBack: { type: String, required: true },
-    profilePhoto: { type: String, default: "" },
-profilePhotoPublicId: { type: String, default: "" },
+
+    licenseFront: {
+      type: String,
+      required: true,
+    },
+
+    licenseBack: {
+      type: String,
+      required: true,
+    },
+
+    rcFront: {
+      type: String,
+      required: true,
+    },
+
+    rcBack: {
+      type: String,
+      required: true,
+    },
+
+    insurance: {
+      type: String,
+      required: true,
+    },
+
+    idFront: {
+      type: String,
+      required: true,
+    },
+
+    idBack: {
+      type: String,
+      required: true,
+    },
+
+    profilePhoto: {
+      type: String,
+      default: "",
+    },
+
+    profilePhotoPublicId: {
+      type: String,
+      default: "",
+    },
 
     /* ================= SYSTEM ================= */
+
     driverId: {
       type: String,
       unique: true,
@@ -97,13 +140,15 @@ profilePhotoPublicId: { type: String, default: "" },
       default: null,
     },
 
-    /* ================= 🔥 FCM TOKENS (UPDATED) ================= */
+    /* ================= FCM TOKENS ================= */
+
     fcmTokens: {
-      type: [String], // ✅ MULTI DEVICE SUPPORT
+      type: [String],
       default: [],
     },
 
     /* ================= PERFORMANCE ================= */
+
     rating: {
       type: Number,
       default: 0,
@@ -126,36 +171,42 @@ profilePhotoPublicId: { type: String, default: "" },
       default: 0,
     },
 
-    /* ================= LOCATION (GeoJSON) ================= */
+    /* ================= LIVE LOCATION ================= */
+
     location: {
       type: {
         type: String,
         enum: ["Point"],
         default: "Point",
       },
+
       coordinates: {
-        type: [Number], // [lng, lat]
+        type: [Number], // [longitude, latitude]
         default: [0, 0],
       },
     },
 
     /* ================= LAST LIVE LOCATION ================= */
+
     lastLocation: {
       lat: {
         type: Number,
         default: null,
       },
+
       lng: {
         type: Number,
         default: null,
       },
+
       updatedAt: {
         type: Date,
         default: null,
       },
     },
 
-    /* ================= TRACKING UI ================= */
+    /* ================= DRIVER STATUS ================= */
+
     isOnline: {
       type: Boolean,
       default: false,
@@ -177,16 +228,27 @@ profilePhotoPublicId: { type: String, default: "" },
       default: "",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-/* ================= INDEX ================= */
-driverSchema.index({ location: "2dsphere" });
-driverSchema.index({ homeLocation: "2dsphere" });
-driverSchema.index({ driverId: 1 });
+/* ================= INDEXES ================= */
+
+driverSchema.index({
+  location: "2dsphere",
+});
+
+driverSchema.index({
+  homeLocation: "2dsphere",
+});
+
+driverSchema.index({
+  driverId: 1,
+});
 
 /* ================= HASH PASSWORD ================= */
-/* ================= HASH PASSWORD ================= */
+
 driverSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
 
@@ -199,9 +261,11 @@ driverSchema.pre("save", async function () {
 });
 
 /* ================= COMPARE PASSWORD ================= */
+
 driverSchema.methods.comparePassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
 
 const Driver = mongoose.model("Driver", driverSchema);
+
 export default Driver;
