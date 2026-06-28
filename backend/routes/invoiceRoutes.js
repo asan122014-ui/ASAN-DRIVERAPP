@@ -5,6 +5,7 @@ import {
   getParentInvoices,
   getDriverInvoices,
   generateInvoice,
+  generateAllInvoices,
   markInvoicePaid,
 } from "../controllers/invoiceController.js";
 
@@ -29,6 +30,8 @@ router.get("/driver/:driverId", getDriverInvoices);
    GENERATE INVOICE
 =========================== */
 router.post("/generate", generateInvoice);
+
+router.post("/generate-all", generateAllInvoices);
 
 /* ===========================
    MARK INVOICE AS PAID
