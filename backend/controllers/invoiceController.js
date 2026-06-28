@@ -304,3 +304,30 @@ export const generateInvoice = async (req, res) => {
     });
   }
 };
+
+/* ==================================================
+   GET DRIVER INVOICES
+================================================== */
+
+export const getDriverInvoices = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    const invoices = await Invoice.find({ driverId })
+      .populate("childId", "name")
+      .populate("parentId", "name")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      data: invoices,
+    });
+  } catch (error) {
+    console.error("Driver Invoices:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
