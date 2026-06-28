@@ -35,9 +35,36 @@ const tripSchema = new mongoose.Schema(
     /* ================= STATUS ================= */
     status: {
       type: String,
-      enum: ["in_transit", "completed"],
+      enum: [
+        "waiting",
+        "in_transit",
+        "completed",
+        "cancelled",
+      ],
       default: "in_transit",
       index: true,
+    },
+
+    /* ================= PICKUP ================= */
+    pickupStatus: {
+      type: Boolean,
+      default: false,
+    },
+
+    pickupTime: {
+      type: Date,
+      default: null,
+    },
+
+    /* ================= DROP ================= */
+    dropStatus: {
+      type: Boolean,
+      default: false,
+    },
+
+    dropTime: {
+      type: Date,
+      default: null,
     },
 
     /* ================= DRIVER CHILDREN SNAPSHOT ================= */
@@ -54,7 +81,6 @@ const tripSchema = new mongoose.Schema(
     },
 
     /* ================= UI ================= */
-
     childName: {
       type: String,
       default: "",
@@ -65,6 +91,7 @@ const tripSchema = new mongoose.Schema(
         type: String,
         default: "",
       },
+
       to: {
         type: String,
         default: "",
@@ -103,8 +130,21 @@ const tripSchema = new mongoose.Schema(
   }
 );
 
-tripSchema.index({ driverId: 1, status: 1 });
-tripSchema.index({ parent: 1, createdAt: -1 });
-tripSchema.index({ child: 1, createdAt: -1 });
+/* ================= INDEXES ================= */
+
+tripSchema.index({
+  driverId: 1,
+  status: 1,
+});
+
+tripSchema.index({
+  parent: 1,
+  createdAt: -1,
+});
+
+tripSchema.index({
+  child: 1,
+  createdAt: -1,
+});
 
 export default mongoose.model("Trips", tripSchema);
