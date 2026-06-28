@@ -2,6 +2,7 @@ import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
+import DriverRequest from "../models/DriverRequest.js";
 
 const router = express.Router();
 
@@ -269,13 +270,19 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
+    // Delete all children of this parent
     await Child.deleteMany({
+      parentId: req.params.id,
+    });
+
+    // Delete all driver requests of this parent
+    await DriverRequest.deleteMany({
       parentId: req.params.id,
     });
 
     res.json({
       success: true,
-      message: "Parent deleted successfully",
+      message: "Parent and related records deleted successfully",
     });
   } catch (error) {
     console.error(error);
@@ -285,5 +292,3 @@ router.delete("/:id", async (req, res) => {
     });
   }
 });
-
-export default router;
