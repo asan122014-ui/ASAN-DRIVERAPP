@@ -10,6 +10,7 @@ import {
   getTripProgressService,
   receivePaymentService,
 } from "../services/tripService.js";
+import Trip from "../models/Trips.js";
 
 /* ================= START TRIP ================= */
 export const startTrip = async (req, res) => {
@@ -279,6 +280,41 @@ export const receivePayment = async (req, res) => {
   } catch (error) {
     console.error("Receive Payment:", error);
 
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+/* ================= TRIP DETAILS ================= */
+export const getTripDetails = async (req, res) => {
+  try {
+    const { driverId, tripType, date } = req.params;
+
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+
+    const trips = await Trip.find({
+      driverId,
+      tripType: new RegExp(`^${tripType}$`, "i"),
+      createdAt: {
+        $gte: start,
+        $lte: end,
+      },
+    })
+      .populate("child", "name")
+      .sort({ createdAt: 1 });
+
+    return res.status(200).json({
+      success: true,
+      count: trips.length,
+      data: trips,
+    });
+  } catch (error) {
+    console.error("Trip Details:", error);
     return res.status(500).json({
       success: false,
       message: error.message,
