@@ -377,3 +377,43 @@ export const getTripProgressService = async (driverId) => {
     remainingStudents: total - dropped,
   };
 };
+/* ================= RECEIVE PAYMENT ================= */
+export const receivePaymentService = async (
+  tripId,
+  paymentMethod,
+  io
+) => {
+  try {
+    const trip = await Trips.findById(tripId)
+      .populate("child")
+      .populate("parent");
+
+    if (!trip) {
+      throw new Error("Trip not found");
+    }
+
+    if (trip.paymentReceived) {
+      throw new Error("Payment already received");
+    }
+
+    trip.paymentReceived = true;
+    trip.paymentMethod = paymentMethod;
+    trip.paymentReceivedAt = new Date();
+
+    await trip.save();
+
+    await sendNotification({
+      driverId: trip.driverId,
+      title: "Payment Received",
+      message: `Payment received for ${trip.child.name}`,
+      type: "payment",
+      priority: "low",
+      io,
+    });
+
+    return trip;
+  } catch (error) {
+    console.error("receivePaymentService:", error);
+    throw error;
+  }
+};
