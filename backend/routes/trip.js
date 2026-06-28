@@ -1,33 +1,52 @@
 import express from "express";
+
 import {
   startTrip,
   endTrip,
   getActiveTrip,
   getTripHistory,
-  getParentTripHistory, // 🔥 NEW
+  getParentTripHistory,
+  pickupStudent,
+  dropStudent,
+  getTripProgress,
 } from "../controllers/tripController.js";
-import Parent from "../models/Parent.js";
+
 const router = express.Router();
 
-/* ================= DRIVER ROUTES ================= */
+/* ==================================================
+   DRIVER TRIP
+================================================== */
 
-// START TRIP
+// Start Trip
 router.post("/start", startTrip);
 
-// END TRIP
+// End Trip
 router.post("/end", endTrip);
 
-// ACTIVE TRIP (driver)
+// Active Trip
 router.get("/active/:driverId", getActiveTrip);
 
-// DRIVER TRIP HISTORY (OLD - keep if needed)
+// Driver Trip History
 router.get("/history/:driverId", getTripHistory);
 
+// Trip Progress
+router.get("/progress/:driverId", getTripProgress);
 
-/* ================= 🔥 NEW: PARENT ROUTE ================= */
+/* ==================================================
+   STUDENT ACTIONS
+================================================== */
 
-// ✅ VERY IMPORTANT (this is what you will use in frontend)
+// Pickup Student
+router.post("/pickup/:tripId", pickupStudent);
+
+// Drop Student
+router.post("/drop/:tripId", dropStudent);
+
+/* ==================================================
+   PARENT
+================================================== */
+
+// Parent Trip History
 router.get("/parent/:parentId", getParentTripHistory);
-
 
 export default router;
