@@ -41,15 +41,16 @@ const parentSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // GeoJSON location selected from map
     homeLocation: {
       type: {
         type: String,
         enum: ["Point"],
         default: "Point",
       },
-
       coordinates: {
         type: [Number], // [longitude, latitude]
+        required: true,
         default: [0, 0],
       },
     },
@@ -62,7 +63,7 @@ const parentSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= FCM TOKENS ================= */
+    /* ================= PUSH NOTIFICATIONS ================= */
 
     fcmTokens: {
       type: [String],
@@ -83,22 +84,20 @@ const parentSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
+parentSchema.index({ homeLocation: "2dsphere" });
 parentSchema.index({ driverId: 1 });
-
-parentSchema.index({
-  homeLocation: "2dsphere",
-});
 
 /* ================= HASH PASSWORD ================= */
 
-parentSchema.pre("save", async function () {
-  if (!this.isModified("password")) return;
+parentSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
 
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-  } catch (error) {
-    console.error("Password hash error:", error);
+    next();
+  } catch (err) {
+    next(err);
   }
 });
 
