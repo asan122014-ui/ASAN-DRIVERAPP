@@ -37,18 +37,20 @@ const parentSchema = new mongoose.Schema(
 
     address: {
       type: String,
-      default: "",
+      required: true,
+      trim: true,
     },
 
     homeLocation: {
-      lat: {
-        type: Number,
-        default: null,
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
       },
 
-      lng: {
-        type: Number,
-        default: null,
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: [0, 0],
       },
     },
 
