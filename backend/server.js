@@ -19,6 +19,7 @@ import locationRoutes from "./routes/locationRoutes.js";
 import childRoutes from "./routes/child.js";
 import billingRoutes from "./routes/billingRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
+import driverRequestRoutes from "./routes/driverRequest.js";
 
 /* ================= INIT ================= */
 dotenv.config();
@@ -44,6 +45,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/admin/billing", billingRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/children", childRoutes);
+app.use("/api/driver-request", driverRequestRoutes);
 
 /* ================= SOCKET ================= */
 const io = new Server(server, {
