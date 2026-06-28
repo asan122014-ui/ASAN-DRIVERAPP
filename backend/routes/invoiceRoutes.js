@@ -3,11 +3,11 @@ import express from "express";
 import {
   getAllInvoices,
   getInvoiceById,
- getParentInvoices,
- generateInvoice,
+  getParentInvoices,
+  getDriverInvoices,
+  generateInvoice,
   markInvoicePaid,
 } from "../controllers/invoiceController.js";
-
 const router = express.Router();
 
 /* ===========================
@@ -24,6 +24,11 @@ router.get("/:id", getInvoiceById);
    GET PARENT INVOICES
 =========================== */
 router.get("/parent/:parentId", getParentInvoices);
+
+/* ===========================
+   GET DRIVER INVOICES
+=========================== */
+router.get("/driver/:driverId", getDriverInvoices);
 
 /* ===========================
    GENERATE INVOICE
