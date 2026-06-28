@@ -258,3 +258,122 @@ export const getParentTripsService = async (parentId) => {
     throw error;
   }
 };
+
+/* ================= PICKUP STUDENT ================= */
+export const pickupStudentService = async (tripId, io) => {
+  try {
+    const trip = await Trips.findById(tripId)
+      .populate("child")
+      .populate("parent");
+
+    if (!trip) {
+      throw new Error("Trip not found");
+    }
+
+    if (trip.pickupStatus) {
+      return trip;
+    }
+
+    trip.pickupStatus = true;
+    trip.pickupTime = new Date();
+
+    await trip.save();
+
+    await Child.findByIdAndUpdate(trip.child._id, {
+      status: "picked_up",
+    });
+
+    await sendNotification({
+      driverId: trip.driverId,
+      title: "Student Picked Up",
+      message: `${trip.child.name} has been picked up`,
+      type: "pickup",
+      priority: "medium",
+      io,
+    });
+
+    return trip;
+  } catch (error) {
+    console.error("pickupStudentService:", error);
+    throw error;
+  }
+};
+
+/* ================= DROP STUDENT ================= */
+export const dropStudentService = async (tripId, io) => {
+  try {
+    const trip = await Trips.findById(tripId)
+      .populate("child")
+      .populate("parent");
+
+    if (!trip) {
+      throw new Error("Trip not found");
+    }
+
+    if (trip.dropStatus) {
+      return trip;
+    }
+
+    trip.dropStatus = true;
+    trip.dropTime = new Date();
+
+    await Child.findByIdAndUpdate(trip.child._id, {
+      status: "dropped",
+    });
+
+    // Complete child trip
+    trip.status = "completed";
+
+    if (!trip.endTime) {
+      trip.endTime = new Date();
+    }
+
+    trip.duration = Math.max(
+      1,
+      Math.round(
+        (trip.endTime - trip.startTime) / 60000
+      )
+    );
+
+    await trip.save();
+
+    await sendNotification({
+      driverId: trip.driverId,
+      title: "Student Dropped",
+      message: `${trip.child.name} reached destination`,
+      type: "drop",
+      priority: "medium",
+      io,
+    });
+
+    return trip;
+  } catch (error) {
+    console.error("dropStudentService:", error);
+    throw error;
+  }
+};
+
+/* ================= TRIP PROGRESS ================= */
+export const getTripProgressService = async (driverId) => {
+  const trips = await Trips.find({
+    driverId,
+    status: "in_transit",
+  });
+
+  const total = trips.length;
+
+  const picked = trips.filter(
+    (t) => t.pickupStatus
+  ).length;
+
+  const dropped = trips.filter(
+    (t) => t.dropStatus
+  ).length;
+
+  return {
+    totalStudents: total,
+    pickedStudents: picked,
+    droppedStudents: dropped,
+    remainingStudents: total - dropped,
+  };
+};
