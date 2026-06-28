@@ -2,14 +2,12 @@ import express from "express";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
-import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
 /* ============================================================
    REGISTER PARENT
 ============================================================ */
-
 router.post("/register", async (req, res) => {
   try {
     const {
@@ -51,16 +49,12 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
     const parent = await Parent.create({
       name,
       email: email.trim().toLowerCase(),
       phone,
-      password: hashedPassword,
-
+      password, // Model will hash this
       address,
-
       homeLocation: {
         type: "Point",
         coordinates: [
@@ -78,10 +72,8 @@ router.post("/register", async (req, res) => {
       message: "Parent registered successfully",
       data,
     });
-
   } catch (error) {
     console.error("REGISTER ERROR:", error);
-
     res.status(500).json({
       success: false,
       message: error.message,
@@ -92,10 +84,8 @@ router.post("/register", async (req, res) => {
 /* ============================================================
    LOGIN
 ============================================================ */
-
 router.post("/login", async (req, res) => {
   try {
-
     const { email, password } = req.body;
 
     const parent = await Parent.findOne({
@@ -109,10 +99,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(
-      password,
-      parent.password
-    );
+    const isMatch = await parent.comparePassword(password);
 
     if (!isMatch) {
       return res.status(400).json({
@@ -128,10 +115,8 @@ router.post("/login", async (req, res) => {
       success: true,
       data,
     });
-
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Login failed",
@@ -142,15 +127,12 @@ router.post("/login", async (req, res) => {
 /* ============================================================
    GET ALL PARENTS
 ============================================================ */
-
 router.get("/", async (req, res) => {
   try {
-
     const parents = await Parent.find().select("-password");
 
     const result = await Promise.all(
       parents.map(async (parent) => {
-
         const children = await Child.find({
           parentId: parent._id,
         });
@@ -173,10 +155,8 @@ router.get("/", async (req, res) => {
       success: true,
       data: result,
     });
-
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch parents",
@@ -187,14 +167,9 @@ router.get("/", async (req, res) => {
 /* ============================================================
    ASSIGN DRIVER
 ============================================================ */
-
 router.put("/assign-driver", async (req, res) => {
   try {
-
-    const {
-      parentId,
-      driverId,
-    } = req.body;
+    const { parentId, driverId } = req.body;
 
     if (!parentId || !driverId) {
       return res.status(400).json({
@@ -203,9 +178,7 @@ router.put("/assign-driver", async (req, res) => {
       });
     }
 
-    const driver = await Driver.findOne({
-      driverId,
-    });
+    const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
       return res.status(404).json({
@@ -216,21 +189,13 @@ router.put("/assign-driver", async (req, res) => {
 
     const updated = await Parent.findByIdAndUpdate(
       parentId,
-      {
-        driverId,
-      },
-      {
-        new: true,
-      }
+      { driverId },
+      { new: true }
     ).select("-password");
 
     await Child.updateMany(
-      {
-        parentId,
-      },
-      {
-        driverId,
-      }
+      { parentId },
+      { driverId }
     );
 
     res.json({
@@ -238,10 +203,8 @@ router.put("/assign-driver", async (req, res) => {
       message: "Driver assigned successfully",
       data: updated,
     });
-
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Failed to assign driver",
@@ -252,17 +215,14 @@ router.put("/assign-driver", async (req, res) => {
 /* ============================================================
    UPDATE PARENT
 ============================================================ */
-
 router.put("/:id", async (req, res) => {
   try {
-
     const updates = { ...req.body };
 
     if (
       updates.latitude !== undefined &&
       updates.longitude !== undefined
     ) {
-
       updates.homeLocation = {
         type: "Point",
         coordinates: [
@@ -278,9 +238,7 @@ router.put("/:id", async (req, res) => {
     const updated = await Parent.findByIdAndUpdate(
       req.params.id,
       updates,
-      {
-        new: true,
-      }
+      { new: true }
     ).select("-password");
 
     res.json({
@@ -288,10 +246,8 @@ router.put("/:id", async (req, res) => {
       message: "Parent updated successfully",
       data: updated,
     });
-
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Update failed",
@@ -302,13 +258,9 @@ router.put("/:id", async (req, res) => {
 /* ============================================================
    DELETE PARENT
 ============================================================ */
-
 router.delete("/:id", async (req, res) => {
   try {
-
-    const deleted = await Parent.findByIdAndDelete(
-      req.params.id
-    );
+    const deleted = await Parent.findByIdAndDelete(req.params.id);
 
     if (!deleted) {
       return res.status(404).json({
@@ -325,10 +277,8 @@ router.delete("/:id", async (req, res) => {
       success: true,
       message: "Parent deleted successfully",
     });
-
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Delete failed",
