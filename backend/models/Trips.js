@@ -103,12 +103,29 @@ const tripSchema = new mongoose.Schema(
       default: "--",
     },
 
-    amount: {
-      type: Number,
-      default: 0,
-    },
+   amount: {
+  type: Number,
+  default: 0,
+},
 
-    /* ================= TIME ================= */
+/* ================= PAYMENT ================= */
+paymentReceived: {
+  type: Boolean,
+  default: false,
+},
+
+paymentMethod: {
+  type: String,
+  enum: ["cash", "upi", "card"],
+  default: null,
+},
+
+paymentReceivedAt: {
+  type: Date,
+  default: null,
+},
+
+/* ================= TIME ================= */
 
     startTime: {
       type: Date,
