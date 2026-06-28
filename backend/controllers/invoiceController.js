@@ -306,6 +306,104 @@ export const generateInvoice = async (req, res) => {
 };
 
 /* ==================================================
+   GENERATE INVOICES FOR ALL CHILDREN
+================================================== */
+export const generateAllInvoices = async (req, res) => {
+  try {
+    const month =
+      req.body.month || new Date().toISOString().slice(0, 7);
+
+    const billing = await BillingSettings.findOne();
+
+    if (!billing) {
+      return res.status(404).json({
+        success: false,
+        message: "Billing settings not found",
+      });
+    }
+
+    const children = await Child.find();
+
+    let generated = 0;
+    let skipped = 0;
+
+    for (const child of children) {
+      const exists = await Invoice.findOne({
+        childId: child._id,
+        month,
+      });
+
+      if (exists) {
+        skipped++;
+        continue;
+      }
+
+      const completedDays = await Trip.countDocuments({
+        child: child._id,
+        status: "completed",
+      });
+
+      const oneWayDistance = Number(child.routeDistance || 0);
+
+      const bill = calculateInvoice({
+        completedDays,
+        oneWayDistance,
+        ratePerKm: billing.ratePerKm,
+        platformCommission: billing.platformCommission,
+      });
+
+      const dueDate = new Date();
+      dueDate.setDate(
+        dueDate.getDate() + billing.paymentDueDays
+      );
+
+      const totalInvoices = await Invoice.countDocuments();
+
+      const invoiceNumber = `INV-${month.replace(
+        "-",
+        ""
+      )}-${String(totalInvoices + 1).padStart(6, "0")}`;
+
+      await Invoice.create({
+        invoiceNumber,
+        parentId: child.parent,
+        childId: child._id,
+        driverId: child.driverId,
+        month,
+        generatedAt: new Date(),
+        completedDays,
+        totalDistance: Number(bill.totalDistance.toFixed(2)),
+        ratePerKm: Number(billing.ratePerKm.toFixed(2)),
+        baseAmount: Number(bill.baseAmount.toFixed(2)),
+        platformCommission: Number(
+          bill.platformCommission.toFixed(2)
+        ),
+        totalAmount: Number(bill.totalAmount.toFixed(2)),
+        dueDate,
+        status: "Pending",
+        paymentStatus: "Pending",
+      });
+
+      generated++;
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${generated} invoices generated successfully`,
+      generated,
+      skipped,
+    });
+  } catch (error) {
+    console.error("Generate All Invoices:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* ==================================================
    GET DRIVER INVOICES
 ================================================== */
 
