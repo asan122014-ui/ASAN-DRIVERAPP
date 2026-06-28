@@ -1,10 +1,32 @@
 import DriverRequest from "../models/DriverRequest.js";
 import Parent from "../models/Parent.js";
 import Child from "../models/Child.js";
+import Driver from "../models/Driver.js";
+
+/* ==================================================
+   DISTANCE CALCULATOR (HAVERSINE)
+================================================== */
+
+const getDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
 
 /* ==================================================
    CREATE DRIVER REQUEST
 ================================================== */
+
 export const createRequest = async (req, res) => {
   try {
     const { parentId, childId } = req.body;
@@ -16,7 +38,6 @@ export const createRequest = async (req, res) => {
       });
     }
 
-    // Prevent duplicate pending requests
     const existingRequest = await DriverRequest.findOne({
       parentId,
       status: "Pending",
@@ -35,7 +56,6 @@ export const createRequest = async (req, res) => {
       status: "Pending",
     });
 
-    // Notify admin dashboard
     const io = req.app.get("io");
 
     if (io) {
@@ -49,44 +69,103 @@ export const createRequest = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Create Driver Request:", error);
+
+    console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
+
   }
 };
 
 /* ==================================================
-   GET ALL DRIVER REQUESTS
+   GET ALL REQUESTS WITH NEAREST DRIVERS
 ================================================== */
+
 export const getAllRequests = async (req, res) => {
   try {
 
     const requests = await DriverRequest.find()
-      .populate("parentId", "name email phone")
+      .populate("parentId")
       .populate("childId", "name")
       .sort({ createdAt: -1 });
 
+    const approvedDrivers = await Driver.find({
+      status: "approved",
+    });
+
+    const data = requests.map((request) => {
+
+      const parent = request.parentId;
+
+      let nearestDrivers = [];
+
+      if (
+        parent?.homeLocation?.lat &&
+        parent?.homeLocation?.lng
+      ) {
+
+        nearestDrivers = approvedDrivers
+          .filter(
+            (driver) =>
+              driver.homeLocation?.lat &&
+              driver.homeLocation?.lng
+          )
+          .map((driver) => {
+
+            const distance = getDistance(
+              parent.homeLocation.lat,
+              parent.homeLocation.lng,
+              driver.homeLocation.lat,
+              driver.homeLocation.lng
+            );
+
+            return {
+              _id: driver._id,
+              name: driver.name,
+              driverId: driver.driverId,
+              phone: driver.phone,
+              vehicleNumber: driver.vehicleNumber,
+              address: driver.address,
+              distance: Number(distance.toFixed(2)),
+            };
+
+          })
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 5);
+
+      }
+
+      return {
+        ...request.toObject(),
+        nearestDrivers,
+      };
+
+    });
+
     return res.status(200).json({
       success: true,
-      data: requests,
+      data,
     });
 
   } catch (error) {
-    console.error("Get Driver Requests:", error);
+
+    console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
+
   }
 };
 
 /* ==================================================
    ASSIGN DRIVER
 ================================================== */
+
 export const assignDriver = async (req, res) => {
   try {
 
@@ -115,39 +194,27 @@ export const assignDriver = async (req, res) => {
       });
     }
 
-    /* ================= UPDATE REQUEST ================= */
-
     request.status = "Assigned";
     request.assignedDriverId = driverId;
     request.assignedAt = new Date();
 
     await request.save();
 
-    /* ================= UPDATE PARENT ================= */
-
     await Parent.findByIdAndUpdate(
       request.parentId,
       {
-        $set: {
-          driverId,
-        },
+        driverId,
       }
     );
-
-    /* ================= UPDATE ALL CHILDREN ================= */
 
     await Child.updateMany(
       {
         parentId: request.parentId,
       },
       {
-        $set: {
-          driverId,
-        },
+        driverId,
       }
     );
-
-    /* ================= SOCKET ================= */
 
     const io = req.app.get("io");
 
@@ -162,11 +229,13 @@ export const assignDriver = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Assign Driver:", error);
+
+    console.error(error);
 
     return res.status(500).json({
       success: false,
       message: error.message,
     });
+
   }
 };
