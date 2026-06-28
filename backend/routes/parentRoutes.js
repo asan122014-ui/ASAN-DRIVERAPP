@@ -3,7 +3,6 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import bcrypt from "bcryptjs";
-import geocoder from "../config/geocoder.js";
 
 const router = express.Router();
 
@@ -19,9 +18,19 @@ router.post("/register", async (req, res) => {
       phone,
       password,
       address,
+      latitude,
+      longitude,
     } = req.body;
 
-    if (!name || !email || !phone || !password || !address) {
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !password ||
+      !address ||
+      latitude === undefined ||
+      longitude === undefined
+    ) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
@@ -42,20 +51,6 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    let latitude = null;
-    let longitude = null;
-
-    try {
-      const result = await geocoder.geocode(address);
-
-      if (result.length) {
-        latitude = result[0].latitude;
-        longitude = result[0].longitude;
-      }
-    } catch (err) {
-      console.log("Geocoder failed:", err.message);
-    }
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const parent = await Parent.create({
@@ -63,10 +58,15 @@ router.post("/register", async (req, res) => {
       email: email.trim().toLowerCase(),
       phone,
       password: hashedPassword,
+
       address,
+
       homeLocation: {
-        lat: latitude,
-        lng: longitude,
+        type: "Point",
+        coordinates: [
+          Number(longitude),
+          Number(latitude),
+        ],
       },
     });
 
@@ -95,6 +95,7 @@ router.post("/register", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
+
     const { email, password } = req.body;
 
     const parent = await Parent.findOne({
@@ -148,7 +149,6 @@ router.get("/", async (req, res) => {
     const parents = await Parent.find().select("-password");
 
     const result = await Promise.all(
-
       parents.map(async (parent) => {
 
         const children = await Child.find({
@@ -166,9 +166,7 @@ router.get("/", async (req, res) => {
           children,
           driver,
         };
-
       })
-
     );
 
     res.json({
@@ -177,14 +175,12 @@ router.get("/", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(error);
 
     res.status(500).json({
       success: false,
       message: "Failed to fetch parents",
     });
-
   }
 });
 
@@ -244,14 +240,12 @@ router.put("/assign-driver", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(error);
 
     res.status(500).json({
       success: false,
       message: "Failed to assign driver",
     });
-
   }
 });
 
@@ -264,27 +258,21 @@ router.put("/:id", async (req, res) => {
 
     const updates = { ...req.body };
 
-    if (updates.address) {
+    if (
+      updates.latitude !== undefined &&
+      updates.longitude !== undefined
+    ) {
 
-      try {
+      updates.homeLocation = {
+        type: "Point",
+        coordinates: [
+          Number(updates.longitude),
+          Number(updates.latitude),
+        ],
+      };
 
-        const result = await geocoder.geocode(
-          updates.address
-        );
-
-        if (result.length) {
-
-          updates.homeLocation = {
-            lat: result[0].latitude,
-            lng: result[0].longitude,
-          };
-
-        }
-
-      } catch (err) {
-        console.log("Geocoder failed:", err.message);
-      }
-
+      delete updates.latitude;
+      delete updates.longitude;
     }
 
     const updated = await Parent.findByIdAndUpdate(
@@ -302,14 +290,12 @@ router.put("/:id", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(error);
 
     res.status(500).json({
       success: false,
       message: "Update failed",
     });
-
   }
 });
 
@@ -341,14 +327,12 @@ router.delete("/:id", async (req, res) => {
     });
 
   } catch (error) {
-
     console.error(error);
 
     res.status(500).json({
       success: false,
       message: "Delete failed",
     });
-
   }
 });
 
