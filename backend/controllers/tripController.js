@@ -8,6 +8,7 @@ import {
   pickupStudentService,
   dropStudentService,
   getTripProgressService,
+  receivePaymentService,
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
@@ -249,6 +250,38 @@ export const getParentTripHistory = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch parent trips",
+    });
+  }
+};
+/* ================= RECEIVE PAYMENT ================= */
+export const receivePayment = async (req, res) => {
+  try {
+    const { tripId, paymentMethod } = req.body;
+
+    if (!tripId || !paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        message: "tripId and paymentMethod are required",
+      });
+    }
+
+    const trip = await receivePaymentService(
+      tripId,
+      paymentMethod,
+      req.app.get("io")
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment received successfully",
+      data: trip,
+    });
+  } catch (error) {
+    console.error("Receive Payment:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };
