@@ -37,6 +37,17 @@ const driverSchema = new mongoose.Schema(
       required: true,
     },
 
+    homeLocation: {
+  lat: {
+    type: Number,
+    default: null,
+  },
+  lng: {
+    type: Number,
+    default: null,
+  },
+},
+
     /* ================= VEHICLE DETAILS ================= */
     vehicleNumber: {
       type: String,
@@ -171,6 +182,7 @@ profilePhotoPublicId: { type: String, default: "" },
 
 /* ================= INDEX ================= */
 driverSchema.index({ location: "2dsphere" });
+driverSchema.index({ homeLocation: "2dsphere" });
 driverSchema.index({ driverId: 1 });
 
 /* ================= HASH PASSWORD ================= */
