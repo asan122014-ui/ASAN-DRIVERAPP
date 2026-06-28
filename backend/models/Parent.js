@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 const parentSchema = new mongoose.Schema(
   {
     /* ================= BASIC DETAILS ================= */
-
     name: {
       type: String,
       required: true,
@@ -41,7 +40,6 @@ const parentSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // GeoJSON location selected from map
     homeLocation: {
       type: {
         type: String,
@@ -63,7 +61,7 @@ const parentSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= PUSH NOTIFICATIONS ================= */
+    /* ================= PUSH TOKENS ================= */
 
     fcmTokens: {
       type: [String],
@@ -84,21 +82,21 @@ const parentSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
-parentSchema.index({ homeLocation: "2dsphere" });
-parentSchema.index({ driverId: 1 });
+parentSchema.index({
+  homeLocation: "2dsphere",
+});
+
+parentSchema.index({
+  driverId: 1,
+});
 
 /* ================= HASH PASSWORD ================= */
 
-parentSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+parentSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
 
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (err) {
-    next(err);
-  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
 /* ================= COMPARE PASSWORD ================= */
