@@ -5,6 +5,9 @@ import {
   getDriverTripsService,
   getActiveTripService,
   getParentTripsService,
+  pickupStudentService,
+  dropStudentService,
+  getTripProgressService,
 } from "../services/tripService.js";
 
 /* ================= START TRIP ================= */
@@ -86,6 +89,79 @@ export const endTrip = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to end trip",
+    });
+  }
+};
+
+/* ================= PICKUP STUDENT ================= */
+export const pickupStudent = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    const trip = await pickupStudentService(
+      tripId,
+      req.app.get("io")
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Student picked up successfully",
+      data: trip,
+    });
+  } catch (error) {
+    console.error("Pickup Student:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* ================= DROP STUDENT ================= */
+export const dropStudent = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    const trip = await dropStudentService(
+      tripId,
+      req.app.get("io")
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Student dropped successfully",
+      data: trip,
+    });
+  } catch (error) {
+    console.error("Drop Student:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* ================= TRIP PROGRESS ================= */
+export const getTripProgress = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    const progress = await getTripProgressService(
+      driverId
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: progress,
+    });
+  } catch (error) {
+    console.error("Trip Progress:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };
