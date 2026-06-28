@@ -3,23 +3,36 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import bcrypt from "bcryptjs";
+import geocoder from "../config/geocoder.js";
 
 const router = express.Router();
 
-/* ================= REGISTER ================= */
+/* ============================================================
+   REGISTER PARENT
+============================================================ */
+
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      password,
+      address,
+    } = req.body;
 
-    if (!name || !email || !phone || !password) {
+    if (!name || !email || !phone || !password || !address) {
       return res.status(400).json({
         success: false,
-        message: "All fields required",
+        message: "All fields are required",
       });
     }
 
     const existing = await Parent.findOne({
-      $or: [{ email }, { phone }],
+      $or: [
+        { email: email.trim().toLowerCase() },
+        { phone },
+      ],
     });
 
     if (existing) {
@@ -29,6 +42,20 @@ router.post("/register", async (req, res) => {
       });
     }
 
+    let latitude = null;
+    let longitude = null;
+
+    try {
+      const result = await geocoder.geocode(address);
+
+      if (result.length) {
+        latitude = result[0].latitude;
+        longitude = result[0].longitude;
+      }
+    } catch (err) {
+      console.log("Geocoder failed:", err.message);
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const parent = await Parent.create({
@@ -36,6 +63,11 @@ router.post("/register", async (req, res) => {
       email: email.trim().toLowerCase(),
       phone,
       password: hashedPassword,
+      address,
+      homeLocation: {
+        lat: latitude,
+        lng: longitude,
+      },
     });
 
     const data = parent.toObject();
@@ -43,10 +75,13 @@ router.post("/register", async (req, res) => {
 
     res.status(201).json({
       success: true,
+      message: "Parent registered successfully",
       data,
     });
+
   } catch (error) {
-    console.error("❌ REGISTER ERROR:", error.message);
+    console.error("REGISTER ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: error.message,
@@ -54,7 +89,10 @@ router.post("/register", async (req, res) => {
   }
 });
 
-/* ================= LOGIN ================= */
+/* ============================================================
+   LOGIN
+============================================================ */
+
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -70,7 +108,10 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(password, parent.password);
+    const isMatch = await bcrypt.compare(
+      password,
+      parent.password
+    );
 
     if (!isMatch) {
       return res.status(400).json({
@@ -86,8 +127,10 @@ router.post("/login", async (req, res) => {
       success: true,
       data,
     });
-  } catch (err) {
-    console.error("❌ LOGIN ERROR:", err);
+
+  } catch (error) {
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Login failed",
@@ -95,44 +138,67 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= GET ALL PARENTS (WITH CHILDREN + DRIVER) ================= */
+/* ============================================================
+   GET ALL PARENTS
+============================================================ */
+
 router.get("/", async (req, res) => {
   try {
+
     const parents = await Parent.find().select("-password");
 
-    const enrichedParents = await Promise.all(
-      parents.map(async (p) => {
-        const children = await Child.find({ parentId: p._id });
+    const result = await Promise.all(
 
-        const driver = p.driverId
-          ? await Driver.findOne({ driverId: p.driverId }).select("-password")
+      parents.map(async (parent) => {
+
+        const children = await Child.find({
+          parentId: parent._id,
+        });
+
+        const driver = parent.driverId
+          ? await Driver.findOne({
+              driverId: parent.driverId,
+            }).select("-password")
           : null;
 
         return {
-          ...p.toObject(),
+          ...parent.toObject(),
           children,
           driver,
         };
+
       })
+
     );
 
     res.json({
       success: true,
-      data: enrichedParents,
+      data: result,
     });
-  } catch (err) {
-    console.error("❌ FETCH PARENTS ERROR:", err);
+
+  } catch (error) {
+
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Failed to fetch parents",
     });
+
   }
 });
 
-/* ================= ASSIGN DRIVER ================= */
+/* ============================================================
+   ASSIGN DRIVER
+============================================================ */
+
 router.put("/assign-driver", async (req, res) => {
   try {
-    const { parentId, driverId } = req.body;
+
+    const {
+      parentId,
+      driverId,
+    } = req.body;
 
     if (!parentId || !driverId) {
       return res.status(400).json({
@@ -141,7 +207,9 @@ router.put("/assign-driver", async (req, res) => {
       });
     }
 
-    const driver = await Driver.findOne({ driverId });
+    const driver = await Driver.findOne({
+      driverId,
+    });
 
     if (!driver) {
       return res.status(404).json({
@@ -152,50 +220,109 @@ router.put("/assign-driver", async (req, res) => {
 
     const updated = await Parent.findByIdAndUpdate(
       parentId,
-      { driverId },
-      { new: true }
+      {
+        driverId,
+      },
+      {
+        new: true,
+      }
+    ).select("-password");
+
+    await Child.updateMany(
+      {
+        parentId,
+      },
+      {
+        driverId,
+      }
     );
 
     res.json({
       success: true,
+      message: "Driver assigned successfully",
       data: updated,
     });
 
-  } catch (err) {
-    console.error("❌ ASSIGN DRIVER ERROR:", err);
+  } catch (error) {
+
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Failed to assign driver",
     });
+
   }
 });
 
-/* ================= UPDATE PARENT ================= */
+/* ============================================================
+   UPDATE PARENT
+============================================================ */
+
 router.put("/:id", async (req, res) => {
   try {
+
+    const updates = { ...req.body };
+
+    if (updates.address) {
+
+      try {
+
+        const result = await geocoder.geocode(
+          updates.address
+        );
+
+        if (result.length) {
+
+          updates.homeLocation = {
+            lat: result[0].latitude,
+            lng: result[0].longitude,
+          };
+
+        }
+
+      } catch (err) {
+        console.log("Geocoder failed:", err.message);
+      }
+
+    }
+
     const updated = await Parent.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      updates,
+      {
+        new: true,
+      }
     ).select("-password");
 
     res.json({
       success: true,
+      message: "Parent updated successfully",
       data: updated,
     });
-  } catch (err) {
-    console.error("❌ UPDATE ERROR:", err);
+
+  } catch (error) {
+
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Update failed",
     });
+
   }
 });
 
-/* ================= DELETE PARENT ================= */
+/* ============================================================
+   DELETE PARENT
+============================================================ */
+
 router.delete("/:id", async (req, res) => {
   try {
-    const deleted = await Parent.findByIdAndDelete(req.params.id);
+
+    const deleted = await Parent.findByIdAndDelete(
+      req.params.id
+    );
 
     if (!deleted) {
       return res.status(404).json({
@@ -204,16 +331,24 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
+    await Child.deleteMany({
+      parentId: req.params.id,
+    });
+
     res.json({
       success: true,
-      message: "Parent deleted",
+      message: "Parent deleted successfully",
     });
-  } catch (err) {
-    console.error("❌ DELETE ERROR:", err);
+
+  } catch (error) {
+
+    console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Delete failed",
     });
+
   }
 });
 
