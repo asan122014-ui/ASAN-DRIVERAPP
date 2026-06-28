@@ -1,19 +1,11 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import twilio from "twilio";
-import NodeGeocoder from "node-geocoder";
-
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
 import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
-
-/* ================= GEOCODER ================= */
-
-const geocoder = NodeGeocoder({
-  provider: "openstreetmap",
-});
 
 /* ================= TWILIO ================= */
 
@@ -48,6 +40,8 @@ router.post(
         email,
         password,
         address,
+        latitude,
+        longitude,
         vehicleNumber,
         vehicleType,
         licenseNumber,
@@ -59,6 +53,8 @@ router.post(
         !email ||
         !password ||
         !address ||
+        latitude === undefined ||
+        longitude === undefined ||
         !vehicleNumber ||
         !vehicleType ||
         !licenseNumber
@@ -80,35 +76,20 @@ router.post(
         });
       }
 
-      /* ================= GET LAT/LNG ================= */
-
-      let homeLocation = {
-        lat: null,
-        lng: null,
-      };
-
-      try {
-        const result = await geocoder.geocode(address);
-
-        if (result.length > 0) {
-          homeLocation = {
-            lat: result[0].latitude,
-            lng: result[0].longitude,
-          };
-        }
-      } catch (err) {
-        console.log("Geocoding failed:", err.message);
-      }
-
-      /* ================= CREATE DRIVER ================= */
-
       const driver = new Driver({
         name,
         phone,
         email,
         password,
         address,
-        homeLocation,
+
+        homeLocation: {
+          type: "Point",
+          coordinates: [
+            Number(longitude),
+            Number(latitude),
+          ],
+        },
 
         vehicleNumber,
         vehicleType,
