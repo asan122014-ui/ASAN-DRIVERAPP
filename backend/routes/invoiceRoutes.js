@@ -1,5 +1,4 @@
 import express from "express";
-
 import {
   getAllInvoices,
   getInvoiceById,
@@ -8,17 +7,13 @@ import {
   generateInvoice,
   markInvoicePaid,
 } from "../controllers/invoiceController.js";
+
 const router = express.Router();
 
 /* ===========================
    GET ALL INVOICES (ADMIN)
 =========================== */
 router.get("/", getAllInvoices);
-
-/* ===========================
-   GET SINGLE INVOICE
-=========================== */
-router.get("/:id", getInvoiceById);
 
 /* ===========================
    GET PARENT INVOICES
@@ -39,5 +34,11 @@ router.post("/generate", generateInvoice);
    MARK INVOICE AS PAID
 =========================== */
 router.put("/:id/pay", markInvoicePaid);
+
+/* ===========================
+   GET SINGLE INVOICE
+   (Keep this LAST)
+=========================== */
+router.get("/:id", getInvoiceById);
 
 export default router;
