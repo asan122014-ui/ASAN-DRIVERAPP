@@ -1,6 +1,7 @@
 import express from "express";
 import axios from "axios";
 import Child from "../models/Child.js";
+import Trips from "../models/Trips.js";
 import { sendNotification } from "../utils/sendNotification.js";
 
 const router = express.Router();
@@ -185,26 +186,41 @@ router.delete("/:id", async (req, res) => {
 });
 
 /* ================= GET BY DRIVER ================= */
-
 router.get("/driver/:driverId", async (req, res) => {
   try {
+    const { driverId } = req.params;
+
     const children = await Child.find({
-  driverId: String(req.params.driverId),
-}).sort({ createdAt: 1 });
+      driverId: String(driverId),
+    }).sort({ createdAt: 1 });
+
+    const trips = await Trips.find({
+      driverId,
+      status: "in_transit",
+    });
+
+    const data = children.map((child) => {
+      const trip = trips.find(
+        (t) => String(t.child) === String(child._id)
+      );
+
+      return {
+        ...child.toObject(),
+        tripId: trip ? trip._id : null,
+      };
+    });
 
     res.json({
       success: true,
-      data: children,
+      data,
     });
-
   } catch (err) {
-
     console.error("❌ Driver fetch error:", err);
 
     res.status(500).json({
       success: false,
+      message: err.message,
     });
-
   }
 });
 
