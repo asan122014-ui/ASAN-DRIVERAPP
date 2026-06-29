@@ -19,7 +19,6 @@ const client = twilio(
 const otpStore = new Map();
 
 /* ================= DRIVER SIGNUP ================= */
-
 router.post(
   "/signup",
   upload.fields([
@@ -61,12 +60,15 @@ router.post(
       ) {
         return res.status(400).json({
           success: false,
-          message: "All fields required",
+          message: "All fields are required",
         });
       }
 
       const existing = await Driver.findOne({
-        $or: [{ email }, { phone }],
+        $or: [
+          { email: email.toLowerCase() },
+          { phone },
+        ],
       });
 
       if (existing) {
@@ -76,33 +78,47 @@ router.post(
         });
       }
 
+      const lat = Number(latitude);
+      const lng = Number(longitude);
+
       const driver = new Driver({
         name,
         phone,
-        email,
+        email: email.toLowerCase(),
         password,
         address,
 
+        // Home Address
         homeLocation: {
           type: "Point",
-          coordinates: [
-            Number(longitude),
-            Number(latitude),
-          ],
+          coordinates: [lng, lat],
+        },
+
+        // Initial Current Location
+        location: {
+          type: "Point",
+          coordinates: [lng, lat],
+        },
+
+        // Last Live Location
+        lastLocation: {
+          lat,
+          lng,
+          updatedAt: new Date(),
         },
 
         vehicleNumber,
         vehicleType,
         licenseNumber,
 
-        licenseFront: req.files.licenseFront[0].path,
-        licenseBack: req.files.licenseBack[0].path,
-        rcFront: req.files.rcFront[0].path,
-        rcBack: req.files.rcBack[0].path,
-        insurance: req.files.insurance[0].path,
-        idFront: req.files.idFront[0].path,
-        idBack: req.files.idBack[0].path,
-        profilePhoto: req.files.profilePhoto[0].path,
+        licenseFront: req.files?.licenseFront?.[0]?.path || "",
+        licenseBack: req.files?.licenseBack?.[0]?.path || "",
+        rcFront: req.files?.rcFront?.[0]?.path || "",
+        rcBack: req.files?.rcBack?.[0]?.path || "",
+        insurance: req.files?.insurance?.[0]?.path || "",
+        idFront: req.files?.idFront?.[0]?.path || "",
+        idBack: req.files?.idBack?.[0]?.path || "",
+        profilePhoto: req.files?.profilePhoto?.[0]?.path || "",
 
         status: "pending",
       });
@@ -123,7 +139,7 @@ router.post(
         driver: data,
       });
     } catch (error) {
-      console.error(error);
+      console.error("Signup Error:", error);
 
       return res.status(500).json({
         success: false,
