@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 const childSchema = new mongoose.Schema(
   {
     /* ================= CHILD INFO ================= */
-
     name: {
       type: String,
       required: true,
@@ -26,7 +25,6 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= PARENT ================= */
-
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -34,23 +32,20 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= DRIVER ================= */
-
     driverId: {
       type: String,
-      required: true,
+      default: "", // Driver can be linked later
       index: true,
     },
 
     /* ================= STATUS ================= */
-
     status: {
       type: String,
       enum: ["waiting", "onboard", "dropped", "absent"],
       default: "waiting",
     },
 
-    /* ================= LIVE LOCATION ================= */
-
+    /* ================= PICKUP LOCATION ================= */
     location: {
       lat: {
         type: Number,
@@ -62,6 +57,7 @@ const childSchema = new mongoose.Schema(
       },
     },
 
+    /* ================= DROP LOCATION ================= */
     dropLocationCoords: {
       lat: {
         type: Number,
@@ -74,7 +70,6 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= TIMINGS ================= */
-
     pickupTime: {
       type: String,
       default: "",
@@ -96,7 +91,6 @@ const childSchema = new mongoose.Schema(
     },
 
     /* ================= ADDRESSES ================= */
-
     pickupLocation: {
       type: String,
       default: "",
@@ -107,33 +101,28 @@ const childSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* ================= BILLING ================= */
-
-    // Google Maps one-way distance in KM
+    /* ================= ROUTE DETAILS ================= */
     routeDistance: {
       type: Number,
       default: 0,
     },
 
-    // Google Maps travel duration in minutes
     estimatedDuration: {
       type: Number,
       default: 0,
     },
 
-    // Registration fee paid
+    /* ================= BILLING ================= */
     registrationFeePaid: {
       type: Boolean,
       default: false,
     },
 
-    // Security deposit amount
     securityDeposit: {
       type: Number,
       default: 0,
     },
 
-    // Remaining deposit balance
     depositBalance: {
       type: Number,
       default: 0,
@@ -144,7 +133,14 @@ const childSchema = new mongoose.Schema(
   }
 );
 
-childSchema.index({ driverId: 1 });
-childSchema.index({ parentId: 1 });
+/* ================= INDEXES ================= */
+
+childSchema.index({
+  driverId: 1,
+});
+
+childSchema.index({
+  parentId: 1,
+});
 
 export default mongoose.model("Child", childSchema);
