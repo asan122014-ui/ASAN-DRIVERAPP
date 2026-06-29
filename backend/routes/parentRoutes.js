@@ -292,5 +292,71 @@ router.delete("/:id", async (req, res) => {
     });
   }
 });
+/* ============================================================
+   LINK DRIVER (Parent App)
+============================================================ */
+router.post("/link-driver", async (req, res) => {
+  try {
+    const { parentId, driverId } = req.body;
+
+    if (!parentId || !driverId) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID and Driver ID are required",
+      });
+    }
+
+    // Find Parent
+    const parent = await Parent.findById(parentId);
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    // Find Driver
+    const driver = await Driver.findOne({
+      driverId: driverId.trim().toUpperCase(),
+    });
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid Driver ID",
+      });
+    }
+
+    // Update Parent
+    parent.driverId = driver.driverId;
+    await parent.save();
+
+    // Update all children of this parent
+    await Child.updateMany(
+      { parentId: parent._id },
+      {
+        driverId: driver.driverId,
+      }
+    );
+
+    const updatedParent = await Parent.findById(parent._id).select(
+      "-password"
+    );
+
+    res.json({
+      success: true,
+      message: "Driver linked successfully",
+      data: updatedParent,
+    });
+  } catch (error) {
+    console.error("LINK DRIVER ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to link driver",
+    });
+  }
+});
 
 export default router;
