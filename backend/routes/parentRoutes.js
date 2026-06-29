@@ -166,6 +166,33 @@ router.get("/", async (req, res) => {
 });
 
 /* ============================================================
+   GET SINGLE PARENT
+============================================================ */
+router.get("/:id", async (req, res) => {
+  try {
+    const parent = await Parent.findById(req.params.id).select("-password");
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: parent,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch parent",
+    });
+  }
+});
+
+/* ============================================================
    ASSIGN DRIVER
 ============================================================ */
 router.put("/assign-driver", async (req, res) => {
