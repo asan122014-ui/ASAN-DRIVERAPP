@@ -36,22 +36,28 @@ router.post("/add", async (req, res) => {
       age,
       school,
       grade,
+
       pickupTime,
       dropoffTime,
+
       eveningPickup,
       eveningDrop,
+
       pickupLocation,
       dropoffLocation,
+
       location,
       dropLocationCoords,
+
       parentId,
       driverId,
     } = req.body;
 
-    if (!name || !parentId || !driverId) {
+    // ✅ Driver is optional now
+    if (!name || !parentId) {
       return res.status(400).json({
         success: false,
-        message: "Name, parentId and driverId are required",
+        message: "Name and parentId are required",
       });
     }
 
@@ -78,9 +84,10 @@ router.post("/add", async (req, res) => {
           }
         );
 
-        const element = response.data.rows?.[0]?.elements?.[0];
+        const element =
+          response.data.rows?.[0]?.elements?.[0];
 
-        if (element && element.status === "OK") {
+        if (element?.status === "OK") {
           routeDistance = Number(
             (element.distance.value / 1000).toFixed(2)
           );
@@ -88,11 +95,6 @@ router.post("/add", async (req, res) => {
           estimatedDuration = Math.ceil(
             element.duration.value / 60
           );
-
-          console.log("✅ Route Distance:", routeDistance, "KM");
-          console.log("✅ Estimated Duration:", estimatedDuration, "Minutes");
-        } else {
-          console.warn("⚠️ Google returned:", element?.status);
         }
       } catch (err) {
         console.error(
@@ -102,7 +104,7 @@ router.post("/add", async (req, res) => {
       }
     }
 
-    /* ================= SAVE CHILD ================= */
+    /* ================= CREATE CHILD ================= */
 
     const child = await Child.create({
       name,
@@ -112,6 +114,7 @@ router.post("/add", async (req, res) => {
 
       pickupTime,
       dropoffTime,
+
       eveningPickup,
       eveningDrop,
 
@@ -129,7 +132,9 @@ router.post("/add", async (req, res) => {
       },
 
       parentId,
-      driverId,
+
+      // ✅ Driver will be linked later
+      driverId: driverId || "",
 
       routeDistance,
       estimatedDuration,
@@ -142,16 +147,13 @@ router.post("/add", async (req, res) => {
       message: "Child added successfully",
       data: child,
     });
-
   } catch (err) {
-
     console.error("🔥 Add Child Error:", err);
 
     return res.status(500).json({
       success: false,
       message: err.message,
     });
-
   }
 });
 
@@ -159,7 +161,9 @@ router.post("/add", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const child = await Child.findByIdAndDelete(req.params.id);
+    const child = await Child.findByIdAndDelete(
+      req.params.id
+    );
 
     if (!child) {
       return res.status(404).json({
@@ -172,27 +176,27 @@ router.delete("/:id", async (req, res) => {
       success: true,
       message: "Child deleted successfully",
     });
-
   } catch (err) {
-
     console.error("❌ Delete error:", err);
 
     res.status(500).json({
       success: false,
       message: err.message,
     });
-
   }
 });
 
 /* ================= GET BY DRIVER ================= */
+
 router.get("/driver/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
 
     const children = await Child.find({
-      driverId: String(driverId),
-    }).sort({ createdAt: 1 });
+      driverId,
+    }).sort({
+      createdAt: 1,
+    });
 
     const trips = await Trips.find({
       driverId,
@@ -229,23 +233,22 @@ router.get("/driver/:driverId", async (req, res) => {
 router.get("/parent/:parentId", async (req, res) => {
   try {
     const children = await Child.find({
-      parentId: String(req.params.parentId),
+      parentId: req.params.parentId,
+    }).sort({
+      createdAt: 1,
     });
 
     res.json({
       success: true,
       data: children,
     });
-
   } catch (err) {
-
     console.error("❌ Parent fetch error:", err);
 
     res.status(500).json({
       success: false,
       message: err.message,
     });
-
   }
 });
 
@@ -273,28 +276,27 @@ router.post("/pickup", async (req, res) => {
 
     await child.save();
 
-    await safeNotify(req, {
-      driverId: child.driverId,
-      childId: child._id,
-      title: "Pickup Update",
-      message: `${child.name} picked up`,
-      type: "pickup",
-      priority: "high",
-    });
+    if (child.driverId) {
+      await safeNotify(req, {
+        driverId: child.driverId,
+        childId: child._id,
+        title: "Pickup Update",
+        message: `${child.name} picked up`,
+        type: "pickup",
+        priority: "high",
+      });
+    }
 
     res.json({
       success: true,
       data: child,
     });
-
   } catch (err) {
-
     console.error("❌ Pickup error:", err);
 
     res.status(500).json({
       message: err.message,
     });
-
   }
 });
 
@@ -322,28 +324,27 @@ router.post("/drop", async (req, res) => {
 
     await child.save();
 
-    await safeNotify(req, {
-      driverId: child.driverId,
-      childId: child._id,
-      title: "Drop Update",
-      message: `${child.name} dropped`,
-      type: "drop",
-      priority: "high",
-    });
+    if (child.driverId) {
+      await safeNotify(req, {
+        driverId: child.driverId,
+        childId: child._id,
+        title: "Drop Update",
+        message: `${child.name} dropped`,
+        type: "drop",
+        priority: "high",
+      });
+    }
 
     res.json({
       success: true,
       data: child,
     });
-
   } catch (err) {
-
     console.error("❌ Drop error:", err);
 
     res.status(500).json({
       message: err.message,
     });
-
   }
 });
 
@@ -380,30 +381,29 @@ router.post("/absent", async (req, res) => {
 
     await child.save();
 
-    await safeNotify(req, {
-      driverId: child.driverId,
-      childId: child._id,
-      title: "Absent Update",
-      message: `${child.name} marked absent`,
-      type: "absent",
-      priority: "high",
-    });
+    if (child.driverId) {
+      await safeNotify(req, {
+        driverId: child.driverId,
+        childId: child._id,
+        title: "Absent Update",
+        message: `${child.name} marked absent`,
+        type: "absent",
+        priority: "high",
+      });
+    }
 
     res.json({
       success: true,
       message: "Student marked as absent",
       data: child,
     });
-
   } catch (err) {
-
     console.error("❌ Absent error:", err);
 
     res.status(500).json({
       success: false,
       message: err.message,
     });
-
   }
 });
 
@@ -423,15 +423,12 @@ router.post("/reset/:driverId", async (req, res) => {
     res.json({
       success: true,
     });
-
   } catch (err) {
-
     console.error("❌ Reset error:", err);
 
     res.status(500).json({
       message: err.message,
     });
-
   }
 });
 
