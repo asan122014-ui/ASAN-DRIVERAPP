@@ -355,27 +355,42 @@ export const dropStudentService = async (tripId, io) => {
 
 /* ================= TRIP PROGRESS ================= */
 export const getTripProgressService = async (driverId) => {
-  const trips = await Trips.find({
-    driverId,
-    status: "in_transit",
-  });
+  try {
+    // Get all children assigned to this driver
+    const children = await Child.find({ driverId });
 
-  const total = trips.length;
+    const totalStudents = children.length;
 
-  const picked = trips.filter(
-    (t) => t.pickupStatus
-  ).length;
+    const pickedStudents = children.filter(
+      (child) => child.status === "onboard"
+    ).length;
 
-  const dropped = trips.filter(
-    (t) => t.dropStatus
-  ).length;
+    const droppedStudents = children.filter(
+      (child) => child.status === "dropped"
+    ).length;
 
-  return {
-    totalStudents: total,
-    pickedStudents: picked,
-    droppedStudents: dropped,
-    remainingStudents: total - dropped,
-  };
+    const absentStudents = children.filter(
+      (child) => child.status === "absent"
+    ).length;
+
+    // Only waiting and onboard students are still remaining
+    const remainingStudents = children.filter(
+      (child) =>
+        child.status === "waiting" ||
+        child.status === "onboard"
+    ).length;
+
+    return {
+      totalStudents,
+      pickedStudents,
+      droppedStudents,
+      absentStudents,
+      remainingStudents,
+    };
+  } catch (error) {
+    console.error("getTripProgressService:", error);
+    throw error;
+  }
 };
 /* ================= RECEIVE PAYMENT ================= */
 export const receivePaymentService = async (
