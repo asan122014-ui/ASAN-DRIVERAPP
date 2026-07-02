@@ -291,8 +291,19 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
     Object.keys(updates).forEach((key) => {
   if (
     updates[key] !== undefined &&
-    key !== "location" &&
-    key !== "lastLocation"
+    ![
+      "_id",
+      "__v",
+      "password",
+      "profilePhoto",
+      "profilePhotoPublicId",
+      "homeLocation",
+      "location",
+      "lastLocation",
+      "createdAt",
+      "updatedAt",
+      "fcmTokens"
+    ].includes(key)
   ) {
     driver[key] = updates[key];
   }
