@@ -88,17 +88,13 @@ trips.forEach((trip) => {
   });
 });
 
-    const morningCompleted = trips.some(
-      (trip) =>
-        trip.tripType === "morning" &&
-        trip.status === "completed"
-    );
+    const morningCompleted = trips
+  .filter((trip) => trip.tripType === "morning")
+  .every((trip) => trip.status === "completed");
 
-    const afternoonCompleted = trips.some(
-      (trip) =>
-        trip.tripType === "afternoon" &&
-        trip.status === "completed"
-    );
+const afternoonCompleted = trips
+  .filter((trip) => trip.tripType === "afternoon")
+  .every((trip) => trip.status === "completed");
 
     res.json({
       success: true,
