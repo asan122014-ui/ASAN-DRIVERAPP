@@ -60,4 +60,44 @@ router.post("/drop/:tripId", dropStudent);
 // Parent Trip History
 router.get("/parent/:parentId", getParentTripHistory);
 
+router.get("/today-status/:driverId", async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const trips = await Trips.find({
+      driverId,
+      createdAt: { $gte: today },
+    });
+
+    const morningCompleted = trips.some(
+      (trip) =>
+        trip.tripType === "morning" &&
+        trip.status === "completed"
+    );
+
+    const afternoonCompleted = trips.some(
+      (trip) =>
+        trip.tripType === "afternoon" &&
+        trip.status === "completed"
+    );
+
+    res.json({
+      success: true,
+      morningCompleted,
+      afternoonCompleted,
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch trip status",
+    });
+  }
+});
+
 export default router;
