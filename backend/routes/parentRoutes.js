@@ -417,5 +417,50 @@ router.post("/link-driver", async (req, res) => {
     });
   }
 });
+/*************************************************
+ RESET PASSWORD
+**************************************************/
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    }).select("+password");
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    // Assign the new password.
+    // If your Parent model has a pre("save") hook,
+    // it will hash the password automatically.
+    parent.password = password;
+
+    await parent.save();
+
+    res.json({
+      success: true,
+      message: "Password updated successfully",
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to reset password",
+    });
+  }
+});
 
 export default router;
