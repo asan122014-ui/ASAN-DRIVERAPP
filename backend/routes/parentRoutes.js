@@ -126,6 +126,38 @@ router.post("/login", async (req, res) => {
 });
 
 /* ============================================================
+   CHECK EMAIL
+============================================================ */
+router.post("/check-email", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const parent = await Parent.findOne({
+      email: email.trim().toLowerCase(),
+    });
+
+    res.json({
+      success: true,
+      exists: !!parent,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to check email",
+    });
+  }
+});
+
+/* ============================================================
    GET ALL PARENTS
 ============================================================ */
 router.get("/", async (req, res) => {
