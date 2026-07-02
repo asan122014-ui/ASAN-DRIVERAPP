@@ -143,10 +143,17 @@ router.post("/check-email", async (req, res) => {
       email: email.trim().toLowerCase(),
     });
 
-    res.json({
-      success: true,
-      exists: !!parent,
-    });
+    if (!parent) {
+  return res.status(404).json({
+    success: false,
+    message: "Email not found",
+  });
+}
+
+res.json({
+  success: true,
+  message: "Email found",
+});
   } catch (error) {
     console.error(error);
 
@@ -422,12 +429,12 @@ router.post("/link-driver", async (req, res) => {
 **************************************************/
 router.post("/reset-password", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, newPassword } = req.body;
 
-    if (!email || !password) {
+    if (!email || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+        message: "Email and new password are required",
       });
     }
 
@@ -442,10 +449,7 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // Assign the new password.
-    // If your Parent model has a pre("save") hook,
-    // it will hash the password automatically.
-    parent.password = password;
+    parent.password = newPassword;
 
     await parent.save();
 
@@ -455,7 +459,6 @@ router.post("/reset-password", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Failed to reset password",
