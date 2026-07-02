@@ -65,13 +65,28 @@ router.get("/today-status/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+   const today = new Date();
+today.setHours(0, 0, 0, 0);
 
-    const trips = await Trips.find({
-      driverId,
-      createdAt: { $gte: today },
-    });
+const tomorrow = new Date(today);
+tomorrow.setDate(tomorrow.getDate() + 1);
+
+const trips = await Trips.find({
+  driverId,
+  createdAt: {
+    $gte: today,
+    $lt: tomorrow,
+  },
+});
+
+console.log("Today's Trips:");
+trips.forEach((trip) => {
+  console.log({
+    tripType: trip.tripType,
+    status: trip.status,
+    createdAt: trip.createdAt,
+  });
+});
 
     const morningCompleted = trips.some(
       (trip) =>
