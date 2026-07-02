@@ -1,3 +1,4 @@
+import Trips from "../models/Trips.js";
 import express from "express";
 
 import {
