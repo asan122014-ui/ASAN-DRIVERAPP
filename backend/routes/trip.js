@@ -65,43 +65,56 @@ router.get("/today-status/:driverId", async (req, res) => {
   try {
     const { driverId } = req.params;
 
-   const today = new Date();
-today.setHours(0, 0, 0, 0);
+    // Today's range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-const tomorrow = new Date(today);
-tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-const trips = await Trips.find({
-  driverId,
-  createdAt: {
-    $gte: today,
-    $lt: tomorrow,
-  },
-});
+    // Get only today's trips
+    const trips = await Trips.find({
+      driverId,
+      createdAt: {
+        $gte: today,
+        $lt: tomorrow,
+      },
+    });
 
-console.log("Today's Trips:");
-trips.forEach((trip) => {
-  console.log({
-    tripType: trip.tripType,
-    status: trip.status,
-    createdAt: trip.createdAt,
-  });
-});
+    // Separate trips
+    const morningTrips = trips.filter(
+      (trip) => trip.tripType === "morning"
+    );
 
-    const morningCompleted = trips
-  .filter((trip) => trip.tripType === "morning")
-  .every((trip) => trip.status === "completed");
+    const afternoonTrips = trips.filter(
+      (trip) => trip.tripType === "afternoon"
+    );
 
-const afternoonCompleted = trips
-  .filter((trip) => trip.tripType === "afternoon")
-  .every((trip) => trip.status === "completed");
+    // Check completion
+    const morningCompleted =
+      morningTrips.length > 0 &&
+      morningTrips.every(
+        (trip) => trip.status === "completed"
+      );
+
+    const afternoonCompleted =
+      afternoonTrips.length > 0 &&
+      afternoonTrips.every(
+        (trip) => trip.status === "completed"
+      );
+
+    console.log({
+      morningTrips: morningTrips.length,
+      afternoonTrips: afternoonTrips.length,
+      morningCompleted,
+      afternoonCompleted,
+    });
 
     res.json({
       success: true,
       morningCompleted,
       afternoonCompleted,
     });
-
   } catch (err) {
     console.error(err);
 
@@ -111,5 +124,4 @@ const afternoonCompleted = trips
     });
   }
 });
-
 export default router;
