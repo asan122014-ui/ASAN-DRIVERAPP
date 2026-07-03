@@ -195,7 +195,9 @@ router.get("/dashboard/:driverId", async (req, res) => {
 /* ================= DRIVER PROFILE ================= */
 router.get("/profile/:driverId", async (req, res) => {
   try {
-    const driver = await findDriver(req.params.driverId);
+    const { driverId } = req.params;
+
+    const driver = await findDriver(driverId);
 
     if (!driver) {
       return res.status(404).json({
@@ -204,9 +206,28 @@ router.get("/profile/:driverId", async (req, res) => {
       });
     }
 
+    // Today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Count today's trips
+    const todayTrips = await Trips.countDocuments({
+      driverId,
+      createdAt: {
+        $gte: today,
+        $lt: tomorrow,
+      },
+    });
+
     res.json({
       success: true,
-      data: driver,
+      data: {
+        ...driver.toObject(),
+        todayTrips,
+      },
     });
   } catch (error) {
     console.error("Driver profile error:", error);
