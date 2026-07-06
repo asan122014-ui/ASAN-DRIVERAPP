@@ -4,31 +4,46 @@ const tripSchema = new mongoose.Schema(
   {
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Parent"
+      ref: "Parent",
     },
 
-    // ✅ FIXED (STRING instead of ObjectId)
     driverId: {
       type: String,
-      required: true
+      required: true,
     },
 
     childName: String,
 
     route: {
       from: String,
-      to: String
+      to: String,
     },
 
     status: {
       type: String,
       enum: ["pending", "picked", "in_transit", "completed"],
-      default: "pending"
+      default: "pending",
     },
 
-    eta: String
+    // NEW FIELDS
+    startTime: {
+      type: Date,
+      default: null,
+    },
+
+    endTime: {
+      type: Date,
+      default: null,
+    },
+
+    duration: {
+      type: Number, // minutes
+      default: 0,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 export default mongoose.model("Trip", tripSchema);
