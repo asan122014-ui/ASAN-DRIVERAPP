@@ -1,4 +1,3 @@
-import Trip from "../models/Trips.js";
 import { cloudinary } from "../config/cloudinary.js";
 
 import {
@@ -16,11 +15,12 @@ import {
   uploadAfternoonPickupPhotoService,
   verifyMorningDropPhotoService,
   verifyAfternoonPickupPhotoService,
+  getTripDetailsService,
+  getTodayTripStatusService,
 } from "../services/tripService.js";
 
 /* ================= HELPER: Error Handler ================= */
 const handleError = (error) => {
-  // Custom errors have statusCode property
   if (error.statusCode) {
     return {
       statusCode: error.statusCode,
@@ -28,12 +28,28 @@ const handleError = (error) => {
     };
   }
 
-  // Default to 500 for unknown errors
-  console.error("🔥 Unhandled error:", error);
+  console.error("Unhandled error:", error);
   return {
     statusCode: 500,
     message: error.message || "Internal server error",
   };
+};
+
+/* ================= HELPER: Response Helper ================= */
+const successResponse = (res, data, message = "Success", statusCode = 200) => {
+  return res.status(statusCode).json({
+    success: true,
+    message,
+    data,
+  });
+};
+
+const errorResponse = (res, error) => {
+  const { statusCode, message } = handleError(error);
+  return res.status(statusCode).json({
+    success: false,
+    message,
+  });
 };
 
 /* ================= HELPER: Cloudinary Cleanup ================= */
@@ -43,7 +59,6 @@ const cleanupCloudinary = async (file) => {
   try {
     const publicId = file.filename || file.public_id;
     await cloudinary.uploader.destroy(publicId);
-    console.log(`🧹 Cleaned up: ${publicId}`);
   } catch (err) {
     console.error("Cloudinary cleanup failed:", err);
   }
@@ -67,16 +82,9 @@ export const startTrip = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.status(201).json({
-      success: true,
-      data: trip,
-    });
+    return successResponse(res, trip, "Trip started successfully", 201);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -97,16 +105,9 @@ export const endTrip = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.json({
-      success: true,
-      data: trip,
-    });
+    return successResponse(res, trip, "Trip ended successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -124,20 +125,13 @@ export const getActiveTrips = async (req, res) => {
 
     const trips = await getActiveTripsService(driverId);
 
-    return res.json({
-      success: true,
-      data: trips || [],
-    });
+    return successResponse(res, trips || []);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
-/* ================= GET SINGLE TRIP BY ID (PARENT/STUDENT VIEW) ================= */
+/* ================= GET SINGLE TRIP BY ID ================= */
 export const getTripById = async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -151,16 +145,9 @@ export const getTripById = async (req, res) => {
 
     const trip = await getActiveTripService(tripId);
 
-    return res.json({
-      success: true,
-      data: trip,
-    });
+    return successResponse(res, trip);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -178,16 +165,9 @@ export const getTripHistory = async (req, res) => {
 
     const trips = await getDriverTripsService(driverId);
 
-    return res.json({
-      success: true,
-      data: trips || [],
-    });
+    return successResponse(res, trips || []);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -205,16 +185,9 @@ export const getParentTripHistory = async (req, res) => {
 
     const trips = await getParentTripsService(parentId);
 
-    return res.json({
-      success: true,
-      data: trips || [],
-    });
+    return successResponse(res, trips || []);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -235,17 +208,9 @@ export const pickupStudent = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.status(200).json({
-      success: true,
-      message: "Student picked up successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Student picked up successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -266,17 +231,9 @@ export const dropStudent = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.status(200).json({
-      success: true,
-      message: "Student dropped successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Student dropped successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -294,16 +251,9 @@ export const getTripProgress = async (req, res) => {
 
     const progress = await getTripProgressService(driverId);
 
-    return res.status(200).json({
-      success: true,
-      data: progress,
-    });
+    return successResponse(res, progress);
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -325,17 +275,9 @@ export const receivePayment = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.status(200).json({
-      success: true,
-      message: "Payment received successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Payment received successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -344,7 +286,6 @@ export const uploadMorningDropPhoto = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    // ✅ Validate tripId
     if (!tripId) {
       return res.status(400).json({
         success: false,
@@ -366,22 +307,10 @@ export const uploadMorningDropPhoto = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.json({
-      success: true,
-      message: "Morning drop photo uploaded successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Morning drop photo uploaded successfully");
   } catch (error) {
-    console.error("❌ Morning Drop Photo Error:", error);
-
-    // ✅ Use helper for cleanup
     await cleanupCloudinary(req.file);
-
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -390,7 +319,6 @@ export const uploadAfternoonPickupPhoto = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    // ✅ Validate tripId
     if (!tripId) {
       return res.status(400).json({
         success: false,
@@ -412,22 +340,10 @@ export const uploadAfternoonPickupPhoto = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.json({
-      success: true,
-      message: "Afternoon pickup photo uploaded successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Afternoon pickup photo uploaded successfully");
   } catch (error) {
-    console.error("❌ Afternoon Pickup Photo Error:", error);
-
-    // ✅ Use helper for cleanup
     await cleanupCloudinary(req.file);
-
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -448,17 +364,9 @@ export const verifyMorningDropPhoto = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.json({
-      success: true,
-      message: "Morning drop photo verified successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Morning drop photo verified successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -479,17 +387,9 @@ export const verifyAfternoonPickupPhoto = async (req, res) => {
       req.app.get("io")
     );
 
-    return res.json({
-      success: true,
-      message: "Afternoon pickup photo verified successfully",
-      data: trip,
-    });
+    return successResponse(res, trip, "Afternoon pickup photo verified successfully");
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
   }
 };
 
@@ -498,52 +398,26 @@ export const getTripDetails = async (req, res) => {
   try {
     const { driverId, tripType, date } = req.params;
 
-    // ✅ Validate driverId and tripType
-    if (!driverId || !tripType) {
-      return res.status(400).json({
-        success: false,
-        message: "driverId and tripType are required",
-      });
-    }
+    const trips = await getTripDetailsService(driverId, tripType, date);
 
-    // ✅ Validate date format
-    const dateObj = new Date(date);
-    if (isNaN(dateObj.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid date format. Please use YYYY-MM-DD format.",
-      });
-    }
-
-    // ✅ Reuse validated dateObj
-    const start = new Date(dateObj);
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(dateObj);
-    end.setHours(23, 59, 59, 999);
-
-    const trips = await Trip.find({
-      driverId,
-      tripType: new RegExp(`^${tripType}$`, "i"),
-      createdAt: {
-        $gte: start,
-        $lte: end,
-      },
-    })
-      .select("-morningDrop -afternoonPickup") // Hide verification photos from driver
-      .populate("child", "name")
-      .sort({ createdAt: 1 });
-
-    return res.status(200).json({
-      success: true,
+    return successResponse(res, {
       count: trips.length,
-      data: trips,
+      trips,
     });
   } catch (error) {
-    const { statusCode, message } = handleError(error);
-    return res.status(statusCode).json({
-      success: false,
-      message,
-    });
+    return errorResponse(res, error);
+  }
+};
+
+/* ================= TODAY'S TRIP STATUS ================= */
+export const getTodayTripStatus = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+
+    const status = await getTodayTripStatusService(driverId);
+
+    return successResponse(res, status);
+  } catch (error) {
+    return errorResponse(res, error);
   }
 };
