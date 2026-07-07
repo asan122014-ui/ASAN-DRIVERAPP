@@ -1,28 +1,108 @@
+import mongoose from "mongoose";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
-import Parent from "../models/Parent.js"; // 🔥 ensure model is registered
 import { sendNotification } from "../utils/sendNotification.js";
+
+/* ================= EVENT CONSTANTS ================= */
+export const EVENTS = {
+  TRIP_STARTED: "trip_started",
+  TRIP_ENDED: "trip_ended",
+  STUDENT_PICKED_UP: "student_picked_up",
+  STUDENT_DROPPED: "student_dropped",
+  PAYMENT_RECEIVED: "payment_received",
+  MORNING_DROP_VERIFIED: "morning_drop_verified",
+  AFTERNOON_PICKUP_VERIFIED: "afternoon_pickup_verified",
+  MORNING_DROP_PHOTO_UPLOADED: "morning_drop_photo_uploaded",
+  AFTERNOON_PICKUP_PHOTO_UPLOADED: "afternoon_pickup_photo_uploaded",
+};
+
+/* ================= CUSTOM ERRORS ================= */
+export class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotFoundError";
+    this.statusCode = 404;
+  }
+}
+
+export class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ValidationError";
+    this.statusCode = 400;
+  }
+}
+
+export class ConflictError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ConflictError";
+    this.statusCode = 409;
+  }
+}
+
+/* ================= TIMEZONE HELPERS ================= */
+const getCurrentHourInIST = () => {
+  const now = new Date();
+  // Convert to IST (UTC +5:30)
+  const istTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istTime.getHours();
+};
+
+/* ================= NOTIFICATION HELPER ================= */
+const notifyDriver = async (
+  driverId,
+  {
+    title,
+    message,
+    event,
+    payload,
+    priority = "medium",
+    io,
+  }
+) => {
+  await sendNotification({
+    driverId,
+    title,
+    message,
+    type: event,
+    priority,
+    io,
+  });
+
+  if (io) {
+    io.to(String(driverId)).emit(event, payload);
+    io.to(String(driverId)).emit("notification", {
+      _id: Date.now(),
+      title,
+      message,
+      createdAt: new Date(),
+    });
+  }
+};
 
 /* ================= START TRIP ================= */
 export const startTripService = async (driverId, tripType, io) => {
+  const session = await mongoose.startSession();
+
   try {
     console.log("🚀 Starting trip:", driverId);
 
     if (!driverId || !tripType) {
-      throw new Error("driverId and tripType are required");
+      throw new ValidationError("driverId and tripType are required");
     }
 
-    /* ================= VALIDATE TRIP TYPE BASED ON TIME ================= */
+    /* ================= VALIDATE TRIP TYPE BASED ON TIME (IST) ================= */
 
-    const hour = new Date().getHours();
+    const hour = getCurrentHourInIST();
 
     if (tripType === "morning" && hour >= 12) {
-      throw new Error("Morning trip is no longer available.");
+      throw new ValidationError("Morning trip is no longer available.");
     }
 
     if (tripType === "afternoon" && hour < 12) {
-      throw new Error("Afternoon trip has not started yet.");
+      throw new ValidationError("Afternoon trip has not started yet.");
     }
 
     /* ================= PREVENT DUPLICATE TRIP OF SAME TYPE ON SAME DAY ================= */
@@ -44,7 +124,7 @@ export const startTripService = async (driverId, tripType, io) => {
     });
 
     if (alreadyCompleted) {
-      throw new Error(`${tripType} trip already completed today`);
+      throw new ConflictError(`${tripType} trip already completed today`);
     }
 
     /* ================= DRIVER ================= */
@@ -52,11 +132,10 @@ export const startTripService = async (driverId, tripType, io) => {
     const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
-      throw new Error("Driver not found");
+      throw new NotFoundError("Driver not found");
     }
 
     /* ================= PREVENT MULTIPLE ACTIVE TRIPS ================= */
-    // ✅ FIX: Use findOne and throw error instead of returning
 
     const existingTrip = await Trips.findOne({
       driverId,
@@ -64,7 +143,7 @@ export const startTripService = async (driverId, tripType, io) => {
     });
 
     if (existingTrip) {
-      throw new Error("Driver already has an active trip.");
+      throw new ConflictError("Driver already has an active trip.");
     }
 
     /* ================= GET ALL CHILDREN ================= */
@@ -74,8 +153,12 @@ export const startTripService = async (driverId, tripType, io) => {
     }).populate("parentId");
 
     if (!children.length) {
-      throw new Error("No children assigned to this driver");
+      throw new ValidationError("No children assigned to this driver");
     }
+
+    /* ================= START TRANSACTION ================= */
+
+    session.startTransaction();
 
     /* ================= RESET CHILD STATUS ================= */
 
@@ -83,17 +166,15 @@ export const startTripService = async (driverId, tripType, io) => {
       { driverId },
       {
         status: "waiting",
-      }
+      },
+      { session }
     );
 
-    /* ================= CREATE ONE TRIP PER CHILD ================= */
+    /* ================= CREATE TRIPS USING insertMany ================= */
 
-    const createdTrips = [];
-
-    for (const child of children) {
-      if (!child.parentId) continue;
-
-      const trip = await Trips.create({
+    const tripDocs = children
+      .filter((child) => child.parentId)
+      .map((child) => ({
         driverId,
         parent: child.parentId._id || child.parentId,
         child: child._id,
@@ -108,46 +189,42 @@ export const startTripService = async (driverId, tripType, io) => {
         },
         eta: "30 mins",
         startTime: new Date(),
-      });
+      }));
 
-      createdTrips.push(trip);
-    }
+    const createdTrips = await Trips.insertMany(tripDocs, { session });
+
+    /* ================= COMMIT TRANSACTION ================= */
+
+    await session.commitTransaction();
 
     /* ================= SEND NOTIFICATION ================= */
 
-    await sendNotification({
-      driverId,
+    await notifyDriver(driverId, {
       title: "Trip Started",
       message: `Trip started (${tripType})`,
-      type: "trip_start",
-      priority: "medium",
+      event: EVENTS.TRIP_STARTED,
+      payload: createdTrips,
       io,
     });
-
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(driverId)).emit("trip_started", createdTrips);
-
-      io.to(String(driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Trip Started",
-        message: `Trip started (${tripType})`,
-        createdAt: new Date(),
-      });
-    }
 
     console.log(`✅ ${createdTrips.length} child trips created`);
 
     return createdTrips;
   } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     console.error("🔥 startTripService error:", error.message);
     throw error;
+  } finally {
+    session.endSession();
   }
 };
 
 /* ================= END TRIP ================= */
 export const endTripService = async (driverId, io) => {
+  const session = await mongoose.startSession();
+
   try {
     console.log("🔥 Ending trip:", driverId);
 
@@ -166,45 +243,48 @@ export const endTripService = async (driverId, io) => {
     /* ================= VALIDATE EACH TRIP BEFORE COMPLETING ================= */
 
     for (const trip of trips) {
-      // ✅ FIX: Check the actual image exists, not just the object
-      if (trip.tripType === "morning" && !trip.morningDrop?.image) {
-        throw new Error(`Drop photo missing for ${trip.childName}`);
+      if (trip.tripType === "morning" && !Boolean(trip.morningDrop?.imageUrl)) {
+        throw new ValidationError(`Drop photo missing for ${trip.childName}`);
       }
 
-      if (trip.tripType === "afternoon" && !trip.afternoonPickup?.image) {
-        throw new Error(`Pickup photo missing for ${trip.childName}`);
+      if (trip.tripType === "afternoon" && !Boolean(trip.afternoonPickup?.imageUrl)) {
+        throw new ValidationError(`Pickup photo missing for ${trip.childName}`);
       }
 
       if (!trip.pickupStatus) {
-        throw new Error(`${trip.childName} was not picked up`);
+        throw new ValidationError(`${trip.childName} was not picked up`);
       }
 
       if (!trip.dropStatus) {
-        throw new Error(`${trip.childName} was not dropped`);
+        throw new ValidationError(`${trip.childName} was not dropped`);
       }
     }
+
+    /* ================= START TRANSACTION ================= */
+
+    session.startTransaction();
 
     const endTime = new Date();
 
     /* ================= COMPLETE ALL CHILD TRIPS ================= */
 
-    for (const trip of trips) {
-      if (!trip.startTime) {
-        trip.startTime = endTime;
-      }
+    await Promise.all(
+      trips.map(async (trip) => {
+        if (!trip.startTime) {
+          trip.startTime = endTime;
+        }
 
-      trip.endTime = endTime;
+        trip.endTime = endTime;
 
-      const durationMs = endTime - trip.startTime;
+        const durationMs = endTime - trip.startTime;
 
-      trip.duration = Math.max(1, Math.round(durationMs / 60000));
+        trip.duration = Math.max(1, Math.round(durationMs / 60000));
 
-      trip.status = "completed";
+        trip.status = "completed";
 
-      await trip.save();
-    }
-
-    console.log(`✅ ${trips.length} trips completed`);
+        return trip.save({ session });
+      })
+    );
 
     /* ================= RESET CHILD STATUS ================= */
 
@@ -212,51 +292,80 @@ export const endTripService = async (driverId, io) => {
       { driverId },
       {
         status: "waiting",
-      }
+      },
+      { session }
     );
+
+    /* ================= COMMIT TRANSACTION ================= */
+
+    await session.commitTransaction();
+
+    console.log(`✅ ${trips.length} trips completed`);
 
     /* ================= SEND NOTIFICATION ================= */
 
-    await sendNotification({
-      driverId,
+    await notifyDriver(driverId, {
       title: "Trip Completed",
       message: `${trips.length} child trips completed`,
-      type: "trip_end",
+      event: EVENTS.TRIP_ENDED,
+      payload: trips,
       priority: "low",
       io,
     });
 
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(driverId)).emit("trip_ended", trips);
-
-      io.to(String(driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Trip Completed",
-        message: `${trips.length} child trips completed`,
-        createdAt: new Date(),
-      });
-    }
-
     return trips;
   } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     console.error("🔥 endTripService error:", error.message);
     throw error;
+  } finally {
+    session.endSession();
   }
 };
 
-/* ================= ACTIVE TRIP ================= */
-export const getActiveTripService = async (driverId) => {
+/* ================= GET ALL ACTIVE TRIPS (FOR DRIVER DASHBOARD) ================= */
+export const getActiveTripsService = async (driverId) => {
   try {
-    return await Trips.find({
+    if (!driverId) {
+      throw new ValidationError("driverId is required");
+    }
+
+    const trips = await Trips.find({
       driverId,
       status: "in_transit",
     })
+      .select("-morningDrop -afternoonPickup")
       .populate("child", "name status")
       .populate("parent", "name")
       .sort({ createdAt: -1 })
       .lean();
+
+    return trips;
+  } catch (error) {
+    console.error("🔥 getActiveTripsService error:", error);
+    throw error;
+  }
+};
+
+/* ================= GET SINGLE ACTIVE TRIP (FOR PARENT/STUDENT VIEW) ================= */
+export const getActiveTripService = async (tripId) => {
+  try {
+    if (!tripId) {
+      throw new ValidationError("tripId is required");
+    }
+
+    const trip = await Trips.findById(tripId)
+      .populate("child", "name status")
+      .populate("parent", "name")
+      .lean();
+
+    if (!trip) {
+      throw new NotFoundError("Trip not found");
+    }
+
+    return trip;
   } catch (error) {
     console.error("🔥 getActiveTripService error:", error);
     throw error;
@@ -266,7 +375,12 @@ export const getActiveTripService = async (driverId) => {
 /* ================= DRIVER TRIPS ================= */
 export const getDriverTripsService = async (driverId) => {
   try {
+    if (!driverId) {
+      throw new ValidationError("driverId is required");
+    }
+
     return await Trips.find({ driverId })
+      .select("-morningDrop -afternoonPickup")
       .sort({ createdAt: -1 })
       .populate("child", "name")
       .populate("parent", "name")
@@ -280,6 +394,10 @@ export const getDriverTripsService = async (driverId) => {
 /* ================= PARENT TRIPS ================= */
 export const getParentTripsService = async (parentId) => {
   try {
+    if (!parentId) {
+      throw new ValidationError("parentId is required");
+    }
+
     return await Trips.find({ parent: parentId })
       .sort({ createdAt: -1 })
       .populate("child", "name status pickupLocation dropoffLocation")
@@ -298,18 +416,15 @@ export const pickupStudentService = async (tripId, io) => {
       .populate("parent");
 
     if (!trip) {
-      throw new Error("Trip not found");
+      throw new NotFoundError("Trip not found");
     }
 
     if (trip.pickupStatus) {
-      return trip;
+      throw new ConflictError("Student already picked up");
     }
 
-    /* ================= VALIDATE PHOTO FOR AFTERNOON TRIPS ================= */
-    // ✅ FIX: Check the actual image exists
-
-    if (trip.tripType === "afternoon" && !trip.afternoonPickup?.image) {
-      throw new Error("Upload pickup photo before picking up student.");
+    if (trip.tripType === "afternoon" && !Boolean(trip.afternoonPickup?.imageUrl)) {
+      throw new ValidationError("Upload pickup photo before picking up student.");
     }
 
     trip.pickupStatus = true;
@@ -321,26 +436,13 @@ export const pickupStudentService = async (tripId, io) => {
       status: "onboard",
     });
 
-    await sendNotification({
-      driverId: trip.driverId,
+    await notifyDriver(trip.driverId, {
       title: "Student Picked Up",
       message: `${trip.child.name} has been picked up`,
-      type: "pickup",
-      priority: "medium",
+      event: EVENTS.STUDENT_PICKED_UP,
+      payload: trip,
       io,
     });
-
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(trip.driverId)).emit("student_picked_up", trip);
-      io.to(String(trip.driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Student Picked Up",
-        message: `${trip.child.name} has been picked up`,
-        createdAt: new Date(),
-      });
-    }
 
     return trip;
   } catch (error) {
@@ -357,18 +459,15 @@ export const dropStudentService = async (tripId, io) => {
       .populate("parent");
 
     if (!trip) {
-      throw new Error("Trip not found");
+      throw new NotFoundError("Trip not found");
     }
 
     if (trip.dropStatus) {
-      return trip;
+      throw new ConflictError("Student already dropped");
     }
 
-    /* ================= VALIDATE PHOTO FOR MORNING TRIPS ================= */
-    // ✅ FIX: Check the actual image exists
-
-    if (trip.tripType === "morning" && !trip.morningDrop?.image) {
-      throw new Error("Upload drop photo before completing drop.");
+    if (trip.tripType === "morning" && !Boolean(trip.morningDrop?.imageUrl)) {
+      throw new ValidationError("Upload drop photo before completing drop.");
     }
 
     trip.dropStatus = true;
@@ -378,31 +477,15 @@ export const dropStudentService = async (tripId, io) => {
       status: "dropped",
     });
 
-    // Do NOT mark trip as completed here
-    // Let endTripService() handle completion of all trips together
-
     await trip.save();
 
-    await sendNotification({
-      driverId: trip.driverId,
+    await notifyDriver(trip.driverId, {
       title: "Student Dropped",
       message: `${trip.child.name} reached destination`,
-      type: "drop",
-      priority: "medium",
+      event: EVENTS.STUDENT_DROPPED,
+      payload: trip,
       io,
     });
-
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(trip.driverId)).emit("student_dropped", trip);
-      io.to(String(trip.driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Student Dropped",
-        message: `${trip.child.name} reached destination`,
-        createdAt: new Date(),
-      });
-    }
 
     return trip;
   } catch (error) {
@@ -414,25 +497,23 @@ export const dropStudentService = async (tripId, io) => {
 /* ================= TRIP PROGRESS ================= */
 export const getTripProgressService = async (driverId) => {
   try {
-    const children = await Child.find({ driverId });
+    if (!driverId) {
+      throw new ValidationError("driverId is required");
+    }
 
-    const totalStudents = children.length;
+    // ✅ Optimized: Use countDocuments for each status instead of loading all children
+    const [totalStudents, pickedStudents, droppedStudents, absentStudents] =
+      await Promise.all([
+        Child.countDocuments({ driverId }),
+        Child.countDocuments({ driverId, status: "onboard" }),
+        Child.countDocuments({ driverId, status: "dropped" }),
+        Child.countDocuments({ driverId, status: "absent" }),
+      ]);
 
-    const pickedStudents = children.filter(
-      (child) => child.status === "onboard"
-    ).length;
-
-    const droppedStudents = children.filter(
-      (child) => child.status === "dropped"
-    ).length;
-
-    const absentStudents = children.filter(
-      (child) => child.status === "absent"
-    ).length;
-
-    const remainingStudents = children.filter(
-      (child) => child.status === "waiting" || child.status === "onboard"
-    ).length;
+    const remainingStudents = await Child.countDocuments({
+      driverId,
+      status: { $in: ["waiting", "onboard"] },
+    });
 
     return {
       totalStudents,
@@ -455,11 +536,11 @@ export const receivePaymentService = async (tripId, paymentMethod, io) => {
       .populate("parent");
 
     if (!trip) {
-      throw new Error("Trip not found");
+      throw new NotFoundError("Trip not found");
     }
 
     if (trip.paymentReceived) {
-      throw new Error("Payment already received");
+      throw new ConflictError("Payment already received");
     }
 
     trip.paymentReceived = true;
@@ -468,30 +549,88 @@ export const receivePaymentService = async (tripId, paymentMethod, io) => {
 
     await trip.save();
 
-    await sendNotification({
-      driverId: trip.driverId,
+    await notifyDriver(trip.driverId, {
       title: "Payment Received",
       message: `Payment received for ${trip.child.name}`,
-      type: "payment",
+      event: EVENTS.PAYMENT_RECEIVED,
+      payload: trip,
       priority: "low",
       io,
     });
 
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(trip.driverId)).emit("payment_received", trip);
-      io.to(String(trip.driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Payment Received",
-        message: `Payment received for ${trip.child.name}`,
-        createdAt: new Date(),
-      });
-    }
-
     return trip;
   } catch (error) {
     console.error("receivePaymentService:", error);
+    throw error;
+  }
+};
+
+/* ================= VERIFY MORNING DROP PHOTO ================= */
+export const verifyMorningDropPhotoService = async (tripId, io) => {
+  try {
+    const trip = await Trips.findById(tripId);
+
+    if (!trip) {
+      throw new NotFoundError("Trip not found");
+    }
+
+    if (!trip.morningDrop?.imageUrl) {
+      throw new ValidationError("No morning drop photo to verify");
+    }
+
+    if (trip.morningDrop.verified) {
+      throw new ConflictError("Morning drop photo already verified");
+    }
+
+    trip.morningDrop.verified = true;
+    await trip.save();
+
+    await notifyDriver(trip.driverId, {
+      title: "Morning Drop Photo Verified",
+      message: `Drop photo verified for ${trip.childName || "student"}`,
+      event: EVENTS.MORNING_DROP_VERIFIED,
+      payload: trip,
+      io,
+    });
+
+    return trip;
+  } catch (error) {
+    console.error("verifyMorningDropPhotoService:", error);
+    throw error;
+  }
+};
+
+/* ================= VERIFY AFTERNOON PICKUP PHOTO ================= */
+export const verifyAfternoonPickupPhotoService = async (tripId, io) => {
+  try {
+    const trip = await Trips.findById(tripId);
+
+    if (!trip) {
+      throw new NotFoundError("Trip not found");
+    }
+
+    if (!trip.afternoonPickup?.imageUrl) {
+      throw new ValidationError("No afternoon pickup photo to verify");
+    }
+
+    if (trip.afternoonPickup.verified) {
+      throw new ConflictError("Afternoon pickup photo already verified");
+    }
+
+    trip.afternoonPickup.verified = true;
+    await trip.save();
+
+    await notifyDriver(trip.driverId, {
+      title: "Afternoon Pickup Photo Verified",
+      message: `Pickup photo verified for ${trip.childName || "student"}`,
+      event: EVENTS.AFTERNOON_PICKUP_VERIFIED,
+      payload: trip,
+      io,
+    });
+
+    return trip;
+  } catch (error) {
+    console.error("verifyAfternoonPickupPhotoService:", error);
     throw error;
   }
 };
@@ -502,64 +641,43 @@ export const uploadMorningDropPhotoService = async (tripId, file, body, io) => {
     console.log("📸 Uploading morning drop photo:", tripId);
 
     if (!tripId || !file) {
-      throw new Error("tripId and file are required");
+      throw new ValidationError("tripId and file are required");
     }
 
     const trip = await Trips.findById(tripId);
 
     if (!trip) {
-      throw new Error("Trip not found");
+      throw new NotFoundError("Trip not found");
     }
-
-    /* ================= VALIDATE TRIP TYPE ================= */
 
     if (trip.tripType !== "morning") {
-      throw new Error("This is not a morning trip.");
+      throw new ValidationError("This is not a morning trip.");
     }
 
-    /* ================= CHECK IF PHOTO ALREADY EXISTS ================= */
-    // ✅ FIX: Check the actual image exists
-
-    if (trip.morningDrop?.image) {
-      throw new Error("Morning drop photo already uploaded");
+    if (Boolean(trip.morningDrop?.imageUrl)) {
+      throw new ConflictError("Morning drop photo already uploaded");
     }
 
-    /* ================= SAVE PHOTO DATA ================= */
-    // ✅ FIX: Use secure_url first (Cloudinary)
-    // ✅ FIX: Convert capturedAt to Date object
+    await trip.addMorningDropPhoto(
+      file.secure_url || file.path || file.url,
+      file.public_id || null,
+      body?.latitude || null,
+      body?.longitude || null,
+      body?.address || null,
+      body?.distanceInMeters || null,
+      body?.deviceInfo || null,
+      body?.width || null,
+      body?.height || null,
+      body?.capturedAt ? new Date(body.capturedAt) : new Date()
+    );
 
-    trip.morningDrop = {
-      image: file.secure_url || file.path || file.url,
-      latitude: body?.latitude || null,
-      longitude: body?.longitude || null,
-      capturedAt: body?.capturedAt ? new Date(body.capturedAt) : new Date(),
-      uploadedAt: new Date(),
-    };
-
-    await trip.save();
-
-    /* ================= SEND NOTIFICATION ================= */
-
-    await sendNotification({
-      driverId: trip.driverId,
+    await notifyDriver(trip.driverId, {
       title: "Morning Drop Photo Uploaded",
       message: `Drop photo uploaded for ${trip.childName || "student"}`,
-      type: "morning_drop",
-      priority: "medium",
+      event: EVENTS.MORNING_DROP_PHOTO_UPLOADED,
+      payload: trip,
       io,
     });
-
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(trip.driverId)).emit("morning_drop_photo_uploaded", trip);
-      io.to(String(trip.driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Morning Drop Photo Uploaded",
-        message: `Drop photo uploaded for ${trip.childName || "student"}`,
-        createdAt: new Date(),
-      });
-    }
 
     console.log("✅ Morning drop photo uploaded successfully");
 
@@ -576,64 +694,43 @@ export const uploadAfternoonPickupPhotoService = async (tripId, file, body, io) 
     console.log("📸 Uploading afternoon pickup photo:", tripId);
 
     if (!tripId || !file) {
-      throw new Error("tripId and file are required");
+      throw new ValidationError("tripId and file are required");
     }
 
     const trip = await Trips.findById(tripId);
 
     if (!trip) {
-      throw new Error("Trip not found");
+      throw new NotFoundError("Trip not found");
     }
-
-    /* ================= VALIDATE TRIP TYPE ================= */
 
     if (trip.tripType !== "afternoon") {
-      throw new Error("This is not an afternoon trip.");
+      throw new ValidationError("This is not an afternoon trip.");
     }
 
-    /* ================= CHECK IF PHOTO ALREADY EXISTS ================= */
-    // ✅ FIX: Check the actual image exists
-
-    if (trip.afternoonPickup?.image) {
-      throw new Error("Afternoon pickup photo already uploaded");
+    if (Boolean(trip.afternoonPickup?.imageUrl)) {
+      throw new ConflictError("Afternoon pickup photo already uploaded");
     }
 
-    /* ================= SAVE PHOTO DATA ================= */
-    // ✅ FIX: Use secure_url first (Cloudinary)
-    // ✅ FIX: Convert capturedAt to Date object
+    await trip.addAfternoonPickupPhoto(
+      file.secure_url || file.path || file.url,
+      file.public_id || null,
+      body?.latitude || null,
+      body?.longitude || null,
+      body?.address || null,
+      body?.distanceInMeters || null,
+      body?.deviceInfo || null,
+      body?.width || null,
+      body?.height || null,
+      body?.capturedAt ? new Date(body.capturedAt) : new Date()
+    );
 
-    trip.afternoonPickup = {
-      image: file.secure_url || file.path || file.url,
-      latitude: body?.latitude || null,
-      longitude: body?.longitude || null,
-      capturedAt: body?.capturedAt ? new Date(body.capturedAt) : new Date(),
-      uploadedAt: new Date(),
-    };
-
-    await trip.save();
-
-    /* ================= SEND NOTIFICATION ================= */
-
-    await sendNotification({
-      driverId: trip.driverId,
+    await notifyDriver(trip.driverId, {
       title: "Afternoon Pickup Photo Uploaded",
       message: `Pickup photo uploaded for ${trip.childName || "student"}`,
-      type: "afternoon_pickup",
-      priority: "medium",
+      event: EVENTS.AFTERNOON_PICKUP_PHOTO_UPLOADED,
+      payload: trip,
       io,
     });
-
-    /* ================= SOCKET ================= */
-
-    if (io) {
-      io.to(String(trip.driverId)).emit("afternoon_pickup_photo_uploaded", trip);
-      io.to(String(trip.driverId)).emit("notification", {
-        _id: Date.now(),
-        title: "Afternoon Pickup Photo Uploaded",
-        message: `Pickup photo uploaded for ${trip.childName || "student"}`,
-        createdAt: new Date(),
-      });
-    }
 
     console.log("✅ Afternoon pickup photo uploaded successfully");
 
