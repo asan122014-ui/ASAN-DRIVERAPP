@@ -12,7 +12,13 @@ import {
   getTripProgress,
   receivePayment,
   getTripDetails,
+  uploadMorningDropPhoto,
+  uploadAfternoonPickupPhoto,
 } from "../controllers/tripController.js";
+
+import {
+  studentVerificationUpload,
+} from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -53,6 +59,20 @@ router.post("/pickup/:tripId", pickupStudent);
 
 // Drop Student
 router.post("/drop/:tripId", dropStudent);
+
+// Upload morning drop verification photo
+router.post(
+  "/morning-drop-photo/:tripId",
+  studentVerificationUpload.single("photo"),
+  uploadMorningDropPhoto
+);
+
+// Upload afternoon pickup verification photo
+router.post(
+  "/afternoon-pickup-photo/:tripId",
+  studentVerificationUpload.single("photo"),
+  uploadAfternoonPickupPhoto
+);
 
 /* ==================================================
    PARENT
@@ -124,4 +144,5 @@ router.get("/today-status/:driverId", async (req, res) => {
     });
   }
 });
+
 export default router;
