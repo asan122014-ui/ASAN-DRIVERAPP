@@ -35,12 +35,7 @@ const tripSchema = new mongoose.Schema(
     /* ================= STATUS ================= */
     status: {
       type: String,
-      enum: [
-        "waiting",
-        "in_transit",
-        "completed",
-        "cancelled",
-      ],
+      enum: ["waiting", "in_transit", "completed", "cancelled"],
       default: "in_transit",
       index: true,
     },
@@ -196,6 +191,11 @@ const tripSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
+      /* ================= ADDED: uploadedAt ================= */
+      uploadedAt: {
+        type: Date,
+        default: null,
+      },
     },
 
     /* ================= AFTERNOON PICKUP VERIFICATION ================= */
@@ -253,6 +253,11 @@ const tripSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
+      /* ================= ADDED: uploadedAt ================= */
+      uploadedAt: {
+        type: Date,
+        default: null,
+      },
     },
   },
   {
@@ -288,12 +293,12 @@ tripSchema.index({
 
 /* ================= VIRTUAL: Has Morning Drop Photo ================= */
 tripSchema.virtual("hasMorningDropPhoto").get(function () {
-  return this.morningDrop && this.morningDrop.imageUrl !== null;
+  return Boolean(this.morningDrop?.imageUrl);
 });
 
 /* ================= VIRTUAL: Has Afternoon Pickup Photo ================= */
 tripSchema.virtual("hasAfternoonPickupPhoto").get(function () {
-  return this.afternoonPickup && this.afternoonPickup.imageUrl !== null;
+  return Boolean(this.afternoonPickup?.imageUrl);
 });
 
 /* ================= VIRTUAL: Morning Drop Maps URL ================= */
@@ -322,8 +327,8 @@ tripSchema.virtual("afternoonPickupMapsUrl").get(function () {
 
 /* ================= VIRTUAL: Is Fully Verified ================= */
 tripSchema.virtual("isFullyVerified").get(function () {
-  const hasMorning = this.morningDrop && this.morningDrop.imageUrl !== null;
-  const hasAfternoon = this.afternoonPickup && this.afternoonPickup.imageUrl !== null;
+  const hasMorning = Boolean(this.morningDrop?.imageUrl);
+  const hasAfternoon = Boolean(this.afternoonPickup?.imageUrl);
   
   if (this.tripType === "morning") {
     return hasMorning && this.morningDrop.verified === true;
@@ -384,12 +389,13 @@ tripSchema.methods.addMorningDropPhoto = function (
     address: address || null,
     capturedAt: capturedAt || new Date(),
     expiresAt: expires,
-    verified: true,
+    verified: false, // ✅ FIX: Not auto-verified
     uploadStatus: "uploaded",
     distanceInMeters: distanceInMeters || null,
     deviceInfo: deviceInfo || null,
     width: width || null,
     height: height || null,
+    uploadedAt: new Date(), // ✅ ADDED
   };
   return this.save();
 };
@@ -423,12 +429,13 @@ tripSchema.methods.addAfternoonPickupPhoto = function (
     address: address || null,
     capturedAt: capturedAt || new Date(),
     expiresAt: expires,
-    verified: true,
+    verified: false, // ✅ FIX: Not auto-verified
     uploadStatus: "uploaded",
     distanceInMeters: distanceInMeters || null,
     deviceInfo: deviceInfo || null,
     width: width || null,
     height: height || null,
+    uploadedAt: new Date(), // ✅ ADDED
   };
   return this.save();
 };
@@ -449,6 +456,7 @@ tripSchema.methods.clearMorningDropPhoto = function () {
     deviceInfo: null,
     width: null,
     height: null,
+    uploadedAt: null, // ✅ ADDED
   };
   return this.save();
 };
@@ -469,6 +477,7 @@ tripSchema.methods.clearAfternoonPickupPhoto = function () {
     deviceInfo: null,
     width: null,
     height: null,
+    uploadedAt: null, // ✅ ADDED
   };
   return this.save();
 };
