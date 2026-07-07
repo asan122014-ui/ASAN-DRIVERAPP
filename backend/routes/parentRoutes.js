@@ -377,24 +377,23 @@ router.put("/:id", async (req, res) => {
 ============================================================ */
 router.delete("/:id", async (req, res) => {
   try {
-    const deleted = await Parent.findByIdAndDelete(req.params.id);
+    const parent = await Parent.findById(req.params.id);
 
-    if (!deleted) {
+    if (!parent) {
       return res.status(404).json({
         success: false,
         message: "Parent not found",
       });
     }
 
-    // Delete all children of this parent
-    await Child.deleteMany({
-      parentId: req.params.id,
-    });
+    // Delete all related records
+    await Child.deleteMany({ parentId: req.params.id });
+    await Trip.deleteMany({ parentId: req.params.id });
+    await Notification.deleteMany({ parentId: req.params.id });
+    await DriverRequest.deleteMany({ parentId: req.params.id });
 
-    // Delete all driver requests of this parent
-    await DriverRequest.deleteMany({
-      parentId: req.params.id,
-    });
+    // Finally delete the parent
+    await Parent.findByIdAndDelete(req.params.id);
 
     res.json({
       success: true,
