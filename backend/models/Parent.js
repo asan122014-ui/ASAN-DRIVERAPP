@@ -74,9 +74,29 @@ const parentSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    /* ================= PROFILE PHOTO ================= */
+    profilePhoto: {
+      type: String,
+      default: null,
+    },
+
+    /* ================= REFERRAL CODE ================= */
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
+    /* ================= REFERRED BY ================= */
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Parent",
+      default: null,
+    },
   },
   {
-    timestamps: true,
+    timestamps: true, // This automatically adds createdAt and updatedAt
   }
 );
 
@@ -90,20 +110,115 @@ parentSchema.index({
   driverId: 1,
 });
 
+parentSchema.index({
+  email: 1,
+});
+
+parentSchema.index({
+  phone: 1,
+});
+
 /* ================= HASH PASSWORD ================= */
 
-parentSchema.pre("save", async function () {
-  if (!this.isModified("password")) return;
+parentSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
 
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 /* ================= COMPARE PASSWORD ================= */
 
-parentSchema.methods.comparePassword = function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
+parentSchema.methods.comparePassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
 };
+
+/* ================= GET FULL NAME (Virtual) ================= */
+
+parentSchema.virtual("fullName").get(function () {
+  return this.name;
+});
+
+/* ================= TO JSON TRANSFORM ================= */
+
+parentSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.__v;
+    return ret;
+  },
+});
+
+/* ================= STATIC METHODS ================= */
+
+// Find parent by email
+parentSchema.statics.findByEmail = function (email) {
+  return this.findOne({ email: email.toLowerCase().trim() });
+};
+
+// Find parent by phone
+parentSchema.statics.findByPhone = function (phone) {
+  return this.findOne({ phone: phone.trim() });
+};
+
+// Check if email exists
+parentSchema.statics.emailExists = async function (email) {
+  const count = await this.countDocuments({ email: email.toLowerCase().trim() });
+  return count > 0;
+};
+
+// Check if phone exists
+parentSchema.statics.phoneExists = async function (phone) {
+  const count = await this.countDocuments({ phone: phone.trim() });
+  return count > 0;
+};
+
+/* ================= VIRTUAL POPULATE ================= */
+
+parentSchema.virtual("children", {
+  ref: "Child",
+  localField: "_id",
+  foreignField: "parentId",
+});
+
+parentSchema.virtual("trips", {
+  ref: "Trip",
+  localField: "_id",
+  foreignField: "parentId",
+});
+
+parentSchema.virtual("notifications", {
+  ref: "Notification",
+  localField: "_id",
+  foreignField: "parentId",
+});
+
+parentSchema.virtual("driver", {
+  ref: "Driver",
+  localField: "driverId",
+  foreignField: "driverId",
+  justOne: true,
+});
+
+/* ================= MIDDLEWARE ================= */
+
+// Before deleting a parent, check if there are children
+parentSchema.pre("deleteOne", { document: true, query: false }, async function (next) {
+  const Child = mongoose.model("Child");
+  const childrenCount = await Child.countDocuments({ parentId: this._id });
+  
+  if (childrenCount > 0) {
+    const error = new Error("Cannot delete parent with existing children");
+    error.status = 400;
+    return next(error);
+  }
+  next();
+});
 
 const Parent = mongoose.model("Parent", parentSchema);
 
