@@ -3,6 +3,9 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import DriverRequest from "../models/DriverRequest.js";
+import Trip from "../models/Trip.js";
+import Notification from "../models/Notification.js";
+// import Billing from "../models/Billing.js";
 
 const router = express.Router();
 
@@ -144,16 +147,16 @@ router.post("/check-email", async (req, res) => {
     });
 
     if (!parent) {
-  return res.status(404).json({
-    success: false,
-    message: "Email not found",
-  });
-}
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
 
-res.json({
-  success: true,
-  message: "Email found",
-});
+    res.json({
+      success: true,
+      message: "Email found",
+    });
   } catch (error) {
     console.error(error);
 
@@ -200,6 +203,53 @@ router.get("/", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch parents",
+    });
+  }
+});
+
+/* ============================================================
+   DOWNLOAD USER DATA
+============================================================ */
+router.get("/download-data/:parentId", async (req, res) => {
+  try {
+    const { parentId } = req.params;
+
+    // Check if parent exists
+    const parent = await Parent.findById(parentId).select("-password");
+    
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    // Fetch all related data
+    const children = await Child.find({ parentId });
+    const trips = await Trip.find({ parentId });
+    const notifications = await Notification.find({ parentId });
+    // const billing = await Billing.find({ parentId });
+
+    // Prepare data for download
+    const downloadData = {
+      parent: parent.toObject(),
+      children: children.map(c => c.toObject()),
+      trips: trips.map(t => t.toObject()),
+      notifications: notifications.map(n => n.toObject()),
+      // billing: billing.map(b => b.toObject()),
+      downloadedAt: new Date().toISOString(),
+    };
+
+    res.json({
+      success: true,
+      message: "Data downloaded successfully",
+      data: downloadData,
+    });
+  } catch (error) {
+    console.error("DOWNLOAD DATA ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to download data",
     });
   }
 });
@@ -358,6 +408,7 @@ router.delete("/:id", async (req, res) => {
     });
   }
 });
+
 /* ============================================================
    LINK DRIVER (Parent App)
 ============================================================ */
@@ -424,9 +475,10 @@ router.post("/link-driver", async (req, res) => {
     });
   }
 });
-/*************************************************
- RESET PASSWORD
-**************************************************/
+
+/* ============================================================
+   RESET PASSWORD
+============================================================ */
 router.post("/reset-password", async (req, res) => {
   try {
     const { email, newPassword } = req.body;
