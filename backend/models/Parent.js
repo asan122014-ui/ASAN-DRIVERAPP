@@ -138,7 +138,7 @@ parentSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-/* ================= GET FULL NAME (Virtual) ================= */
+/* ================= VIRTUAL FIELDS ================= */
 
 parentSchema.virtual("fullName").get(function () {
   return this.name;
@@ -203,21 +203,6 @@ parentSchema.virtual("driver", {
   localField: "driverId",
   foreignField: "driverId",
   justOne: true,
-});
-
-/* ================= MIDDLEWARE ================= */
-
-// Before deleting a parent, check if there are children
-parentSchema.pre("deleteOne", { document: true, query: false }, async function (next) {
-  const Child = mongoose.model("Child");
-  const childrenCount = await Child.countDocuments({ parentId: this._id });
-  
-  if (childrenCount > 0) {
-    const error = new Error("Cannot delete parent with existing children");
-    error.status = 400;
-    return next(error);
-  }
-  next();
 });
 
 const Parent = mongoose.model("Parent", parentSchema);
