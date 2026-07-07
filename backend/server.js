@@ -3,8 +3,10 @@ import dotenv from "dotenv";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
+import cron from "node-cron";
 import connectDB from "./config/db.js";
 import Driver from "./models/Driver.js";
+import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
 
 /* ================= ROUTES ================= */
 import otpRoutes from "./routes/otp.js";
@@ -187,6 +189,22 @@ const PORT = process.env.PORT || 5000;
 
 connectDB()
   .then(() => {
+    console.log("✅ Database connected successfully");
+
+    /* ================= DAILY CLEANUP CRON JOB ================= */
+    // Runs at 2:00 AM every day
+    cron.schedule("0 2 * * *", async () => {
+      console.log("🕑 Running scheduled verification photo cleanup...");
+      try {
+        await cleanupVerificationPhotos();
+        console.log("✅ Verification photo cleanup completed successfully");
+      } catch (error) {
+        console.error("❌ Verification photo cleanup failed:", error.message);
+      }
+    });
+
+    console.log("⏰ Cron job scheduled: Daily at 2:00 AM");
+
     server.listen(PORT, () => {
       console.log(`🚀 Server running on ${PORT}`);
     });
