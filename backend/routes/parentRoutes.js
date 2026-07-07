@@ -57,7 +57,7 @@ router.post("/register", async (req, res) => {
       name,
       email: email.trim().toLowerCase(),
       phone,
-      password, // Model will hash this
+      password,
       address,
       homeLocation: {
         type: "Point",
@@ -159,7 +159,6 @@ router.post("/check-email", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Failed to check email",
@@ -214,7 +213,6 @@ router.get("/download-data/:parentId", async (req, res) => {
   try {
     const { parentId } = req.params;
 
-    // Check if parent exists
     const parent = await Parent.findById(parentId).select("-password");
     
     if (!parent) {
@@ -224,13 +222,14 @@ router.get("/download-data/:parentId", async (req, res) => {
       });
     }
 
-    // Fetch all related data
+    // ✅ FIXED: Use parent (not parentId) for Trip model
     const children = await Child.find({ parentId });
-    const trips = await Trip.find({ parentId });
+    const trips = await Trip.find({ parent: parentId })
+      .populate("child", "name grade school")
+      .sort({ createdAt: -1 });
     const notifications = await Notification.find({ parentId });
     // const billing = await Billing.find({ parentId });
 
-    // Prepare data for download
     const downloadData = {
       parent: parent.toObject(),
       children: children.map(c => c.toObject()),
@@ -386,13 +385,12 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    // Delete all related records
+    // ✅ FIXED: Use parent (not parentId) for Trip model
     await Child.deleteMany({ parentId: req.params.id });
-    await Trip.deleteMany({ parentId: req.params.id });
+    await Trip.deleteMany({ parent: req.params.id });
     await Notification.deleteMany({ parentId: req.params.id });
     await DriverRequest.deleteMany({ parentId: req.params.id });
 
-    // Finally delete the parent
     await Parent.findByIdAndDelete(req.params.id);
 
     res.json({
@@ -422,7 +420,6 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    // Find Parent
     const parent = await Parent.findById(parentId);
 
     if (!parent) {
@@ -432,7 +429,6 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    // Find Driver
     const driver = await Driver.findOne({
       driverId: driverId.trim().toUpperCase(),
     });
@@ -444,11 +440,9 @@ router.post("/link-driver", async (req, res) => {
       });
     }
 
-    // Update Parent
     parent.driverId = driver.driverId;
     await parent.save();
 
-    // Update all children of this parent
     await Child.updateMany(
       { parentId: parent._id },
       {
@@ -501,7 +495,6 @@ router.post("/reset-password", async (req, res) => {
     }
 
     parent.password = newPassword;
-
     await parent.save();
 
     res.json({
