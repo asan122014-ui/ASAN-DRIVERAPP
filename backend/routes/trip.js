@@ -1,10 +1,10 @@
-import Trips from "../models/Trips.js";
 import express from "express";
 
 import {
   startTrip,
   endTrip,
-  getActiveTrip,
+  getActiveTrips,
+  getTripById,
   getTripHistory,
   getParentTripHistory,
   pickupStudent,
@@ -14,6 +14,9 @@ import {
   getTripDetails,
   uploadMorningDropPhoto,
   uploadAfternoonPickupPhoto,
+  verifyMorningDropPhoto,
+  verifyAfternoonPickupPhoto,
+  getTodayTripStatus,
 } from "../controllers/tripController.js";
 
 import {
@@ -32,13 +35,13 @@ router.post("/start", startTrip);
 // End Trip
 router.post("/end", endTrip);
 
-// Active Trip
-router.get("/active/:driverId", getActiveTrip);
+// Active Trips (Driver Dashboard)
+router.get("/active/:driverId", getActiveTrips);
 
 // Driver Trip History
 router.get("/history/:driverId", getTripHistory);
 
-// Driver Trip Details
+// Driver Trip Details (by date)
 router.get(
   "/details/:driverId/:tripType/:date",
   getTripDetails
@@ -46,6 +49,9 @@ router.get(
 
 // Trip Progress
 router.get("/progress/:driverId", getTripProgress);
+
+// Today's trip status
+router.get("/today-status/:driverId", getTodayTripStatus);
 
 // Receive Payment
 router.post("/payment", receivePayment);
@@ -75,74 +81,33 @@ router.post(
 );
 
 /* ==================================================
+   VERIFICATION
+================================================== */
+
+// Verify morning drop photo
+router.patch(
+  "/verify/morning-drop/:tripId",
+  verifyMorningDropPhoto
+);
+
+// Verify afternoon pickup photo
+router.patch(
+  "/verify/afternoon-pickup/:tripId",
+  verifyAfternoonPickupPhoto
+);
+
+/* ==================================================
    PARENT
 ================================================== */
 
 // Parent Trip History
 router.get("/parent/:parentId", getParentTripHistory);
 
-router.get("/today-status/:driverId", async (req, res) => {
-  try {
-    const { driverId } = req.params;
+/* ==================================================
+   GET TRIP BY ID (MUST BE LAST)
+================================================== */
 
-    // Today's range
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Get only today's trips
-    const trips = await Trips.find({
-      driverId,
-      createdAt: {
-        $gte: today,
-        $lt: tomorrow,
-      },
-    });
-
-    // Separate trips
-    const morningTrips = trips.filter(
-      (trip) => trip.tripType === "morning"
-    );
-
-    const afternoonTrips = trips.filter(
-      (trip) => trip.tripType === "afternoon"
-    );
-
-    // Check completion
-    const morningCompleted =
-      morningTrips.length > 0 &&
-      morningTrips.every(
-        (trip) => trip.status === "completed"
-      );
-
-    const afternoonCompleted =
-      afternoonTrips.length > 0 &&
-      afternoonTrips.every(
-        (trip) => trip.status === "completed"
-      );
-
-    console.log({
-      morningTrips: morningTrips.length,
-      afternoonTrips: afternoonTrips.length,
-      morningCompleted,
-      afternoonCompleted,
-    });
-
-    res.json({
-      success: true,
-      morningCompleted,
-      afternoonCompleted,
-    });
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch trip status",
-    });
-  }
-});
+// Get single trip by ID (parent/student view)
+router.get("/:tripId", getTripById);
 
 export default router;
