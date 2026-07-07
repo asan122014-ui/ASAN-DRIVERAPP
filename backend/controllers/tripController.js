@@ -1,4 +1,7 @@
 import Driver from "../models/Driver.js";
+import Trip from "../models/Trips.js";
+import { cloudinary } from "../config/cloudinary.js";
+
 import {
   startTripService,
   endTripService,
@@ -9,8 +12,9 @@ import {
   dropStudentService,
   getTripProgressService,
   receivePaymentService,
+  uploadMorningDropPhotoService,
+  uploadAfternoonPickupPhotoService,
 } from "../services/tripService.js";
-import Trip from "../models/Trips.js";
 
 /* ================= START TRIP ================= */
 export const startTrip = async (req, res) => {
@@ -30,7 +34,6 @@ export const startTrip = async (req, res) => {
       req.app.get("io")
     );
 
-    /* ✅ UPDATE DRIVER STATUS */
     await Driver.findOneAndUpdate(
       { driverId },
       {
@@ -71,7 +74,6 @@ export const endTrip = async (req, res) => {
       req.app.get("io")
     );
 
-    /* ✅ UPDATE DRIVER STATUS */
     await Driver.findOneAndUpdate(
       { driverId },
       {
@@ -145,6 +147,94 @@ export const dropStudent = async (req, res) => {
   }
 };
 
+/* ================= UPLOAD MORNING DROP PHOTO ================= */
+export const uploadMorningDropPhoto = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Photo is required",
+      });
+    }
+
+    const trip = await uploadMorningDropPhotoService(
+      tripId,
+      req.file,
+      req.body
+    );
+
+    return res.json({
+      success: true,
+      message: "Morning drop photo uploaded successfully",
+      data: trip,
+    });
+  } catch (error) {
+    console.error("❌ Morning Drop Photo Error:", error);
+
+    // ✅ FIXED: Check both filename and public_id
+    if (req.file?.filename || req.file?.public_id) {
+      try {
+        const publicId = req.file.filename || req.file.public_id;
+        await cloudinary.uploader.destroy(publicId);
+        console.log(`🧹 Cleaned up: ${publicId}`);
+      } catch (cleanupError) {
+        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* ================= UPLOAD AFTERNOON PICKUP PHOTO ================= */
+export const uploadAfternoonPickupPhoto = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Photo is required",
+      });
+    }
+
+    const trip = await uploadAfternoonPickupPhotoService(
+      tripId,
+      req.file,
+      req.body
+    );
+
+    return res.json({
+      success: true,
+      message: "Afternoon pickup photo uploaded successfully",
+      data: trip,
+    });
+  } catch (error) {
+    console.error("❌ Afternoon Pickup Photo Error:", error);
+
+    // ✅ FIXED: Check both filename and public_id
+    if (req.file?.filename || req.file?.public_id) {
+      try {
+        const publicId = req.file.filename || req.file.public_id;
+        await cloudinary.uploader.destroy(publicId);
+        console.log(`🧹 Cleaned up: ${publicId}`);
+      } catch (cleanupError) {
+        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 /* ================= TRIP PROGRESS ================= */
 export const getTripProgress = async (req, res) => {
   try {
@@ -182,9 +272,20 @@ export const getActiveTrip = async (req, res) => {
 
     const trip = await getActiveTripService(driverId);
 
+    // ✅ Hide verification photos from driver
+    if (trip) {
+      const sanitized = trip.toObject ? trip.toObject() : trip;
+      delete sanitized.morningDrop;
+      delete sanitized.afternoonPickup;
+      return res.json({
+        success: true,
+        data: sanitized || null,
+      });
+    }
+
     return res.json({
       success: true,
-      data: trip || null,
+      data: null,
     });
 
   } catch (error) {
@@ -211,9 +312,17 @@ export const getTripHistory = async (req, res) => {
 
     const trips = await getDriverTripsService(driverId);
 
+    // ✅ Strip verification photos from driver history
+    const sanitizedTrips = trips.map(trip => {
+      const tripObj = trip.toObject ? trip.toObject() : trip;
+      delete tripObj.morningDrop;
+      delete tripObj.afternoonPickup;
+      return tripObj;
+    });
+
     return res.json({
       success: true,
-      data: trips || [],
+      data: sanitizedTrips || [],
     });
 
   } catch (error) {
@@ -226,7 +335,7 @@ export const getTripHistory = async (req, res) => {
   }
 };
 
-/* ================= 🔥 PARENT TRIP HISTORY ================= */
+/* ================= PARENT TRIP HISTORY ================= */
 export const getParentTripHistory = async (req, res) => {
   try {
     const { parentId } = req.params;
@@ -240,6 +349,7 @@ export const getParentTripHistory = async (req, res) => {
 
     const trips = await getParentTripsService(parentId);
 
+    // ✅ Parent history includes verification photos
     return res.json({
       success: true,
       data: trips || [],
@@ -254,6 +364,7 @@ export const getParentTripHistory = async (req, res) => {
     });
   }
 };
+
 /* ================= RECEIVE PAYMENT ================= */
 export const receivePayment = async (req, res) => {
   try {
@@ -286,6 +397,7 @@ export const receivePayment = async (req, res) => {
     });
   }
 };
+
 /* ================= TRIP DETAILS ================= */
 export const getTripDetails = async (req, res) => {
   try {
@@ -308,10 +420,18 @@ export const getTripDetails = async (req, res) => {
       .populate("child", "name")
       .sort({ createdAt: 1 });
 
+    // ✅ Hide verification photos from driver-facing endpoint
+    const sanitizedTrips = trips.map(trip => {
+      const t = trip.toObject ? trip.toObject() : trip;
+      delete t.morningDrop;
+      delete t.afternoonPickup;
+      return t;
+    });
+
     return res.status(200).json({
       success: true,
-      count: trips.length,
-      data: trips,
+      count: sanitizedTrips.length,
+      data: sanitizedTrips,
     });
   } catch (error) {
     console.error("Trip Details:", error);
