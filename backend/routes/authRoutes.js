@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import twilio from "twilio";
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
-import { upload } from "../config/cloudinary.js";
+import { driverUpload } from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -21,7 +21,7 @@ const otpStore = new Map();
 /* ================= DRIVER SIGNUP ================= */
 router.post(
   "/signup",
-  upload.fields([
+  driverUpload.fields([
     { name: "licenseFront", maxCount: 1 },
     { name: "licenseBack", maxCount: 1 },
     { name: "rcFront", maxCount: 1 },
@@ -88,19 +88,16 @@ router.post(
         password,
         address,
 
-        // Home Address
         homeLocation: {
           type: "Point",
           coordinates: [lng, lat],
         },
 
-        // Initial Current Location
         location: {
           type: "Point",
           coordinates: [lng, lat],
         },
 
-        // Last Live Location
         lastLocation: {
           lat,
           lng,
