@@ -44,14 +44,28 @@ const notificationSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: [
+        // Student actions
         "pickup",
         "drop",
+        "student_picked_up",
+        "student_dropped",
+
+        // Trip events
         "trip_start",
         "trip_started",
         "trip_end",
         "trip_ended",
+
+        // Payment
+        "payment_received",
+
+        // Photo verification
+        "morning_drop_verified",
+        "afternoon_pickup_verified",
         "morning_drop_photo_uploaded",
         "afternoon_pickup_photo_uploaded",
+
+        // Other
         "delay",
         "emergency",
         "general",
