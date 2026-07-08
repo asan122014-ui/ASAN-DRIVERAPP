@@ -3,7 +3,10 @@ import mongoose from "mongoose";
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
-import { cloudinary, upload } from "../config/cloudinary.js";
+import {
+  cloudinary,
+  driverUpload,
+} from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -16,7 +19,7 @@ const findDriver = async (driverId) => {
   }
 };
 
-/* ================= SAVE FCM TOKEN (🔥 NEW) ================= */
+/* ================= SAVE FCM TOKEN ================= */
 router.post("/save-token", async (req, res) => {
   try {
     const { driverId, token } = req.body;
@@ -31,7 +34,7 @@ router.post("/save-token", async (req, res) => {
     const driver = await Driver.findOneAndUpdate(
       { driverId },
       {
-        $addToSet: { fcmTokens: token }, // ✅ multiple devices support
+        $addToSet: { fcmTokens: token },
       },
       { new: true }
     );
@@ -145,6 +148,7 @@ router.get("/location", async (req, res) => {
     });
   }
 });
+
 /* ================= DRIVER DASHBOARD ================= */
 router.get("/dashboard/:driverId", async (req, res) => {
   try {
@@ -206,14 +210,12 @@ router.get("/profile/:driverId", async (req, res) => {
       });
     }
 
-    // Today's date range
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Count today's trips
     const todayTrips = await Trips.countDocuments({
       driverId,
       createdAt: {
@@ -269,7 +271,8 @@ router.get("/tracking/:driverId", async (req, res) => {
   }
 });
 
-router.put("/update", upload.single("profilePhoto"), async (req, res) => {
+/* ================= UPDATE DRIVER ================= */
+router.put("/update", driverUpload.single("profilePhoto"), async (req, res) => {
   try {
     const { driverId, ...updates } = req.body;
 
@@ -298,37 +301,35 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
 
     /* ===== IMAGE UPDATE ===== */
     if (req.file) {
-  // delete old image
-  if (driver.profilePhotoPublicId) {
-    await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
-  }
+      if (driver.profilePhotoPublicId) {
+        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+      }
 
-  // use already uploaded file from multer-cloudinary
-  driver.profilePhoto = req.file.path;
-  driver.profilePhotoPublicId = req.file.filename;
-}
+      driver.profilePhoto = req.file.path;
+      driver.profilePhotoPublicId = req.file.filename;
+    }
 
     /* ===== UPDATE FIELDS ===== */
     Object.keys(updates).forEach((key) => {
-  if (
-    updates[key] !== undefined &&
-    ![
-      "_id",
-      "__v",
-      "password",
-      "profilePhoto",
-      "profilePhotoPublicId",
-      "homeLocation",
-      "location",
-      "lastLocation",
-      "createdAt",
-      "updatedAt",
-      "fcmTokens"
-    ].includes(key)
-  ) {
-    driver[key] = updates[key];
-  }
-});
+      if (
+        updates[key] !== undefined &&
+        ![
+          "_id",
+          "__v",
+          "password",
+          "profilePhoto",
+          "profilePhotoPublicId",
+          "homeLocation",
+          "location",
+          "lastLocation",
+          "createdAt",
+          "updatedAt",
+          "fcmTokens"
+        ].includes(key)
+      ) {
+        driver[key] = updates[key];
+      }
+    });
 
     await driver.save();
 
@@ -347,6 +348,7 @@ router.put("/update", upload.single("profilePhoto"), async (req, res) => {
     });
   }
 });
+
 /* ================= GET DRIVER BY ID ================= */
 router.get("/:id", async (req, res) => {
   try {
