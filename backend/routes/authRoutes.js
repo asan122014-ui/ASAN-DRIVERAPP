@@ -209,7 +209,7 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    const parent = await Parent.findById(parentId);
+    const parent = await Parent.findById(parentId).select("+password");
 
     if (!parent) {
       return res.status(404).json({
