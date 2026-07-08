@@ -8,14 +8,12 @@ import { driverUpload } from "../config/cloudinary.js";
 const router = express.Router();
 
 /* ================= TWILIO ================= */
-
 const client = twilio(
   process.env.TWILIO_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
 /* ================= OTP STORE ================= */
-
 const otpStore = new Map();
 
 /* ================= DRIVER SIGNUP ================= */
@@ -87,27 +85,22 @@ router.post(
         email: email.toLowerCase(),
         password,
         address,
-
         homeLocation: {
           type: "Point",
           coordinates: [lng, lat],
         },
-
         location: {
           type: "Point",
           coordinates: [lng, lat],
         },
-
         lastLocation: {
           lat,
           lng,
           updatedAt: new Date(),
         },
-
         vehicleNumber,
         vehicleType,
         licenseNumber,
-
         licenseFront: req.files?.licenseFront?.[0]?.path || "",
         licenseBack: req.files?.licenseBack?.[0]?.path || "",
         rcFront: req.files?.rcFront?.[0]?.path || "",
@@ -116,7 +109,6 @@ router.post(
         idFront: req.files?.idFront?.[0]?.path || "",
         idBack: req.files?.idBack?.[0]?.path || "",
         profilePhoto: req.files?.profilePhoto?.[0]?.path || "",
-
         status: "pending",
       });
 
@@ -137,7 +129,6 @@ router.post(
       });
     } catch (error) {
       console.error("Signup Error:", error);
-
       return res.status(500).json({
         success: false,
         message: "Signup failed",
@@ -147,7 +138,6 @@ router.post(
 );
 
 /* ================= LOGIN ================= */
-
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -188,7 +178,6 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       success: false,
       message: "Login failed",
@@ -197,7 +186,6 @@ router.post("/login", async (req, res) => {
 });
 
 /* ================= SAVE FCM TOKEN ================= */
-
 router.post("/save-token", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
@@ -209,7 +197,7 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    const parent = await Parent.findById(parentId).select("+password");
+    const parent = await Parent.findById(parentId);
 
     if (!parent) {
       return res.status(404).json({
@@ -218,17 +206,25 @@ router.post("/save-token", async (req, res) => {
       });
     }
 
-    if (!parent.fcmTokens.includes(fcmToken)) {
-      parent.fcmTokens.push(fcmToken);
-      await parent.save();
-    }
+    // ✅ Use $addToSet to avoid duplicates and bypass password middleware
+    await Parent.findByIdAndUpdate(
+      parentId,
+      {
+        $addToSet: {
+          fcmTokens: fcmToken,
+        },
+      },
+      { new: true }
+    );
 
-    res.json({
+    return res.json({
       success: true,
       message: "Token saved",
     });
   } catch (error) {
+    console.error("SAVE TOKEN ERROR:");
     console.error(error);
+    console.error(error.stack);
 
     res.status(500).json({
       success: false,
@@ -238,7 +234,6 @@ router.post("/save-token", async (req, res) => {
 });
 
 /* ================= SEND OTP ================= */
-
 router.post("/send-otp", async (req, res) => {
   try {
     const { phone } = req.body;
@@ -261,6 +256,7 @@ router.post("/send-otp", async (req, res) => {
       message: "OTP sent",
     });
   } catch (error) {
+    console.error("SEND OTP ERROR:", error);
     res.status(500).json({
       success: false,
       message: "OTP failed",
@@ -269,7 +265,6 @@ router.post("/send-otp", async (req, res) => {
 });
 
 /* ================= VERIFY OTP ================= */
-
 router.post("/verify-otp", (req, res) => {
   const { phone, otp } = req.body;
 
@@ -284,7 +279,6 @@ router.post("/verify-otp", (req, res) => {
 
   if (stored.otp == otp) {
     otpStore.delete(phone);
-
     return res.json({
       success: true,
     });
@@ -297,7 +291,6 @@ router.post("/verify-otp", (req, res) => {
 });
 
 /* ================= GET DRIVER ================= */
-
 router.get("/by-id/:driverId", async (req, res) => {
   try {
     const driver = await Driver.findOne({
@@ -316,6 +309,7 @@ router.get("/by-id/:driverId", async (req, res) => {
       driver,
     });
   } catch (error) {
+    console.error("GET DRIVER ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Server error",
