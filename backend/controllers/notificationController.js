@@ -15,10 +15,9 @@ export const getNotifications = async (req, res) => {
     }
 
     let filter = { read: false };
-
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.childId = childId; // ✅ FIXED
+    if (childId) filter.child = childId; // ✅ FIXED
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -29,7 +28,6 @@ export const getNotifications = async (req, res) => {
       count: notifications.length,
       data: notifications,
     });
-
   } catch (error) {
     console.error("Get notifications error:", error.message);
     return res.status(500).json({
@@ -52,10 +50,9 @@ export const getAllNotifications = async (req, res) => {
     }
 
     let filter = {};
-
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.childId = childId; // ✅ FIXED
+    if (childId) filter.child = childId; // ✅ FIXED
     if (type) filter.type = type;
     if (priority) filter.priority = priority;
 
@@ -67,7 +64,6 @@ export const getAllNotifications = async (req, res) => {
       success: true,
       data: notifications,
     });
-
   } catch (error) {
     console.error("Get all notifications error:", error.message);
     return res.status(500).json({
@@ -97,7 +93,6 @@ export const getParentNotifications = async (req, res) => {
       success: true,
       data: notifications,
     });
-
   } catch (error) {
     console.error("Parent notifications error:", error.message);
     return res.status(500).json({
@@ -129,7 +124,6 @@ export const markAsRead = async (req, res) => {
       success: true,
       data: updated,
     });
-
   } catch (error) {
     console.error("Mark read error:", error.message);
     return res.status(500).json({
@@ -152,10 +146,9 @@ export const markAllAsRead = async (req, res) => {
     }
 
     let filter = { read: false };
-
     if (driverId) filter.driver = driverId;
     if (parentId) filter.parent = parentId;
-    if (childId) filter.childId = childId; // ✅ FIXED
+    if (childId) filter.child = childId; // ✅ FIXED
 
     await Notification.updateMany(filter, { read: true });
 
@@ -163,7 +156,6 @@ export const markAllAsRead = async (req, res) => {
       success: true,
       message: "All notifications marked as read",
     });
-
   } catch (error) {
     console.error("Mark all read error:", error.message);
     return res.status(500).json({
@@ -210,7 +202,6 @@ export const sendTestNotification = async (req, res) => {
       success: true,
       message: "Notification sent successfully",
     });
-
   } catch (err) {
     console.error("FCM ERROR:", err.message);
     return res.status(500).json({
