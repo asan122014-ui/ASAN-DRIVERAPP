@@ -4,7 +4,7 @@ const notificationSchema = new mongoose.Schema(
   {
     /* ================= DRIVER ================= */
     driver: {
-      type: String, // driverId
+      type: String,
       required: true,
       index: true,
       trim: true,
@@ -14,11 +14,11 @@ const notificationSchema = new mongoose.Schema(
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
-      required: true, // 🔥 IMPORTANT (no more null)
+      required: true,
       index: true,
     },
 
-    /* ================= 🔥 CHILD ================= */
+    /* ================= CHILD ================= */
     child: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Child",
@@ -47,7 +47,11 @@ const notificationSchema = new mongoose.Schema(
         "pickup",
         "drop",
         "trip_start",
+        "trip_started",
         "trip_end",
+        "trip_ended",
+        "morning_drop_photo_uploaded",
+        "afternoon_pickup_photo_uploaded",
         "delay",
         "emergency",
         "general",
@@ -83,20 +87,15 @@ const notificationSchema = new mongoose.Schema(
 );
 
 /* ================= INDEXES ================= */
-
-// 🔥 driver queries
 notificationSchema.index({ driver: 1, createdAt: -1 });
-
-// 🔥 parent queries (MOST IMPORTANT)
 notificationSchema.index({ parent: 1, read: 1, createdAt: -1 });
-
-// 🔥 child queries
 notificationSchema.index({ child: 1, createdAt: -1 });
-
-// 🔥 filtering
 notificationSchema.index({ type: 1 });
 notificationSchema.index({ priority: 1 });
 
 /* ================= EXPORT ================= */
-const Notification = mongoose.model("Notification", notificationSchema);
+const Notification =
+  mongoose.models.Notification ||
+  mongoose.model("Notification", notificationSchema);
+
 export default Notification;
