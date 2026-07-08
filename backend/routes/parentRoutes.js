@@ -3,7 +3,7 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import DriverRequest from "../models/DriverRequest.js";
-import Trip from "../models/Trip.js";
+import Trip from "../models/Trips.js";
 import Notification from "../models/Notification.js";
 // import Billing from "../models/Billing.js";
 
