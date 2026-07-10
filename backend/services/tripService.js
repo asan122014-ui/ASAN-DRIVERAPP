@@ -94,12 +94,10 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new ValidationError("driverId and tripType are required");
     }
 
-    /* ================= VALIDATE TRIP TYPE ================= */
     if (!TRIP_TYPES.includes(tripType)) {
       throw new ValidationError("Invalid trip type. Must be 'morning' or 'afternoon'");
     }
 
-    /* ================= VALIDATE TRIP TYPE BASED ON TIME (IST) ================= */
     const hour = getCurrentHourInIST();
 
     if (tripType === "morning" && hour >= 12) {
@@ -110,7 +108,6 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new ValidationError("Afternoon trip has not started yet.");
     }
 
-    /* ================= PREVENT DUPLICATE TRIP OF SAME TYPE ON SAME DAY ================= */
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -131,17 +128,14 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new ConflictError(`${tripType} trip already completed today`);
     }
 
-    /* ================= START TRANSACTION BEFORE READS ================= */
     session.startTransaction();
 
-    /* ================= DRIVER ================= */
     const driver = await Driver.findOne({ driverId }).session(session);
 
     if (!driver) {
       throw new NotFoundError("Driver not found");
     }
 
-    /* ================= PREVENT MULTIPLE ACTIVE TRIPS ================= */
     const existingTrip = await Trips.findOne({
       driverId,
       status: "in_transit",
@@ -151,7 +145,6 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new ConflictError("Driver already has an active trip.");
     }
 
-    /* ================= GET ALL CHILDREN ================= */
     const children = await Child.find({
       driverId,
     })
@@ -162,7 +155,6 @@ export const startTripService = async (driverId, tripType, io) => {
       throw new ValidationError("No children assigned to this driver");
     }
 
-    /* ================= RESET CHILD STATUS ================= */
     await Child.updateMany(
       { driverId },
       {
@@ -171,12 +163,10 @@ export const startTripService = async (driverId, tripType, io) => {
       { session }
     );
 
-    /* ================= UPDATE DRIVER STATUS ================= */
     driver.currentStatus = "on_trip";
     driver.isOnline = true;
     await driver.save({ session });
 
-    /* ================= CREATE TRIPS USING insertMany ================= */
     const studentIds = children.map((c) => c._id);
     const startTime = new Date();
 
@@ -201,10 +191,8 @@ export const startTripService = async (driverId, tripType, io) => {
 
     const createdTrips = await Trips.insertMany(tripDocs, { session });
 
-    /* ================= COMMIT TRANSACTION ================= */
     await session.commitTransaction();
 
-    /* ================= SEND NOTIFICATION ================= */
     await notifyDriver(driverId, {
       title: "Trip Started",
       message: `Trip started (${tripType})`,
@@ -230,28 +218,34 @@ export const endTripService = async (driverId, io) => {
   const session = await mongoose.startSession();
 
   try {
-    /* ================= START TRANSACTION BEFORE READS ================= */
     session.startTransaction();
 
-    /* ================= GET ALL ACTIVE TRIPS ================= */
+    // ✅ Populate child status to check for absent students
     const trips = await Trips.find({
       driverId,
       status: "in_transit",
-    }).session(session);
+    })
+      .populate("child", "status")
+      .session(session);
 
     if (!trips.length) {
       return [];
     }
 
-    /* ================= GET DRIVER ================= */
     const driver = await Driver.findOne({ driverId }).session(session);
 
     if (!driver) {
       throw new NotFoundError("Driver not found");
     }
 
-    /* ================= VALIDATE EACH TRIP BEFORE COMPLETING ================= */
+    // ✅ Skip validation for absent students
     for (const trip of trips) {
+      // Ignore absent students
+      if (trip.child?.status === "absent") {
+        console.log(`⏭️ Skipping absent student: ${trip.childName}`);
+        continue;
+      }
+
       if (trip.tripType === "morning" && !Boolean(trip.morningDrop?.imageUrl)) {
         throw new ValidationError(`Drop photo missing for ${trip.childName}`);
       }
@@ -271,7 +265,6 @@ export const endTripService = async (driverId, io) => {
 
     const endTime = new Date();
 
-    /* ================= COMPLETE ALL CHILD TRIPS ================= */
     await Promise.all(
       trips.map(async (trip) => {
         if (!trip.startTime) {
@@ -279,18 +272,14 @@ export const endTripService = async (driverId, io) => {
         }
 
         trip.endTime = endTime;
-
         const durationMs = endTime - trip.startTime;
-
         trip.duration = Math.max(1, Math.round(durationMs / 60000));
-
         trip.status = "completed";
 
         return trip.save({ session });
       })
     );
 
-    /* ================= RESET CHILD STATUS ================= */
     await Child.updateMany(
       { driverId },
       {
@@ -299,15 +288,12 @@ export const endTripService = async (driverId, io) => {
       { session }
     );
 
-    /* ================= UPDATE DRIVER STATUS ================= */
     driver.currentStatus = "idle";
     driver.isOnline = false;
     await driver.save({ session });
 
-    /* ================= COMMIT TRANSACTION ================= */
     await session.commitTransaction();
 
-    /* ================= SEND NOTIFICATION ================= */
     await notifyDriver(driverId, {
       title: "Trip Completed",
       message: `${trips.length} child trips completed`,
@@ -528,11 +514,13 @@ export const pickupStudentService = async (tripId, io) => {
       throw new ConflictError("Student already picked up");
     }
 
-    if (trip.tripType === "afternoon" && !Boolean(trip.afternoonPickup?.imageUrl)) {
+    // ✅ Skip photo check for absent students
+    if (trip.child?.status !== "absent" && 
+        trip.tripType === "afternoon" && 
+        !Boolean(trip.afternoonPickup?.imageUrl)) {
       throw new ValidationError("Upload pickup photo before picking up student.");
     }
 
-    /* ================= START TRANSACTION ================= */
     session.startTransaction();
 
     trip.pickupStatus = true;
@@ -586,11 +574,13 @@ export const dropStudentService = async (tripId, io) => {
       throw new ConflictError("Student already dropped");
     }
 
-    if (trip.tripType === "morning" && !Boolean(trip.morningDrop?.imageUrl)) {
+    // ✅ Skip photo check for absent students
+    if (trip.child?.status !== "absent" &&
+        trip.tripType === "morning" && 
+        !Boolean(trip.morningDrop?.imageUrl)) {
       throw new ValidationError("Upload drop photo before completing drop.");
     }
 
-    /* ================= START TRANSACTION ================= */
     session.startTransaction();
 
     trip.dropStatus = true;
@@ -666,7 +656,6 @@ export const receivePaymentService = async (tripId, paymentMethod, io) => {
       throw new ValidationError("Payment method is required");
     }
 
-    /* ================= VALIDATE PAYMENT METHOD ================= */
     if (!PAYMENT_METHODS.includes(paymentMethod)) {
       throw new ValidationError("Invalid payment method. Must be 'cash', 'upi', or 'card'");
     }
