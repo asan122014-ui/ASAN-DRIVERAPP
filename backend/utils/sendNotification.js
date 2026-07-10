@@ -142,9 +142,9 @@ export const sendNotification = async ({
           },
           data: {
             driverId: String(driverId),
-            childId: childId || "",
-            type,
-            priority,
+            childId: childId ? String(childId) : "",
+            type: String(type),
+            priority: String(priority),
           },
         });
 
@@ -204,9 +204,9 @@ export const sendNotification = async ({
           },
           data: {
             driverId: String(driverId),
-            childId: childId || "",
-            type,
-            priority,
+            childId: childId ? String(childId) : "",
+            type: String(type),
+            priority: String(priority),
           },
         });
 
