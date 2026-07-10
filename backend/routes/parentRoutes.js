@@ -332,12 +332,17 @@ router.put("/logout", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
 
-    console.log("Logout token:", fcmToken);
+    console.log("Parent ID:", parentId);
+    console.log("Logout Token:", JSON.stringify(fcmToken));
 
-    const before = await Parent.findById(parentId);
-    console.log("Before:", before.fcmTokens);
+    const parent = await Parent.findById(parentId);
 
-    const updated = await Parent.findByIdAndUpdate(
+    console.log("Stored Tokens:", parent.fcmTokens);
+
+    const exists = parent.fcmTokens.includes(fcmToken);
+    console.log("Token Exists:", exists);
+
+    await Parent.findByIdAndUpdate(
       parentId,
       {
         $pull: {
@@ -349,7 +354,9 @@ router.put("/logout", async (req, res) => {
       }
     );
 
-    console.log("After:", updated.fcmTokens);
+    const updated = await Parent.findById(parentId);
+
+    console.log("After Removal:", updated.fcmTokens);
 
     res.json({
       success: true,
