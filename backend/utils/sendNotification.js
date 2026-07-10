@@ -64,6 +64,7 @@ export const sendNotification = async ({
             driver: driverId,
             parent: parent._id,
             childId,
+            recipientType: "parent",
             title: parentNotification.title,
             message: parentNotification.message,
             type,
@@ -73,7 +74,25 @@ export const sendNotification = async ({
         )
       );
     } else {
-      console.log("⚠️ No parents found - skipping DB save, but driver will still get notification");
+      console.log("⚠️ No parents found - skipping parent DB save");
+    }
+
+    /* ================= SAVE DRIVER NOTIFICATION ================= */
+    let driverNotificationRecord = null;
+
+    if (driverId) {
+      driverNotificationRecord = await Notification.create({
+        driver: driverId,
+        parent: null,
+        childId: childId || null,
+        recipientType: "driver",
+        title: driverNotification.title,
+        message: driverNotification.message,
+        type,
+        priority,
+        read: false,
+      });
+      console.log("✅ Driver notification saved to DB");
     }
 
     /* ================= SOCKET ================= */
@@ -82,10 +101,12 @@ export const sendNotification = async ({
 
       // Driver socket notification (always sent)
       io.to(driverRoom).emit("notification", {
+        _id: driverNotificationRecord?._id,
         title: driverNotification.title,
         message: driverNotification.message,
         type,
         priority,
+        recipientType: "driver",
         createdAt: new Date(),
       });
 
@@ -98,6 +119,7 @@ export const sendNotification = async ({
           type: notif.type,
           priority: notif.priority,
           childId: notif.childId,
+          recipientType: "parent",
           createdAt: notif.createdAt,
           driverId: notif.driver,
         });
