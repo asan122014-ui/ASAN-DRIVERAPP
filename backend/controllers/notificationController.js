@@ -15,9 +15,18 @@ export const getNotifications = async (req, res) => {
     }
 
     let filter = { read: false };
-    if (driverId) filter.driver = driverId;
-    if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    
+    if (driverId) {
+      filter.driver = driverId;
+      filter.recipientType = "driver";
+    }
+    
+    if (parentId) {
+      filter.parent = parentId;
+      filter.recipientType = "parent";
+    }
+    
+    if (childId) filter.child = childId;
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -50,9 +59,18 @@ export const getAllNotifications = async (req, res) => {
     }
 
     let filter = {};
-    if (driverId) filter.driver = driverId;
-    if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    
+    if (driverId) {
+      filter.driver = driverId;
+      filter.recipientType = "driver";
+    }
+    
+    if (parentId) {
+      filter.parent = parentId;
+      filter.recipientType = "parent";
+    }
+    
+    if (childId) filter.child = childId;
     if (type) filter.type = type;
     if (priority) filter.priority = priority;
 
@@ -85,7 +103,10 @@ export const getParentNotifications = async (req, res) => {
       });
     }
 
-    const notifications = await Notification.find({ parent: parentId })
+    const notifications = await Notification.find({
+      parent: parentId,
+      recipientType: "parent",
+    })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -146,9 +167,18 @@ export const markAllAsRead = async (req, res) => {
     }
 
     let filter = { read: false };
-    if (driverId) filter.driver = driverId;
-    if (parentId) filter.parent = parentId;
-    if (childId) filter.child = childId; // ✅ FIXED
+    
+    if (driverId) {
+      filter.driver = driverId;
+      filter.recipientType = "driver";
+    }
+    
+    if (parentId) {
+      filter.parent = parentId;
+      filter.recipientType = "parent";
+    }
+    
+    if (childId) filter.child = childId;
 
     await Notification.updateMany(filter, { read: true });
 
