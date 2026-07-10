@@ -2,6 +2,7 @@ import DriverRequest from "../models/DriverRequest.js";
 import Parent from "../models/Parent.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
+import { sendNotification } from "../utils/sendNotification.js";
 
 /* ==================================================
    DISTANCE CALCULATOR (HAVERSINE)
@@ -52,6 +53,13 @@ export const createRequest = async (req, res) => {
       parentId,
       childId,
       status: "Pending",
+    });
+
+    // ✅ Send DRIVER_REQUEST_SUBMITTED notification
+    await sendNotification({
+      parentId,
+      childId,
+      notificationKey: "DRIVER_REQUEST_SUBMITTED",
     });
 
     const io = req.app.get("io");
@@ -208,6 +216,14 @@ export const assignDriver = async (req, res) => {
         driverId,
       }
     );
+
+    // ✅ Send DRIVER_REQUEST_ACCEPTED notification
+    await sendNotification({
+      parentId: request.parentId,
+      childId: request.childId,
+      driverId,
+      notificationKey: "DRIVER_REQUEST_ACCEPTED",
+    });
 
     const io = req.app.get("io");
 
