@@ -327,17 +327,17 @@ router.put("/assign-driver", async (req, res) => {
     });
   }
 });
-
 router.put("/logout", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
 
-    if (!parentId || !fcmToken) {
-      return res.status(400).json({
-        success: false,
-        message: "Parent ID and FCM token are required",
-      });
-    }
+    console.log("Logout Token:");
+    console.log(fcmToken);
+
+    const parent = await Parent.findById(parentId);
+
+    console.log("DB Tokens:");
+    console.log(parent.fcmTokens);
 
     await Parent.findByIdAndUpdate(
       parentId,
@@ -349,16 +349,17 @@ router.put("/logout", async (req, res) => {
       { new: true }
     );
 
+    const updated = await Parent.findById(parentId);
+
+    console.log("After Pull:");
+    console.log(updated.fcmTokens);
+
     res.json({
       success: true,
-      message: "FCM token removed successfully",
+      message: "Logout successful",
     });
-  } catch (error) {
-    console.error("LOGOUT ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Logout failed",
-    });
+  } catch (err) {
+    console.error(err);
   }
 });
 
