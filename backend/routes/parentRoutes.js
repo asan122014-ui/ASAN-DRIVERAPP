@@ -328,38 +328,30 @@ router.put("/assign-driver", async (req, res) => {
   }
 });
 
-/* ============================================================
-   LOGOUT PARENT
-============================================================ */
 router.put("/logout", async (req, res) => {
   try {
-    const { parentId } = req.body;
+    const { parentId, fcmToken } = req.body;
 
-    if (!parentId) {
+    if (!parentId || !fcmToken) {
       return res.status(400).json({
         success: false,
-        message: "Parent ID is required",
+        message: "Parent ID and FCM token are required",
       });
     }
 
-    const parent = await Parent.findByIdAndUpdate(
+    await Parent.findByIdAndUpdate(
       parentId,
       {
-        fcmToken: null, // or ""
+        $pull: {
+          fcmTokens: fcmToken,
+        },
       },
       { new: true }
-    ).select("-password");
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
+    );
 
     res.json({
       success: true,
-      message: "Logged out successfully",
+      message: "FCM token removed successfully",
     });
   } catch (error) {
     console.error("LOGOUT ERROR:", error);
