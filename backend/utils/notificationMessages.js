@@ -110,9 +110,43 @@ export const PARENT_NOTIFICATIONS = {
     message:
       "An important safety update has been issued regarding your child's trip. Please check the ASAN app immediately for details.",
   },
+
+  TRIP_COMPLETED: {
+    title: "✅ Trip Completed",
+    message:
+      "The trip has been completed successfully. Thank you for using ASAN.",
+  },
+
+  PAYMENT_RECEIVED: {
+    title: "💳 Payment Received",
+    message:
+      "Payment has been received successfully for this trip.",
+  },
+
+  MORNING_DROP_VERIFIED: {
+    title: "✔️ Morning Drop Verified",
+    message:
+      "The morning drop photo has been verified successfully.",
+  },
+
+  AFTERNOON_PICKUP_VERIFIED: {
+    title: "✔️ Afternoon Pickup Verified",
+    message:
+      "The afternoon pickup photo has been verified successfully.",
+  },
+
+  MORNING_DROP_PHOTO_UPLOADED: {
+    title: "📸 Morning Drop Photo Uploaded",
+    message:
+      "The morning drop photo has been uploaded successfully.",
+  },
+
+  AFTERNOON_PICKUP_PHOTO_UPLOADED: {
+    title: "📸 Afternoon Pickup Photo Uploaded",
+    message:
+      "The afternoon pickup photo has been uploaded successfully.",
+  },
 };
-
-
 
 export const DRIVER_NOTIFICATIONS = {
   TRIP_STARTED: {
@@ -221,5 +255,41 @@ export const DRIVER_NOTIFICATIONS = {
     title: "🚨 Safety Alert",
     message:
       "A safety-related alert has been issued. Please follow the provided instructions and prioritize student safety.",
+  },
+
+  TRIP_COMPLETED: {
+    title: "✅ Trip Completed",
+    message:
+      "The trip has been completed successfully. Thank you for using ASAN.",
+  },
+
+  PAYMENT_RECEIVED: {
+    title: "💳 Payment Received",
+    message:
+      "Payment has been received successfully for this trip.",
+  },
+
+  MORNING_DROP_VERIFIED: {
+    title: "✔️ Morning Drop Verified",
+    message:
+      "The morning drop photo has been verified successfully.",
+  },
+
+  AFTERNOON_PICKUP_VERIFIED: {
+    title: "✔️ Afternoon Pickup Verified",
+    message:
+      "The afternoon pickup photo has been verified successfully.",
+  },
+
+  MORNING_DROP_PHOTO_UPLOADED: {
+    title: "📸 Morning Drop Photo Uploaded",
+    message:
+      "The morning drop photo has been uploaded successfully.",
+  },
+
+  AFTERNOON_PICKUP_PHOTO_UPLOADED: {
+    title: "📸 Afternoon Pickup Photo Uploaded",
+    message:
+      "The afternoon pickup photo has been uploaded successfully.",
   },
 };
