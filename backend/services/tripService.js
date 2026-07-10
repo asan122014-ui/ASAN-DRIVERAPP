@@ -3,6 +3,7 @@ import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
 import { sendNotification } from "../utils/sendNotification.js";
+import { DRIVER_NOTIFICATIONS } from "../utils/notificationMessages.js";
 
 /* ================= CONSTANTS ================= */
 const TRIP_TYPES = Object.freeze(["morning", "afternoon"]);
@@ -193,9 +194,14 @@ export const startTripService = async (driverId, tripType, io) => {
 
     await session.commitTransaction();
 
+    const notification =
+      tripType === "morning"
+        ? DRIVER_NOTIFICATIONS.TRIP_STARTED
+        : DRIVER_NOTIFICATIONS.RETURN_TRIP_STARTED;
+
     await notifyDriver(driverId, {
-      title: "Trip Started",
-      message: `Trip started (${tripType})`,
+      title: notification.title,
+      message: notification.message,
       event: EVENTS.TRIP_STARTED,
       payload: createdTrips,
       io,
@@ -286,10 +292,10 @@ export const endTripService = async (driverId, io) => {
     driver.isOnline = false;
     await driver.save();
 
-    // ✅ Send notification
+    // ✅ Send notification using DRIVER_NOTIFICATIONS
     await notifyDriver(driverId, {
-      title: "Trip Completed",
-      message: `${trips.length} child trips completed`,
+      title: DRIVER_NOTIFICATIONS.TRIP_COMPLETED.title,
+      message: DRIVER_NOTIFICATIONS.TRIP_COMPLETED.message,
       event: EVENTS.TRIP_ENDED,
       payload: trips,
       priority: "low",
@@ -523,9 +529,14 @@ export const pickupStudentService = async (tripId, io) => {
 
     await session.commitTransaction();
 
+    const notification =
+      trip.tripType === "morning"
+        ? DRIVER_NOTIFICATIONS.CHILD_PICKED_UP
+        : DRIVER_NOTIFICATIONS.PICKED_UP_FROM_SCHOOL;
+
     await notifyDriver(trip.driverId, {
-      title: "Student Picked Up",
-      message: `${trip.child.name} has been picked up`,
+      title: notification.title,
+      message: notification.message,
       event: EVENTS.STUDENT_PICKED_UP,
       payload: trip,
       io,
@@ -582,9 +593,14 @@ export const dropStudentService = async (tripId, io) => {
 
     await session.commitTransaction();
 
+    const notification =
+      trip.tripType === "morning"
+        ? DRIVER_NOTIFICATIONS.DROPPED_AT_SCHOOL
+        : DRIVER_NOTIFICATIONS.DROPPED_AT_HOME;
+
     await notifyDriver(trip.driverId, {
-      title: "Student Dropped",
-      message: `${trip.child.name} reached destination`,
+      title: notification.title,
+      message: notification.message,
       event: EVENTS.STUDENT_DROPPED,
       payload: trip,
       io,
@@ -665,8 +681,8 @@ export const receivePaymentService = async (tripId, paymentMethod, io) => {
     await trip.save();
 
     await notifyDriver(trip.driverId, {
-      title: "Payment Received",
-      message: `Payment received for ${trip.child.name}`,
+      title: DRIVER_NOTIFICATIONS.PAYMENT_RECEIVED.title,
+      message: DRIVER_NOTIFICATIONS.PAYMENT_RECEIVED.message,
       event: EVENTS.PAYMENT_RECEIVED,
       payload: trip,
       priority: "low",
@@ -701,8 +717,8 @@ export const verifyMorningDropPhotoService = async (tripId, io) => {
     await trip.save();
 
     await notifyDriver(trip.driverId, {
-      title: "Morning Drop Photo Verified",
-      message: `Drop photo verified for ${trip.childName || "student"}`,
+      title: DRIVER_NOTIFICATIONS.MORNING_DROP_VERIFIED.title,
+      message: DRIVER_NOTIFICATIONS.MORNING_DROP_VERIFIED.message,
       event: EVENTS.MORNING_DROP_VERIFIED,
       payload: trip,
       io,
@@ -736,8 +752,8 @@ export const verifyAfternoonPickupPhotoService = async (tripId, io) => {
     await trip.save();
 
     await notifyDriver(trip.driverId, {
-      title: "Afternoon Pickup Photo Verified",
-      message: `Pickup photo verified for ${trip.childName || "student"}`,
+      title: DRIVER_NOTIFICATIONS.AFTERNOON_PICKUP_VERIFIED.title,
+      message: DRIVER_NOTIFICATIONS.AFTERNOON_PICKUP_VERIFIED.message,
       event: EVENTS.AFTERNOON_PICKUP_VERIFIED,
       payload: trip,
       io,
@@ -785,8 +801,8 @@ export const uploadMorningDropPhotoService = async (tripId, file, body, io) => {
     );
 
     await notifyDriver(trip.driverId, {
-      title: "Morning Drop Photo Uploaded",
-      message: `Drop photo uploaded for ${trip.childName || "student"}`,
+      title: DRIVER_NOTIFICATIONS.MORNING_DROP_PHOTO_UPLOADED.title,
+      message: DRIVER_NOTIFICATIONS.MORNING_DROP_PHOTO_UPLOADED.message,
       event: EVENTS.MORNING_DROP_PHOTO_UPLOADED,
       payload: trip,
       io,
@@ -834,8 +850,8 @@ export const uploadAfternoonPickupPhotoService = async (tripId, file, body, io) 
     );
 
     await notifyDriver(trip.driverId, {
-      title: "Afternoon Pickup Photo Uploaded",
-      message: `Pickup photo uploaded for ${trip.childName || "student"}`,
+      title: DRIVER_NOTIFICATIONS.AFTERNOON_PICKUP_PHOTO_UPLOADED.title,
+      message: DRIVER_NOTIFICATIONS.AFTERNOON_PICKUP_PHOTO_UPLOADED.message,
       event: EVENTS.AFTERNOON_PICKUP_PHOTO_UPLOADED,
       payload: trip,
       io,
