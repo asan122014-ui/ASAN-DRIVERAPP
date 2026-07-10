@@ -329,6 +329,48 @@ router.put("/assign-driver", async (req, res) => {
 });
 
 /* ============================================================
+   LOGOUT PARENT
+============================================================ */
+router.put("/logout", async (req, res) => {
+  try {
+    const { parentId } = req.body;
+
+    if (!parentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID is required",
+      });
+    }
+
+    const parent = await Parent.findByIdAndUpdate(
+      parentId,
+      {
+        fcmToken: null, // or ""
+      },
+      { new: true }
+    ).select("-password");
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    console.error("LOGOUT ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Logout failed",
+    });
+  }
+});
+
+/* ============================================================
    UPDATE PARENT
 ============================================================ */
 router.put("/:id", async (req, res) => {
@@ -506,48 +548,6 @@ router.post("/reset-password", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to reset password",
-    });
-  }
-});
-
-/* ============================================================
-   LOGOUT PARENT
-============================================================ */
-router.put("/logout", async (req, res) => {
-  try {
-    const { parentId } = req.body;
-
-    if (!parentId) {
-      return res.status(400).json({
-        success: false,
-        message: "Parent ID is required",
-      });
-    }
-
-    const parent = await Parent.findByIdAndUpdate(
-      parentId,
-      {
-        fcmToken: null, // or ""
-      },
-      { new: true }
-    ).select("-password");
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Logged out successfully",
-    });
-  } catch (error) {
-    console.error("LOGOUT ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Logout failed",
     });
   }
 });
