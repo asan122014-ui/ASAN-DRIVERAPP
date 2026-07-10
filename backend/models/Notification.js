@@ -14,7 +14,7 @@ const notificationSchema = new mongoose.Schema(
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
-      required: true,
+      default: null,
       index: true,
     },
 
@@ -23,6 +23,14 @@ const notificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Child",
       default: null,
+      index: true,
+    },
+
+    /* ================= RECIPIENT TYPE ================= */
+    recipientType: {
+      type: String,
+      enum: ["parent", "driver"],
+      required: true,
       index: true,
     },
 
@@ -65,6 +73,14 @@ const notificationSchema = new mongoose.Schema(
         "morning_drop_photo_uploaded",
         "afternoon_pickup_photo_uploaded",
 
+        // Driver request
+        "driver_request_submitted",
+        "driver_request_accepted",
+
+        // Driver assignment
+        "driver_assigned",
+        "driver_changed",
+
         // Other
         "delay",
         "emergency",
@@ -106,6 +122,8 @@ notificationSchema.index({ parent: 1, read: 1, createdAt: -1 });
 notificationSchema.index({ child: 1, createdAt: -1 });
 notificationSchema.index({ type: 1 });
 notificationSchema.index({ priority: 1 });
+notificationSchema.index({ recipientType: 1, parent: 1, createdAt: -1 });
+notificationSchema.index({ recipientType: 1, driver: 1, createdAt: -1 });
 
 /* ================= EXPORT ================= */
 const Notification =
