@@ -149,11 +149,27 @@ export const sendNotification = async ({
         });
 
         console.log("✅ Parent FCM sent:", parentResponse.successCount);
+        console.log(JSON.stringify(parentResponse.responses, null, 2));
 
         /* ================= CLEAN INVALID PARENT TOKENS ================= */
-        const invalidTokens = parentTokens.filter(
-          (_, i) => !parentResponse.responses[i].success
-        );
+        const invalidTokens = [];
+
+        parentResponse.responses.forEach((response, index) => {
+          if (!response.success) {
+            console.log(
+              "FCM Error:",
+              response.error?.code,
+              response.error?.message
+            );
+
+            if (
+              response.error?.code === "messaging/registration-token-not-registered" ||
+              response.error?.code === "messaging/invalid-registration-token"
+            ) {
+              invalidTokens.push(parentTokens[index]);
+            }
+          }
+        });
 
         if (invalidTokens.length > 0) {
           console.log("🧹 Removing invalid parent tokens:", invalidTokens);
