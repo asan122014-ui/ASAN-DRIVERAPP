@@ -327,39 +327,39 @@ router.put("/assign-driver", async (req, res) => {
     });
   }
 });
+
 router.put("/logout", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
 
-    console.log("Logout Token:");
-    console.log(fcmToken);
+    console.log("Logout token:", fcmToken);
 
-    const parent = await Parent.findById(parentId);
+    const before = await Parent.findById(parentId);
+    console.log("Before:", before.fcmTokens);
 
-    console.log("DB Tokens:");
-    console.log(parent.fcmTokens);
-
-    await Parent.findByIdAndUpdate(
+    const updated = await Parent.findByIdAndUpdate(
       parentId,
       {
         $pull: {
           fcmTokens: fcmToken,
         },
       },
-      { new: true }
+      {
+        returnDocument: "after",
+      }
     );
 
-    const updated = await Parent.findById(parentId);
-
-    console.log("After Pull:");
-    console.log(updated.fcmTokens);
+    console.log("After:", updated.fcmTokens);
 
     res.json({
       success: true,
-      message: "Logout successful",
+      message: "Token removed",
     });
   } catch (err) {
     console.error(err);
+    res.status(500).json({
+      success: false,
+    });
   }
 });
 
