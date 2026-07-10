@@ -213,26 +213,20 @@ export const startTripService = async (driverId, tripType, io) => {
   }
 };
 
-/* ================= END TRIP ================= */
+/* ================= END TRIP - NO TRANSACTION ================= */
 export const endTripService = async (driverId, io) => {
-  const session = await mongoose.startSession();
-
   try {
-    session.startTransaction();
-
-    // ✅ Populate child status to check for absent students
+    // ✅ Get all active trips with child status populated
     const trips = await Trips.find({
       driverId,
       status: "in_transit",
-    })
-      .populate("child", "status")
-      .session(session);
+    }).populate("child", "status");
 
     if (!trips.length) {
       return [];
     }
 
-    const driver = await Driver.findOne({ driverId }).session(session);
+    const driver = await Driver.findOne({ driverId });
 
     if (!driver) {
       throw new NotFoundError("Driver not found");
@@ -265,35 +259,34 @@ export const endTripService = async (driverId, io) => {
 
     const endTime = new Date();
 
-    await Promise.all(
-      trips.map(async (trip) => {
-        if (!trip.startTime) {
-          trip.startTime = endTime;
-        }
+    // ✅ Complete all child trips
+    for (const trip of trips) {
+      if (!trip.startTime) {
+        trip.startTime = endTime;
+      }
 
-        trip.endTime = endTime;
-        const durationMs = endTime - trip.startTime;
-        trip.duration = Math.max(1, Math.round(durationMs / 60000));
-        trip.status = "completed";
+      trip.endTime = endTime;
+      const durationMs = endTime - trip.startTime;
+      trip.duration = Math.max(1, Math.round(durationMs / 60000));
+      trip.status = "completed";
 
-        return trip.save({ session });
-      })
-    );
+      await trip.save();
+    }
 
+    // ✅ Reset child status
     await Child.updateMany(
       { driverId },
       {
         status: "waiting",
-      },
-      { session }
+      }
     );
 
+    // ✅ Update driver status
     driver.currentStatus = "idle";
     driver.isOnline = false;
-    await driver.save({ session });
+    await driver.save();
 
-    await session.commitTransaction();
-
+    // ✅ Send notification
     await notifyDriver(driverId, {
       title: "Trip Completed",
       message: `${trips.length} child trips completed`,
@@ -305,13 +298,8 @@ export const endTripService = async (driverId, io) => {
 
     return trips;
   } catch (error) {
-    if (session.inTransaction()) {
-      await session.abortTransaction();
-    }
     console.error("endTripService error:", error.message);
     throw error;
-  } finally {
-    session.endSession();
   }
 };
 
@@ -514,7 +502,6 @@ export const pickupStudentService = async (tripId, io) => {
       throw new ConflictError("Student already picked up");
     }
 
-    // ✅ Skip photo check for absent students
     if (trip.child?.status !== "absent" && 
         trip.tripType === "afternoon" && 
         !Boolean(trip.afternoonPickup?.imageUrl)) {
@@ -574,7 +561,6 @@ export const dropStudentService = async (tripId, io) => {
       throw new ConflictError("Student already dropped");
     }
 
-    // ✅ Skip photo check for absent students
     if (trip.child?.status !== "absent" &&
         trip.tripType === "morning" && 
         !Boolean(trip.morningDrop?.imageUrl)) {
