@@ -332,16 +332,6 @@ router.put("/logout", async (req, res) => {
   try {
     const { parentId, fcmToken } = req.body;
 
-    console.log("Parent ID:", parentId);
-    console.log("Logout Token:", JSON.stringify(fcmToken));
-
-    const parent = await Parent.findById(parentId);
-
-    console.log("Stored Tokens:", parent.fcmTokens);
-
-    const exists = parent.fcmTokens.includes(fcmToken);
-    console.log("Token Exists:", exists);
-
     await Parent.findByIdAndUpdate(
       parentId,
       {
@@ -353,10 +343,6 @@ router.put("/logout", async (req, res) => {
         returnDocument: "after",
       }
     );
-
-    const updated = await Parent.findById(parentId);
-
-    console.log("After Removal:", updated.fcmTokens);
 
     res.json({
       success: true,
