@@ -3,12 +3,15 @@ import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import admin from "../config/firebaseAdmin.js";
+import {
+  PARENT_NOTIFICATIONS,
+  DRIVER_NOTIFICATIONS,
+} from "../utils/notificationMessages.js";
 
 export const sendNotification = async ({
   driverId,
   childId = null,
-  title,
-  message,
+  notificationKey,
   type = "general",
   priority = "low",
   io,
@@ -16,12 +19,24 @@ export const sendNotification = async ({
   try {
     console.log("🔥 sendNotification CALLED");
 
-    if (!driverId || !title || !message) {
-      throw new Error("Missing fields");
+    if (!driverId || !notificationKey) {
+      throw new Error("Missing required fields: driverId and notificationKey");
+    }
+
+    /* ================= FETCH NOTIFICATION OBJECTS ================= */
+    const parentNotification = PARENT_NOTIFICATIONS[notificationKey];
+    const driverNotification = DRIVER_NOTIFICATIONS[notificationKey];
+
+    if (!parentNotification || !driverNotification) {
+      throw new Error(`Invalid notificationKey: ${notificationKey}`);
     }
 
     /* ================= DRIVER ================= */
     const driver = await Driver.findOne({ driverId }).lean();
+
+    if (!driver) {
+      throw new Error("Driver not found");
+    }
 
     /* ================= FETCH PARENTS ================= */
     let parents = [];
@@ -34,46 +49,52 @@ export const sendNotification = async ({
         if (parent) parents = [parent];
       }
     } else {
-      // 🔥 IMPORTANT: lean() ensures fresh data (fixes your issue)
       parents = await Parent.find({ driverId }).lean();
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
 
-    if (!parents.length) {
-      console.log("❌ No parents found → skipped");
-      return [];
-    }
+    /* ================= SAVE NOTIFICATIONS FOR PARENTS ================= */
+    let notifications = [];
 
-    /* ================= SAVE NOTIFICATIONS ================= */
-    const notifications = await Promise.all(
-      parents.map((parent) =>
-        Notification.create({
-          driver: driverId,
-          parent: parent._id,
-          childId,
-          title,
-          message,
-          type,
-          priority,
-          read: false,
-        })
-      )
-    );
+    if (parents.length) {
+      notifications = await Promise.all(
+        parents.map((parent) =>
+          Notification.create({
+            driver: driverId,
+            parent: parent._id,
+            childId,
+            title: parentNotification.title,
+            message: parentNotification.message,
+            type,
+            priority,
+            read: false,
+          })
+        )
+      );
+    } else {
+      console.log("⚠️ No parents found - skipping DB save, but driver will still get notification");
+    }
 
     /* ================= SOCKET ================= */
     if (io) {
       const driverRoom = String(driverId);
 
-      if (notifications[0]) {
-        io.to(driverRoom).emit("new_notification", notifications[0]);
-      }
+      // Driver socket notification (always sent)
+      io.to(driverRoom).emit("notification", {
+        title: driverNotification.title,
+        message: driverNotification.message,
+        type,
+        priority,
+        createdAt: new Date(),
+      });
 
+      // Parent socket notifications (only if parents exist)
       notifications.forEach((notif) => {
         io.to(String(notif.parent)).emit("notification", {
           _id: notif._id,
-          title: notif.title,
-          message: notif.message,
+          title: parentNotification.title,
+          message: parentNotification.message,
           type: notif.type,
           priority: notif.priority,
           childId: notif.childId,
@@ -83,88 +104,109 @@ export const sendNotification = async ({
       });
     }
 
-    /* ================= TOKEN COLLECTION ================= */
-    const tokenSet = new Set();
+    /* ================= TOKEN COLLECTION (DEDUPLICATED) ================= */
+    // Deduplicate parent tokens using Set
+    const parentTokens = [
+      ...new Set(
+        parents.flatMap((p) => p.fcmTokens || [])
+      )
+    ].filter((token) => token && typeof token === "string" && token.trim() !== "");
 
-    parents.forEach((p) => {
-      console.log("🔍 Parent:", p._id);
-      console.log("🔍 Tokens:", p.fcmTokens);
+    const driverToken = driver?.fcmToken || null;
 
-      if (Array.isArray(p.fcmTokens)) {
-        p.fcmTokens.forEach((t) => {
-          if (t && typeof t === "string" && t.trim() !== "") {
-            tokenSet.add(t.trim());
-          }
-        });
-      }
-    });
+    console.log("📱 PARENT TOKENS (deduplicated):", parentTokens);
+    console.log("📱 DRIVER TOKEN:", driverToken);
 
-    // ✅ optional driver token
-    if (driver?.fcmToken) {
-      tokenSet.add(driver.fcmToken);
-    }
-
-    const tokens = [...tokenSet];
-
-    console.log("📱 FINAL TOKENS:", tokens);
-
-    /* ================= FCM ================= */
     if (!admin.apps.length) {
       console.log("⚠️ Firebase not initialized");
       return notifications;
     }
 
-    if (!tokens.length) {
-      console.log("❌ No tokens → FCM skipped");
-      return notifications;
+    /* ================= PARENT FCM ================= */
+    if (parentTokens.length) {
+      try {
+        const parentResponse = await admin.messaging().sendEachForMulticast({
+          tokens: parentTokens,
+          notification: {
+            title: parentNotification.title,
+            body: parentNotification.message,
+          },
+          android: {
+            priority: "high",
+            notification: { sound: "default" },
+          },
+          apns: {
+            payload: {
+              aps: { sound: "default" },
+            },
+          },
+          data: {
+            driverId: String(driverId),
+            childId: childId || "",
+            type,
+            priority,
+          },
+        });
+
+        console.log("✅ Parent FCM sent:", parentResponse.successCount);
+
+        /* ================= CLEAN INVALID PARENT TOKENS ================= */
+        const invalidTokens = parentTokens.filter(
+          (_, i) => !parentResponse.responses[i].success
+        );
+
+        if (invalidTokens.length > 0) {
+          console.log("🧹 Removing invalid parent tokens:", invalidTokens);
+
+          await Parent.updateMany(
+            { fcmTokens: { $in: invalidTokens } },
+            { $pull: { fcmTokens: { $in: invalidTokens } } }
+          );
+        }
+      } catch (err) {
+        console.error("❌ Parent FCM error:", err.message);
+      }
     }
 
-    try {
-      const response = await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: {
-          title,
-          body: message,
-        },
-        android: {
-          priority: "high",
-          notification: { sound: "default" },
-        },
-        apns: {
-          payload: {
-            aps: { sound: "default" },
+    /* ================= DRIVER FCM ================= */
+    if (driverToken) {
+      try {
+        await admin.messaging().send({
+          token: driverToken,
+          notification: {
+            title: driverNotification.title,
+            body: driverNotification.message,
           },
-        },
-        data: {
-          driverId: String(driverId),
-          childId: childId || "",
-          type,
-          priority,
-        },
-      });
+          android: {
+            priority: "high",
+            notification: { sound: "default" },
+          },
+          apns: {
+            payload: {
+              aps: { sound: "default" },
+            },
+          },
+          data: {
+            driverId: String(driverId),
+            childId: childId || "",
+            type,
+            priority,
+          },
+        });
 
-      console.log("✅ FCM sent:", response.successCount);
+        console.log("✅ Driver FCM sent");
+      } catch (err) {
+        console.error("❌ Driver FCM error:", err.message);
 
-      /* ================= CLEAN INVALID TOKENS ================= */
-      const invalidTokens = tokens.filter(
-        (_, i) => !response.responses[i].success
-      );
-
-      if (invalidTokens.length > 0) {
-        console.log("🧹 Removing invalid tokens:", invalidTokens);
-
-        await Parent.updateMany(
-          { fcmTokens: { $in: invalidTokens } },
-          { $pull: { fcmTokens: { $in: invalidTokens } } }
-        );
-
-        await Driver.updateMany(
-          { fcmToken: { $in: invalidTokens } },
-          { $unset: { fcmToken: "" } }
-        );
+        // Clean invalid driver token
+        if (err.code === "messaging/invalid-registration-token" ||
+            err.code === "messaging/registration-token-not-registered") {
+          await Driver.updateOne(
+            { driverId },
+            { $unset: { fcmToken: "" } }
+          );
+        }
       }
-    } catch (err) {
-      console.error("❌ Firebase error:", err.message);
     }
 
     return notifications;
