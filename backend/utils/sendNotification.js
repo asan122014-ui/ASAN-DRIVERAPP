@@ -55,15 +55,15 @@ export const sendNotification = async ({
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
 
     /* ================= SAVE NOTIFICATIONS FOR PARENTS ================= */
-    let notifications = [];
+    let parentNotifications = [];
 
     if (parents.length) {
-      notifications = await Promise.all(
+      parentNotifications = await Promise.all(
         parents.map((parent) =>
           Notification.create({
             driver: driverId,
             parent: parent._id,
-            childId,
+            child: childId || null,
             recipientType: "parent",
             title: parentNotification.title,
             message: parentNotification.message,
@@ -84,7 +84,7 @@ export const sendNotification = async ({
       driverNotificationRecord = await Notification.create({
         driver: driverId,
         parent: null,
-        childId: childId || null,
+        child: childId || null,
         recipientType: "driver",
         title: driverNotification.title,
         message: driverNotification.message,
@@ -111,14 +111,14 @@ export const sendNotification = async ({
       });
 
       // Parent socket notifications (only if parents exist)
-      notifications.forEach((notif) => {
+      parentNotifications.forEach((notif) => {
         io.to(String(notif.parent)).emit("notification", {
           _id: notif._id,
           title: parentNotification.title,
           message: parentNotification.message,
           type: notif.type,
           priority: notif.priority,
-          childId: notif.childId,
+          child: notif.child,
           recipientType: "parent",
           createdAt: notif.createdAt,
           driverId: notif.driver,
@@ -141,7 +141,10 @@ export const sendNotification = async ({
 
     if (!admin.apps.length) {
       console.log("⚠️ Firebase not initialized");
-      return notifications;
+      return {
+        parentNotifications,
+        driverNotification: driverNotificationRecord,
+      };
     }
 
     /* ================= PARENT FCM ================= */
@@ -247,7 +250,11 @@ export const sendNotification = async ({
       }
     }
 
-    return notifications;
+    // Return both parent and driver notifications
+    return {
+      parentNotifications,
+      driverNotification: driverNotificationRecord,
+    };
 
   } catch (error) {
     console.error("❌ sendNotification FAILED:", error.message);
