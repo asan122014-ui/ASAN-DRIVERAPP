@@ -101,13 +101,14 @@ export const sendNotification = async ({
 
       // Driver socket notification (always sent)
       io.to(driverRoom).emit("notification", {
-        _id: driverNotificationRecord?._id,
+        _id: driverNotificationRecord._id,
         title: driverNotification.title,
         message: driverNotification.message,
         type,
         priority,
+        child: driverNotificationRecord.child,
         recipientType: "driver",
-        createdAt: new Date(),
+        createdAt: driverNotificationRecord.createdAt,
       });
 
       // Parent socket notifications (only if parents exist)
@@ -134,10 +135,13 @@ export const sendNotification = async ({
       )
     ].filter((token) => token && typeof token === "string" && token.trim() !== "");
 
-    const driverToken = driver?.fcmToken || null;
+    // Deduplicate driver tokens using Set
+    const driverTokens = [
+      ...new Set(driver?.fcmTokens || [])
+    ].filter((token) => token && typeof token === "string" && token.trim() !== "");
 
     console.log("📱 PARENT TOKENS (deduplicated):", parentTokens);
-    console.log("📱 DRIVER TOKEN:", driverToken);
+    console.log("📱 DRIVER TOKENS (deduplicated):", driverTokens);
 
     if (!admin.apps.length) {
       console.log("⚠️ Firebase not initialized");
@@ -210,10 +214,10 @@ export const sendNotification = async ({
     }
 
     /* ================= DRIVER FCM ================= */
-    if (driverToken) {
+    if (driverTokens.length) {
       try {
-        await admin.messaging().send({
-          token: driverToken,
+        const driverResponse = await admin.messaging().sendEachForMulticast({
+          tokens: driverTokens,
           notification: {
             title: driverNotification.title,
             body: driverNotification.message,
@@ -235,18 +239,39 @@ export const sendNotification = async ({
           },
         });
 
-        console.log("✅ Driver FCM sent");
-      } catch (err) {
-        console.error("❌ Driver FCM error:", err.message);
+        console.log("✅ Driver FCM sent:", driverResponse.successCount);
 
-        // Clean invalid driver token
-        if (err.code === "messaging/invalid-registration-token" ||
-            err.code === "messaging/registration-token-not-registered") {
+        /* ================= CLEAN INVALID DRIVER TOKENS ================= */
+        const invalidDriverTokens = [];
+
+        driverResponse.responses.forEach((response, index) => {
+          if (!response.success) {
+            console.log(
+              "Driver FCM Error:",
+              response.error?.code,
+              response.error?.message
+            );
+
+            if (
+              response.error?.code === "messaging/registration-token-not-registered" ||
+              response.error?.code === "messaging/invalid-registration-token"
+            ) {
+              invalidDriverTokens.push(driverTokens[index]);
+            }
+          }
+        });
+
+        if (invalidDriverTokens.length > 0) {
+          console.log("🧹 Removing invalid driver tokens:", invalidDriverTokens);
+
+          // Use driver._id for safer matching
           await Driver.updateOne(
-            { driverId },
-            { $unset: { fcmToken: "" } }
+            { _id: driver._id },
+            { $pull: { fcmTokens: { $in: invalidDriverTokens } } }
           );
         }
+      } catch (err) {
+        console.error("❌ Driver FCM error:", err.message);
       }
     }
 
