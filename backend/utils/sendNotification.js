@@ -146,18 +146,10 @@ export const sendNotification = async ({
     console.log("📱 PARENT TOKENS (deduplicated):", parentTokens);
     console.log("📱 DRIVER TOKENS (deduplicated):", driverTokens);
 
-    if (!admin.apps.length) {
-      console.log("⚠️ Firebase not initialized");
-      return {
-        parentNotifications,
-        driverNotification: driverNotificationRecord,
-      };
-    }
-
     /* ================= PARENT FCM ================= */
     if (parentTokens.length) {
       try {
-        const parentResponse = await admin.messaging().sendEachForMulticast({
+        const parentResponse = await parentMessaging.sendEachForMulticast({
           tokens: parentTokens,
           notification: {
             title: parentNotification.title,
@@ -219,7 +211,7 @@ export const sendNotification = async ({
     /* ================= DRIVER FCM ================= */
     if (driverTokens.length) {
       try {
-        const driverResponse = await admin.messaging().sendEachForMulticast({
+        const driverResponse = await driverMessaging.sendEachForMulticast({
           tokens: driverTokens,
           notification: {
             title: driverNotification.title,
