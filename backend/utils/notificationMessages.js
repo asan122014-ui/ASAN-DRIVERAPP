@@ -2,31 +2,31 @@ export const PARENT_NOTIFICATIONS = {
   TRIP_STARTED: {
     title: "Trip Started",
     message:
-      "Your child's journey has begun. Our driver is committed to providing a safe and comfortable ride. You can track the trip live in the ASAN app.",
+      "Your child's journey has begun. Our driver has started the journey and is committed to providing a safe and comfortable ride for your child. You can track the trip live in the ASAN app.",
   },
 
   DRIVER_ARRIVED_PICKUP: {
     title: "Driver Arrived",
     message:
-      "Our driver has arrived at the pickup location. Please help your child board safely. Their safety is always our highest priority.",
+      "Our driver has arrived at the pickup location. Please have your child ready to board safely. Their safety is always our highest priority.",
   },
 
   CHILD_PICKED_UP: {
     title: "Child Picked Up",
     message:
-      "Your child has been picked up safely and is now on the way. We'll continue to keep you informed throughout the journey.",
+      "Your child has been picked up safely and is now on the way. We'll continue to keep you updated until your child safely reaches the destination.",
   },
 
   APPROACHING_SCHOOL: {
     title: "Approaching School",
     message:
-      "The vehicle is approaching the school. Your child will arrive shortly under our driver's care.",
+      "The vehicle is approaching the school. Your child will arrive safely in just a few moments.",
   },
 
   DROPPED_AT_SCHOOL: {
     title: "Arrived at School",
     message:
-      "Your child has arrived safely at school. Thank you for trusting ASAN with your child's daily journey.",
+      "Your child has safely arrived at school. Thank you for trusting ASAN with your child's daily transportation.",
   },
 
   RETURN_TRIP_STARTED: {
@@ -110,7 +110,7 @@ export const PARENT_NOTIFICATIONS = {
   TRIP_COMPLETED: {
     title: "Trip Completed",
     message:
-      "Your child's journey has been completed successfully. Thank you for choosing ASAN.",
+      "Your child's journey has been completed successfully. Thank you for choosing ASAN to care for your child's transportation.",
   },
 
   PAYMENT_RECEIVED: {
@@ -144,38 +144,148 @@ export const PARENT_NOTIFICATIONS = {
   },
 };
 
-TRIP_STARTED: {
-  title: "Trip Started",
-  message:
-    "Your assigned trip has begun. Please drive safely and ensure every child reaches their destination securely.",
-},
+export const DRIVER_NOTIFICATIONS = {
+  TRIP_STARTED: {
+    title: "Trip Started",
+    message:
+      "Your assigned trip has started. Please drive safely and ensure every child reaches their destination securely.",
+  },
 
-CHILD_PICKED_UP: {
-  title: "Pickup Completed",
-  message:
-    "The child has boarded safely. Continue your journey carefully and follow all traffic regulations.",
-},
+  DRIVER_ARRIVED_PICKUP: {
+    title: "Arrived at Pickup",
+    message:
+      "You have arrived at the pickup location. Please ensure the child boards safely before continuing the trip.",
+  },
 
-DROPPED_AT_HOME: {
-  title: "Drop Completed",
-  message:
-    "The child has been safely dropped off at home. Thank you for your care and responsibility.",
-},
+  CHILD_PICKED_UP: {
+    title: "Child Picked Up",
+    message:
+      "The child has boarded safely. Continue your journey carefully and follow all traffic regulations.",
+  },
 
-TRIP_COMPLETED: {
-  title: "Trip Completed",
-  message:
-    "Today's trip has been completed successfully. Thank you for ensuring a safe journey for every child.",
-},
+  APPROACHING_SCHOOL: {
+    title: "Near School",
+    message:
+      "You are approaching the school. Please prepare for a safe and orderly drop-off.",
+  },
 
-TRIP_DELAYED: {
-  title: "Trip Delayed",
-  message:
-    "Please continue driving carefully. The safety of every child is more important than arriving quickly.",
-},
+  DROPPED_AT_SCHOOL: {
+    title: "Drop Completed",
+    message:
+      "The student has been safely dropped off at school. Thank you for ensuring a safe journey.",
+  },
 
-EMERGENCY_ALERT: {
-  title: "Safety Alert",
-  message:
-    "A safety-related update requires your attention. Please follow the provided instructions immediately.",
-},
+  RETURN_TRIP_STARTED: {
+    title: "Return Trip Started",
+    message:
+      "Your return trip has started. Please follow the assigned route and drive safely.",
+  },
+
+  DRIVER_ARRIVED_SCHOOL: {
+    title: "Arrived at School",
+    message:
+      "You have arrived at the school. Please ensure the student boards the vehicle safely.",
+  },
+
+  PICKED_UP_FROM_SCHOOL: {
+    title: "Pickup Completed",
+    message:
+      "The student has boarded safely. Continue towards the home drop-off location.",
+  },
+
+  APPROACHING_HOME: {
+    title: "Near Destination",
+    message:
+      "You are approaching the student's home. Please prepare for a safe drop-off.",
+  },
+
+  DROPPED_AT_HOME: {
+    title: "Child Safely Dropped",
+    message:
+      "The child has been safely dropped off at home. Thank you for your care, responsibility, and commitment to student safety.",
+  },
+
+  TRIP_DELAYED: {
+    title: "Trip Delayed",
+    message:
+      "Your trip is taking longer than expected. Please continue driving safely and keep student safety as your highest priority.",
+  },
+
+  TRIP_CANCELLED: {
+    title: "Trip Cancelled",
+    message:
+      "This trip has been cancelled. No further action is required for this assignment.",
+  },
+
+  DRIVER_ASSIGNED: {
+    title: "New Assignment",
+    message:
+      "You have been assigned a new student. Please review the trip details and prepare for a safe journey.",
+  },
+
+  DRIVER_CHANGED: {
+    title: "Assignment Updated",
+    message:
+      "Your trip assignment has been updated. Please review the latest schedule before starting your journey.",
+  },
+
+  DRIVER_REQUEST_SUBMITTED: {
+    title: "New Transport Request",
+    message:
+      "A new transportation request is available. Please review and accept if you're available.",
+  },
+
+  DRIVER_REQUEST_ACCEPTED: {
+    title: "Request Accepted",
+    message:
+      "You have accepted the transportation request. Please contact the parent if necessary before the trip.",
+  },
+
+  GENERAL_ANNOUNCEMENT: {
+    title: "Announcement",
+    message:
+      "A new announcement has been posted. Please review it before starting your next trip.",
+  },
+
+  EMERGENCY_ALERT: {
+    title: "Safety Alert",
+    message:
+      "An important safety update requires your immediate attention. Please follow the provided instructions carefully.",
+  },
+
+  TRIP_COMPLETED: {
+    title: "Trip Completed",
+    message:
+      "Today's trip has been completed successfully. Thank you for your professionalism and for ensuring every child traveled safely.",
+  },
+
+  PAYMENT_RECEIVED: {
+    title: "Payment Received",
+    message:
+      "Payment has been received successfully for this trip.",
+  },
+
+  MORNING_DROP_VERIFIED: {
+    title: "Morning Drop Verified",
+    message:
+      "The morning drop photo has been verified successfully.",
+  },
+
+  AFTERNOON_PICKUP_VERIFIED: {
+    title: "Afternoon Pickup Verified",
+    message:
+      "The afternoon pickup photo has been verified successfully.",
+  },
+
+  MORNING_DROP_PHOTO_UPLOADED: {
+    title: "Morning Drop Photo Uploaded",
+    message:
+      "The morning drop photo has been uploaded successfully.",
+  },
+
+  AFTERNOON_PICKUP_PHOTO_UPLOADED: {
+    title: "Afternoon Pickup Photo Uploaded",
+    message:
+      "The afternoon pickup photo has been uploaded successfully.",
+  },
+};
