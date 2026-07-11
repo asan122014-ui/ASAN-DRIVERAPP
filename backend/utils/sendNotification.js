@@ -2,7 +2,10 @@ import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
-import admin from "../config/firebaseAdmin.js";
+import {
+  driverMessaging,
+  parentMessaging,
+} from "../config/firebaseAdmin.js";
 import {
   PARENT_NOTIFICATIONS,
   DRIVER_NOTIFICATIONS,
