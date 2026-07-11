@@ -451,6 +451,8 @@ export const getTodayTripStatusService = async (driverId) => {
       "tripType status"
     ).lean();
 
+    console.log("Today's trips:", trips);
+
     let morningTrips = 0;
     let afternoonTrips = 0;
     let morningCompleted = true;
@@ -474,6 +476,13 @@ export const getTodayTripStatusService = async (driverId) => {
 
     morningCompleted = morningTrips > 0 && morningCompleted;
     afternoonCompleted = afternoonTrips > 0 && afternoonCompleted;
+
+    console.log({
+      morningTrips,
+      afternoonTrips,
+      morningCompleted,
+      afternoonCompleted,
+    });
 
     return {
       morningTrips,
