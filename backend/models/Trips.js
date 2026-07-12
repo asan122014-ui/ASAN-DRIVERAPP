@@ -93,11 +93,6 @@ const tripSchema = new mongoose.Schema(
       },
     },
 
-    eta: {
-      type: String,
-      default: "--",
-    },
-
     amount: {
       type: Number,
       default: 0,
@@ -191,7 +186,6 @@ const tripSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
-      /* ================= ADDED: uploadedAt ================= */
       uploadedAt: {
         type: Date,
         default: null,
@@ -253,7 +247,6 @@ const tripSchema = new mongoose.Schema(
         type: Number,
         default: null,
       },
-      /* ================= ADDED: uploadedAt ================= */
       uploadedAt: {
         type: Date,
         default: null,
@@ -389,13 +382,13 @@ tripSchema.methods.addMorningDropPhoto = function (
     address: address || null,
     capturedAt: capturedAt || new Date(),
     expiresAt: expires,
-    verified: false, // ✅ FIX: Not auto-verified
+    verified: false,
     uploadStatus: "uploaded",
     distanceInMeters: distanceInMeters || null,
     deviceInfo: deviceInfo || null,
     width: width || null,
     height: height || null,
-    uploadedAt: new Date(), // ✅ ADDED
+    uploadedAt: new Date(),
   };
   return this.save();
 };
@@ -429,13 +422,13 @@ tripSchema.methods.addAfternoonPickupPhoto = function (
     address: address || null,
     capturedAt: capturedAt || new Date(),
     expiresAt: expires,
-    verified: false, // ✅ FIX: Not auto-verified
+    verified: false,
     uploadStatus: "uploaded",
     distanceInMeters: distanceInMeters || null,
     deviceInfo: deviceInfo || null,
     width: width || null,
     height: height || null,
-    uploadedAt: new Date(), // ✅ ADDED
+    uploadedAt: new Date(),
   };
   return this.save();
 };
@@ -456,7 +449,7 @@ tripSchema.methods.clearMorningDropPhoto = function () {
     deviceInfo: null,
     width: null,
     height: null,
-    uploadedAt: null, // ✅ ADDED
+    uploadedAt: null,
   };
   return this.save();
 };
@@ -477,7 +470,7 @@ tripSchema.methods.clearAfternoonPickupPhoto = function () {
     deviceInfo: null,
     width: null,
     height: null,
-    uploadedAt: null, // ✅ ADDED
+    uploadedAt: null,
   };
   return this.save();
 };
