@@ -148,7 +148,7 @@ export const DRIVER_NOTIFICATIONS = {
   TRIP_STARTED: {
     title: "Trip Started",
     message:
-      "Your assigned trip has started. Please drive safely and ensure every child reaches their destination securely.",
+      "Your trip with {childName} has started. Please drive safely and ensure {childName} reaches {schoolName} safely.",
   },
 
   DRIVER_ARRIVED_PICKUP: {
@@ -178,7 +178,7 @@ export const DRIVER_NOTIFICATIONS = {
   RETURN_TRIP_STARTED: {
     title: "Return Trip Started",
     message:
-      "Your return trip has started. Please follow the assigned route and drive safely.",
+      "Your return trip with {childName} has started. Please follow the assigned route and ensure a safe journey home.",
   },
 
   DRIVER_ARRIVED_SCHOOL: {
@@ -256,13 +256,13 @@ export const DRIVER_NOTIFICATIONS = {
   TRIP_COMPLETED: {
     title: "Trip Completed",
     message:
-      "Today's trip has been completed successfully. Thank you for your professionalism and dedication to keeping every child safe throughout the journey.",
+      "{childName}'s trip has been completed successfully. Thank you for your professionalism and commitment to student safety.",
   },
 
   PAYMENT_RECEIVED: {
     title: "Payment Received",
     message:
-      "Payment for {childName}'s trip has been received successfully and has been recorded.",
+      "Payment for {childName}'s transportation has been received successfully.",
   },
 
   MORNING_DROP_PHOTO_UPLOADED: {
