@@ -41,11 +41,12 @@ export const sendNotification = async ({
       throw new Error("Driver not found");
     }
 
-    /* ================= FETCH PARENTS ================= */
+    /* ================= FETCH CHILD AND PARENTS ================= */
+    let child = null;
     let parents = [];
 
     if (childId) {
-      const child = await Child.findById(childId).lean();
+      child = await Child.findById(childId).lean();
 
       if (child?.parentId) {
         const parent = await Parent.findById(child.parentId).lean();
@@ -56,6 +57,28 @@ export const sendNotification = async ({
     }
 
     console.log("👨‍👩‍👧 PARENTS FOUND:", parents.length);
+
+    /* ================= NOTIFICATION DATA ================= */
+    const notificationData = {
+      childName: child?.name || "Your child",
+      driverName: driver?.name || "Driver",
+      schoolName: child?.school || "School",
+    };
+
+    /* ================= PLACEHOLDER REPLACEMENT HELPER ================= */
+    const replacePlaceholders = (text = "") => {
+      return text
+        .replace(/{childName}/g, notificationData.childName)
+        .replace(/{driverName}/g, notificationData.driverName)
+        .replace(/{schoolName}/g, notificationData.schoolName);
+    };
+
+    /* ================= COMPUTE FINAL MESSAGES ONCE ================= */
+    const parentTitle = replacePlaceholders(parentNotification.title);
+    const parentMessage = replacePlaceholders(parentNotification.message);
+
+    const driverTitle = replacePlaceholders(driverNotification.title);
+    const driverMessage = replacePlaceholders(driverNotification.message);
 
     /* ================= SAVE NOTIFICATIONS FOR PARENTS ================= */
     let parentNotifications = [];
@@ -68,8 +91,8 @@ export const sendNotification = async ({
             parent: parent._id,
             child: childId || null,
             recipientType: "parent",
-            title: parentNotification.title,
-            message: parentNotification.message,
+            title: parentTitle,
+            message: parentMessage,
             type,
             priority,
             read: false,
@@ -89,8 +112,8 @@ export const sendNotification = async ({
         parent: null,
         child: childId || null,
         recipientType: "driver",
-        title: driverNotification.title,
-        message: driverNotification.message,
+        title: driverTitle,
+        message: driverMessage,
         type,
         priority,
         read: false,
@@ -102,24 +125,26 @@ export const sendNotification = async ({
     if (io) {
       const driverRoom = String(driverId);
 
-      // Driver socket notification (always sent)
-      io.to(driverRoom).emit("notification", {
-        _id: driverNotificationRecord._id,
-        title: driverNotification.title,
-        message: driverNotification.message,
-        type,
-        priority,
-        child: driverNotificationRecord.child,
-        recipientType: "driver",
-        createdAt: driverNotificationRecord.createdAt,
-      });
+      // Driver socket notification (only if record exists)
+      if (driverNotificationRecord) {
+        io.to(driverRoom).emit("notification", {
+          _id: driverNotificationRecord._id,
+          title: driverTitle,
+          message: driverMessage,
+          type,
+          priority,
+          child: driverNotificationRecord.child,
+          recipientType: "driver",
+          createdAt: driverNotificationRecord.createdAt,
+        });
+      }
 
       // Parent socket notifications (only if parents exist)
       parentNotifications.forEach((notif) => {
         io.to(String(notif.parent)).emit("notification", {
           _id: notif._id,
-          title: parentNotification.title,
-          message: parentNotification.message,
+          title: parentTitle,
+          message: parentMessage,
           type: notif.type,
           priority: notif.priority,
           child: notif.child,
@@ -152,8 +177,8 @@ export const sendNotification = async ({
         const parentResponse = await parentMessaging.sendEachForMulticast({
           tokens: parentTokens,
           notification: {
-            title: parentNotification.title,
-            body: parentNotification.message,
+            title: parentTitle,
+            body: parentMessage,
           },
           android: {
             priority: "high",
@@ -214,8 +239,8 @@ export const sendNotification = async ({
         const driverResponse = await driverMessaging.sendEachForMulticast({
           tokens: driverTokens,
           notification: {
-            title: driverNotification.title,
-            body: driverNotification.message,
+            title: driverTitle,
+            body: driverMessage,
           },
           android: {
             priority: "high",
