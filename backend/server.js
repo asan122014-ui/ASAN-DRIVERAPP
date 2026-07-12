@@ -56,19 +56,48 @@ const io = new Server(server, {
 
 app.set("io", io);
 
+/* ================= SOCKET MAPS ================= */
+const parentSockets = new Map(); // parentId -> socket.id
+const driverSockets = new Map(); // driverId -> socket.id
+const driverParentsMap = new Map(); // driverId -> Set of parentIds
+
 /* ================= SOCKET EVENTS ================= */
 io.on("connection", (socket) => {
   console.log("✅ Socket connected:", socket.id);
 
   /* ===== JOIN DRIVER ROOM ===== */
-  socket.on("join_driver_room", (driverId) => {
+  socket.on("join_driver_room", (data) => {
+    // Support both old and new formats
+    const driverId = typeof data === "string" ? data : data?.driverId;
+    const parentId = typeof data === "object" ? data?.parentId : null;
+
     if (!driverId) return;
+
     const room = String(driverId);
     socket.join(room);
-    console.log("🚗 Joined driver room:", room);
+    console.log("🚗 Joined driver room:", room, parentId ? `as parent: ${parentId}` : "");
+
+    // ✅ Store driver socket if this is a driver
+    if (!parentId) {
+      driverSockets.set(driverId, socket.id);
+      console.log("🚗 Driver socket stored:", driverId);
+    }
+
+    // ✅ Store parent socket mapping if parentId is provided
+    if (parentId) {
+      parentSockets.set(parentId, socket.id);
+      
+      // Track which parents are in this driver's room
+      if (!driverParentsMap.has(driverId)) {
+        driverParentsMap.set(driverId, new Set());
+      }
+      driverParentsMap.get(driverId).add(parentId);
+      
+      console.log("👨‍👩‍👧 Parent stored, waiting for camera request:", parentId);
+    }
   });
 
-  /* ===== JOIN PARENT ROOM (optional) ===== */
+  /* ===== JOIN PARENT ROOM (optional - legacy) ===== */
   socket.on("join_parent_room", (parentId) => {
     if (!parentId) return;
     const room = String(parentId);
@@ -76,29 +105,131 @@ io.on("connection", (socket) => {
     console.log("👨‍👩‍👧 Joined parent room:", room);
   });
 
+  /* ================= CAMERA REQUEST FROM PARENT ================= */
+  socket.on("start_camera", ({ driverId, parentId }) => {
+    const room = String(driverId);
+
+    console.log("📷 Parent requested camera:", parentId, "for driver:", driverId);
+
+    // ✅ Ensure parent is tracked
+    if (parentId) {
+      parentSockets.set(parentId, socket.id);
+      
+      if (!driverParentsMap.has(driverId)) {
+        driverParentsMap.set(driverId, new Set());
+      }
+      driverParentsMap.get(driverId).add(parentId);
+    }
+
+    // ✅ Emit parent_joined to driver - this triggers peer creation
+    io.to(room).emit("parent_joined", { parentId });
+    console.log("👨‍👩‍👧 Emitted parent_joined to driver for parent:", parentId);
+  });
+
   /* ================= WEBRTC SIGNALING ================= */
 
-  // 📤 DRIVER → OFFER
-  socket.on("offer", ({ offer, driverId }) => {
-    const room = String(driverId);
-    console.log("📤 Offer → room:", room);
+  // 📤 DRIVER → OFFER (send to specific parent only)
+  socket.on("offer", ({ offer, driverId, parentId }) => {
+    console.log("📤 Offer from driver:", driverId, "for parent:", parentId);
 
-    socket.to(room).emit("offer", { offer });
+    if (parentId) {
+      // ✅ Send only to the specific parent's socket
+      const parentSocketId = parentSockets.get(parentId);
+      if (parentSocketId) {
+        io.to(parentSocketId).emit("offer", { offer, parentId, driverId });
+        console.log("📤 Offer sent to parent socket:", parentSocketId);
+      } else {
+        console.log("⚠️ Parent socket not found for parent:", parentId);
+      }
+    } else {
+      console.log("⚠️ No parentId provided in offer, ignoring");
+    }
   });
 
-  // 📩 PARENT → ANSWER
-  socket.on("answer", ({ answer, driverId }) => {
-    const room = String(driverId);
-    console.log("📩 Answer → room:", room);
+  // 📩 PARENT → ANSWER (send to specific driver only)
+  socket.on("answer", ({ answer, driverId, parentId }) => {
+    console.log("📩 Answer from parent:", parentId, "for driver:", driverId);
 
-    socket.to(room).emit("answer", { answer });
+    // ✅ Send only to the specific driver's socket
+    const driverSocketId = driverSockets.get(driverId);
+    if (driverSocketId) {
+      io.to(driverSocketId).emit("answer", { answer, parentId, driverId });
+      console.log("📩 Answer sent to driver socket:", driverSocketId);
+    } else {
+      console.log("⚠️ Driver socket not found for driver:", driverId);
+    }
   });
 
-  // 📡 ICE (both sides)
-  socket.on("ice-candidate", ({ candidate, driverId }) => {
-    const room = String(driverId);
+  // 📡 ICE (both sides) - with sender field
+  socket.on("ice-candidate", ({ candidate, driverId, parentId, sender }) => {
+    console.log("📡 ICE candidate from:", sender, "driver:", driverId, "parent:", parentId);
 
-    socket.to(room).emit("ice-candidate", { candidate });
+    if (sender === "driver") {
+      // ✅ From driver → send to specific parent
+      const parentSocketId = parentSockets.get(parentId);
+      if (parentSocketId) {
+        io.to(parentSocketId).emit("ice-candidate", { candidate, parentId, driverId });
+        console.log("📡 ICE candidate sent to parent socket:", parentSocketId);
+      } else {
+        console.log("⚠️ Parent socket not found for parent:", parentId);
+      }
+    } else if (sender === "parent") {
+      // ✅ From parent → send to specific driver
+      const driverSocketId = driverSockets.get(driverId);
+      if (driverSocketId) {
+        io.to(driverSocketId).emit("ice-candidate", { candidate, parentId, driverId });
+        console.log("📡 ICE candidate sent to driver socket:", driverSocketId);
+      } else {
+        console.log("⚠️ Driver socket not found for driver:", driverId);
+      }
+    } else {
+      console.log("⚠️ Unknown sender in ice-candidate, ignoring");
+    }
+  });
+
+  /* ================= DRIVER CAMERA READY ================= */
+  socket.on("driver_camera_ready", ({ driverId }) => {
+    console.log("📷 Driver camera ready:", driverId);
+
+    const room = String(driverId);
+    
+    // ✅ Get all parents in this driver's room
+    const parentIds = driverParentsMap.get(driverId) || new Set();
+    const parentIdList = Array.from(parentIds);
+    
+    if (parentIdList.length > 0) {
+      console.log("👨‍👩‍👧 Sending existing parents to driver:", parentIdList);
+      io.to(room).emit("existing_parents", { parentIds: parentIdList });
+    } else {
+      console.log("ℹ️ No existing parents for driver:", driverId);
+    }
+  });
+
+  /* ================= PARENT LEFT ================= */
+  socket.on("parent_left", ({ driverId, parentId }) => {
+    console.log("👋 Parent left:", parentId, "from driver:", driverId);
+    
+    // Remove from parentSockets
+    parentSockets.delete(parentId);
+    
+    // Remove from driverParentsMap
+    if (driverId && driverParentsMap.has(driverId)) {
+      driverParentsMap.get(driverId).delete(parentId);
+      if (driverParentsMap.get(driverId).size === 0) {
+        driverParentsMap.delete(driverId);
+      }
+    }
+    
+    // ✅ Notify driver (send to specific driver socket)
+    const driverSocketId = driverSockets.get(driverId);
+    if (driverSocketId) {
+      io.to(driverSocketId).emit("parent_left", { parentId });
+      console.log("📤 Emitted parent_left to driver socket:", driverSocketId);
+    } else {
+      // Fallback to room broadcast
+      const room = String(driverId);
+      io.to(room).emit("parent_left", { parentId });
+    }
   });
 
   /* ================= LOCATION ================= */
@@ -129,21 +260,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  /* ================= CAMERA CONTROL ================= */
-  socket.on("start_camera", (driverId) => {
-    const room = String(driverId);
-    console.log("📸 START CAMERA:", room);
-
-    io.to(room).emit("camera_control", { action: "start" });
-  });
-
-  socket.on("stop_camera", (driverId) => {
-    const room = String(driverId);
-    console.log("🛑 STOP CAMERA:", room);
-
-    io.to(room).emit("camera_control", { action: "stop" });
-  });
-
   /* ================= OLD FRAME (optional) ================= */
   socket.on("camera_frame", (data) => {
     const { driverId, frame } = data;
@@ -159,6 +275,55 @@ io.on("connection", (socket) => {
   /* ===== DISCONNECT ===== */
   socket.on("disconnect", () => {
     console.log("❌ Socket disconnected:", socket.id);
+    
+    // ✅ Remove from driverSockets if this was a driver
+    for (const [driverId, socketId] of driverSockets.entries()) {
+      if (socketId === socket.id) {
+        driverSockets.delete(driverId);
+        console.log("🧹 Removed driver from map:", driverId);
+        break;
+      }
+    }
+    
+    // ✅ Find and remove parent, notify driver
+    let foundParentId = null;
+    let foundDriverId = null;
+    
+    for (const [parentId, socketId] of parentSockets.entries()) {
+      if (socketId === socket.id) {
+        foundParentId = parentId;
+        parentSockets.delete(parentId);
+        console.log("🧹 Removed parent from map:", parentId);
+        break;
+      }
+    }
+    
+    // Find which driver this parent was in
+    if (foundParentId) {
+      for (const [driverId, parentSet] of driverParentsMap.entries()) {
+        if (parentSet.has(foundParentId)) {
+          foundDriverId = driverId;
+          parentSet.delete(foundParentId);
+          if (parentSet.size === 0) {
+            driverParentsMap.delete(driverId);
+          }
+          console.log("🧹 Removed parent from driver map:", driverId);
+          break;
+        }
+      }
+      
+      // ✅ Notify driver that parent disconnected
+      if (foundDriverId) {
+        const driverSocketId = driverSockets.get(foundDriverId);
+        if (driverSocketId) {
+          io.to(driverSocketId).emit("parent_left", { parentId: foundParentId });
+          console.log("📤 Emitted parent_left to driver socket:", driverSocketId);
+        } else {
+          const room = String(foundDriverId);
+          io.to(room).emit("parent_left", { parentId: foundParentId });
+        }
+      }
+    }
   });
 });
 
