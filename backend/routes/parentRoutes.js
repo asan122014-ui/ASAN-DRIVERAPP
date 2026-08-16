@@ -1,541 +1,1092 @@
 import express from "express";
+
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
 import Child from "../models/Child.js";
 import DriverRequest from "../models/DriverRequest.js";
 import Trip from "../models/Trips.js";
 import Notification from "../models/Notification.js";
-// import Billing from "../models/Billing.js";
 
 const router = express.Router();
 
-/* ============================================================
-   REGISTER PARENT
-============================================================ */
-router.post("/register", async (req, res) => {
-  try {
-    const {
-      name,
-      email,
-      phone,
-      password,
-      address,
-      latitude,
-      longitude,
-    } = req.body;
-
-    if (
-      !name ||
-      !email ||
-      !phone ||
-      !password ||
-      !address ||
-      latitude === undefined ||
-      longitude === undefined
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
-      });
-    }
-
-    const existing = await Parent.findOne({
-      $or: [
-        { email: email.trim().toLowerCase() },
-        { phone },
-      ],
-    });
-
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        message: "Email or phone already registered",
-      });
-    }
-
-    const parent = await Parent.create({
-      name,
-      email: email.trim().toLowerCase(),
-      phone,
-      password,
-      address,
-      homeLocation: {
-        type: "Point",
-        coordinates: [
-          Number(longitude),
-          Number(latitude),
-        ],
-      },
-    });
-
-    const data = parent.toObject();
-    delete data.password;
-
-    res.status(201).json({
-      success: true,
-      message: "Parent registered successfully",
-      data,
-    });
-  } catch (error) {
-    console.error("REGISTER ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
-
-/* ============================================================
-   LOGIN
-============================================================ */
-router.post("/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const parent = await Parent.findOne({
-      email: email.trim().toLowerCase(),
-    }).select("+password");
-
-    if (!parent) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
-    const isMatch = await parent.comparePassword(password);
-
-    if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
-    const data = parent.toObject();
-    delete data.password;
-
-    res.json({
-      success: true,
-      data,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Login failed",
-    });
-  }
-});
-
-/* ============================================================
-   CHECK EMAIL
-============================================================ */
-router.post("/check-email", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
-
-    const parent = await Parent.findOne({
-      email: email.trim().toLowerCase(),
-    });
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Email found",
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to check email",
-    });
-  }
-});
-
-/* ============================================================
+/* =========================================================
    GET ALL PARENTS
-============================================================ */
+========================================================= */
+
+/*
+  NOTE:
+
+  This endpoint will later be restricted to Admin access.
+
+  For now it is kept unchanged so we do not break
+  existing Admin functionality while migrating auth.
+*/
+
 router.get("/", async (req, res) => {
   try {
-    const parents = await Parent.find().select("-password");
+    const parents =
+      await Parent.find();
 
-    const result = await Promise.all(
-      parents.map(async (parent) => {
-        const children = await Child.find({
-          parentId: parent._id,
-        });
+    const result =
+      await Promise.all(
+        parents.map(
+          async (parent) => {
+            const children =
+              await Child.find({
+                parentId:
+                  parent._id,
+              });
 
-        const driver = parent.driverId
-          ? await Driver.findOne({
-              driverId: parent.driverId,
-            }).select("-password")
-          : null;
+            const driver =
+              parent.driverId
+                ? await Driver.findOne({
+                    driverId:
+                      parent.driverId,
+                  }).select(
+                    "-password"
+                  )
+                : null;
 
-        return {
-          ...parent.toObject(),
-          children,
-          driver,
-        };
-      })
-    );
+            return {
+              ...parent.toObject(),
 
-    res.json({
+              children,
+
+              driver,
+            };
+          }
+        )
+      );
+
+    return res.status(200).json({
       success: true,
       data: result,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch parents",
-    });
-  }
-});
-
-/* ============================================================
-   DOWNLOAD USER DATA
-============================================================ */
-router.get("/download-data/:parentId", async (req, res) => {
-  try {
-    const { parentId } = req.params;
-
-    const parent = await Parent.findById(parentId).select("-password");
-    
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    // ✅ FIXED: Use parent (not parentId) for Trip model
-    const children = await Child.find({ parentId });
-    const trips = await Trip.find({ parent: parentId })
-      .populate("child", "name grade school")
-      .sort({ createdAt: -1 });
-    const notifications = await Notification.find({ parentId });
-    // const billing = await Billing.find({ parentId });
-
-    const downloadData = {
-      parent: parent.toObject(),
-      children: children.map(c => c.toObject()),
-      trips: trips.map(t => t.toObject()),
-      notifications: notifications.map(n => n.toObject()),
-      // billing: billing.map(b => b.toObject()),
-      downloadedAt: new Date().toISOString(),
-    };
-
-    res.json({
-      success: true,
-      message: "Data downloaded successfully",
-      data: downloadData,
-    });
-  } catch (error) {
-    console.error("DOWNLOAD DATA ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to download data",
-    });
-  }
-});
-
-/* ============================================================
-   GET SINGLE PARENT
-============================================================ */
-router.get("/:id", async (req, res) => {
-  try {
-    const parent = await Parent.findById(req.params.id).select("-password");
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: parent,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch parent",
-    });
-  }
-});
-
-/* ============================================================
-   ASSIGN DRIVER
-============================================================ */
-router.put("/assign-driver", async (req, res) => {
-  try {
-    const { parentId, driverId } = req.body;
-
-    if (!parentId || !driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "parentId and driverId required",
-      });
-    }
-
-    const driver = await Driver.findOne({ driverId });
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
-
-    const updated = await Parent.findByIdAndUpdate(
-      parentId,
-      { driverId },
-      { new: true }
-    ).select("-password");
-
-    await Child.updateMany(
-      { parentId },
-      { driverId }
+    console.error(
+      "GET PARENTS ERROR:",
+      error
     );
 
-    res.json({
-      success: true,
-      message: "Driver assigned successfully",
-      data: updated,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to assign driver",
+      message:
+        "Failed to fetch parents",
     });
   }
 });
 
-router.put("/logout", async (req, res) => {
-  try {
-    const { parentId, fcmToken } = req.body;
+/* =========================================================
+   DOWNLOAD PARENT DATA
+========================================================= */
 
-    await Parent.findByIdAndUpdate(
-      parentId,
-      {
-        $pull: {
-          fcmTokens: fcmToken,
-        },
-      },
-      {
-        returnDocument: "after",
+router.get(
+  "/download-data/:parentId",
+  async (req, res) => {
+    try {
+      const {
+        parentId,
+      } = req.params;
+
+      const parent =
+        await Parent.findById(
+          parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Parent not found",
+          });
       }
-    );
 
-    res.json({
-      success: true,
-      message: "Token removed",
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-    });
-  }
-});
+      /* ===================================================
+         CHILDREN
+      =================================================== */
 
-/* ============================================================
-   UPDATE PARENT
-============================================================ */
-router.put("/:id", async (req, res) => {
-  try {
-    const updates = { ...req.body };
+      const children =
+        await Child.find({
+          parentId,
+        });
 
-    if (
-      updates.latitude !== undefined &&
-      updates.longitude !== undefined
-    ) {
-      updates.homeLocation = {
-        type: "Point",
-        coordinates: [
-          Number(updates.longitude),
-          Number(updates.latitude),
-        ],
+      /* ===================================================
+         TRIPS
+      =================================================== */
+
+      /*
+        Your Trip model currently uses:
+
+        parent: parentId
+      */
+
+      const trips =
+        await Trip.find({
+          parent: parentId,
+        })
+          .populate(
+            "child",
+            "name grade school"
+          )
+          .sort({
+            createdAt: -1,
+          });
+
+      /* ===================================================
+         NOTIFICATIONS
+      =================================================== */
+
+      const notifications =
+        await Notification.find({
+          parentId,
+        }).sort({
+          createdAt: -1,
+        });
+
+      /* ===================================================
+         DOWNLOAD DATA
+      =================================================== */
+
+      const downloadData = {
+        parent:
+          parent.toObject(),
+
+        children:
+          children.map(
+            (child) =>
+              child.toObject()
+          ),
+
+        trips:
+          trips.map(
+            (trip) =>
+              trip.toObject()
+          ),
+
+        notifications:
+          notifications.map(
+            (notification) =>
+              notification.toObject()
+          ),
+
+        downloadedAt:
+          new Date().toISOString(),
       };
 
-      delete updates.latitude;
-      delete updates.longitude;
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Data downloaded successfully",
+
+          data:
+            downloadData,
+        });
+    } catch (error) {
+      console.error(
+        "DOWNLOAD DATA ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message:
+            "Failed to download data",
+        });
     }
-
-    const updated = await Parent.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      { new: true }
-    ).select("-password");
-
-    res.json({
-      success: true,
-      message: "Parent updated successfully",
-      data: updated,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Update failed",
-    });
   }
-});
+);
 
-/* ============================================================
-   DELETE PARENT
-============================================================ */
-router.delete("/:id", async (req, res) => {
-  try {
-    const parent = await Parent.findById(req.params.id);
+/* =========================================================
+   ASSIGN DRIVER
+========================================================= */
 
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
+/*
+  This endpoint is kept because it may currently be used
+  by Admin/internal flows.
 
-    // ✅ FIXED: Use parent (not parentId) for Trip model
-    await Child.deleteMany({ parentId: req.params.id });
-    await Trip.deleteMany({ parent: req.params.id });
-    await Notification.deleteMany({ parentId: req.params.id });
-    await DriverRequest.deleteMany({ parentId: req.params.id });
+  Parent-facing driver linking is handled separately by:
 
-    await Parent.findByIdAndDelete(req.params.id);
+  POST /api/parent/link-driver
+*/
 
-    res.json({
-      success: true,
-      message: "Parent and related records deleted successfully",
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Delete failed",
-    });
-  }
-});
+router.put(
+  "/assign-driver",
+  async (req, res) => {
+    try {
+      const {
+        parentId,
+        driverId,
+      } = req.body;
 
-/* ============================================================
-   LINK DRIVER (Parent App)
-============================================================ */
-router.post("/link-driver", async (req, res) => {
-  try {
-    const { parentId, driverId } = req.body;
+      if (
+        !parentId ||
+        !driverId
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
 
-    if (!parentId || !driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Parent ID and Driver ID are required",
-      });
-    }
-
-    const parent = await Parent.findById(parentId);
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    const driver = await Driver.findOne({
-      driverId: driverId.trim().toUpperCase(),
-    });
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Invalid Driver ID",
-      });
-    }
-
-    parent.driverId = driver.driverId;
-    await parent.save();
-
-    await Child.updateMany(
-      { parentId: parent._id },
-      {
-        driverId: driver.driverId,
+            message:
+              "parentId and driverId are required",
+          });
       }
-    );
 
-    const updatedParent = await Parent.findById(parent._id).select(
-      "-password"
-    );
+      /* ===================================================
+         VERIFY DRIVER
+      =================================================== */
 
-    res.json({
-      success: true,
-      message: "Driver linked successfully",
-      data: updatedParent,
-    });
-  } catch (error) {
-    console.error("LINK DRIVER ERROR:", error);
+      const driver =
+        await Driver.findOne({
+          driverId:
+            String(
+              driverId
+            )
+              .trim()
+              .toUpperCase(),
+        });
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to link driver",
-    });
-  }
-});
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Driver not found",
+          });
+      }
 
-/* ============================================================
-   RESET PASSWORD
-============================================================ */
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { email, newPassword } = req.body;
+      /* ===================================================
+         VERIFY PARENT
+      =================================================== */
 
-    if (!email || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and new password are required",
-      });
+      const parent =
+        await Parent.findById(
+          parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Parent not found",
+          });
+      }
+
+      /* ===================================================
+         UPDATE PARENT
+      =================================================== */
+
+      const updated =
+        await Parent.findByIdAndUpdate(
+          parentId,
+          {
+            driverId:
+              driver.driverId,
+          },
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+
+      /* ===================================================
+         UPDATE CHILDREN
+      =================================================== */
+
+      await Child.updateMany(
+        {
+          parentId,
+        },
+        {
+          driverId:
+            driver.driverId,
+        }
+      );
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Driver assigned successfully",
+
+          data: updated,
+        });
+    } catch (error) {
+      console.error(
+        "ASSIGN DRIVER ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to assign driver",
+        });
     }
-
-    const parent = await Parent.findOne({
-      email: email.trim().toLowerCase(),
-    }).select("+password");
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message: "Parent not found",
-      });
-    }
-
-    parent.password = newPassword;
-    await parent.save();
-
-    res.json({
-      success: true,
-      message: "Password updated successfully",
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to reset password",
-    });
   }
-});
+);
+
+/* =========================================================
+   LOGOUT / REMOVE FCM TOKEN
+========================================================= */
+
+/*
+  Firebase authentication itself is handled client-side.
+
+  Backend logout is used here only to remove the device's
+  FCM notification token from the Parent account.
+*/
+
+router.put(
+  "/logout",
+  async (req, res) => {
+    try {
+      const {
+        parentId,
+        fcmToken,
+      } = req.body;
+
+      if (!parentId) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Parent ID is required",
+          });
+      }
+
+      /*
+        If there is no FCM token, there is nothing
+        to remove.
+
+        Logout itself can still succeed.
+      */
+
+      if (!fcmToken) {
+        return res
+          .status(200)
+          .json({
+            success: true,
+
+            message:
+              "Logout successful",
+          });
+      }
+
+      const parent =
+        await Parent.findByIdAndUpdate(
+          parentId,
+          {
+            $pull: {
+              fcmTokens:
+                fcmToken,
+            },
+          },
+          {
+            new: true,
+          }
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Parent not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "FCM token removed successfully",
+        });
+    } catch (error) {
+      console.error(
+        "LOGOUT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Logout failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   LINK DRIVER — PARENT APP
+========================================================= */
+
+router.post(
+  "/link-driver",
+  async (req, res) => {
+    try {
+      const {
+        parentId,
+        driverId,
+      } = req.body;
+
+      /* ===================================================
+         VALIDATION
+      =================================================== */
+
+      if (
+        !parentId ||
+        !driverId
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Parent ID and Driver ID are required",
+          });
+      }
+
+      /* ===================================================
+         FIND PARENT
+      =================================================== */
+
+      const parent =
+        await Parent.findById(
+          parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Parent not found",
+          });
+      }
+
+      /* ===================================================
+         NORMALIZE DRIVER ID
+      =================================================== */
+
+      const normalizedDriverId =
+        String(driverId)
+          .trim()
+          .toUpperCase();
+
+      /* ===================================================
+         FIND DRIVER
+      =================================================== */
+
+      const driver =
+        await Driver.findOne({
+          driverId:
+            normalizedDriverId,
+        });
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Driver ID",
+          });
+      }
+
+      /* ===================================================
+         ALREADY LINKED
+      =================================================== */
+
+      if (
+        parent.driverId ===
+        driver.driverId
+      ) {
+        return res
+          .status(200)
+          .json({
+            success: true,
+
+            message:
+              "Driver already linked",
+
+            data: parent,
+          });
+      }
+
+      /* ===================================================
+         LINK DRIVER
+      =================================================== */
+
+      parent.driverId =
+        driver.driverId;
+
+      await parent.save();
+
+      /* ===================================================
+         UPDATE ALL CHILDREN
+      =================================================== */
+
+      await Child.updateMany(
+        {
+          parentId:
+            parent._id,
+        },
+        {
+          driverId:
+            driver.driverId,
+        }
+      );
+
+      /* ===================================================
+         RETURN UPDATED PARENT
+      =================================================== */
+
+      const updatedParent =
+        await Parent.findById(
+          parent._id
+        );
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Driver linked successfully",
+
+          data:
+            updatedParent,
+        });
+    } catch (error) {
+      console.error(
+        "LINK DRIVER ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to link driver",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   GET SINGLE PARENT
+========================================================= */
+
+router.get(
+  "/:id",
+  async (req, res) => {
+    try {
+      const parent =
+        await Parent.findById(
+          req.params.id
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Parent not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+          data: parent,
+        });
+    } catch (error) {
+      console.error(
+        "GET PARENT ERROR:",
+        error
+      );
+
+      /*
+        Invalid MongoDB ObjectId
+      */
+
+      if (
+        error.name ===
+        "CastError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Parent ID",
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to fetch parent",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   UPDATE PARENT
+========================================================= */
+
+router.put(
+  "/:id",
+  async (req, res) => {
+    try {
+      const updates = {
+        ...req.body,
+      };
+
+      /* ===================================================
+         PROTECTED AUTHENTICATION FIELDS
+      =================================================== */
+
+      /*
+        These values must NEVER be changed through a
+        normal Parent profile-update request.
+
+        phone:
+        Must eventually be changed only after another
+        Firebase phone verification.
+
+        firebaseUid:
+        Must only come from Firebase.
+
+        password:
+        Password authentication is deprecated.
+      */
+
+      delete updates.firebaseUid;
+      delete updates.password;
+      delete updates.phone;
+
+      /*
+        Mongo internal fields must not be writable.
+      */
+
+      delete updates._id;
+      delete updates.__v;
+      delete updates.createdAt;
+      delete updates.updatedAt;
+
+      /* ===================================================
+         LOCATION UPDATE
+      =================================================== */
+
+      const hasLatitude =
+        updates.latitude !==
+        undefined;
+
+      const hasLongitude =
+        updates.longitude !==
+        undefined;
+
+      /*
+        Require both coordinates together.
+      */
+
+      if (
+        hasLatitude !==
+        hasLongitude
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Latitude and longitude must be provided together",
+          });
+      }
+
+      if (
+        hasLatitude &&
+        hasLongitude
+      ) {
+        const latitude =
+          Number(
+            updates.latitude
+          );
+
+        const longitude =
+          Number(
+            updates.longitude
+          );
+
+        if (
+          !Number.isFinite(
+            latitude
+          ) ||
+          !Number.isFinite(
+            longitude
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Invalid latitude or longitude",
+            });
+        }
+
+        if (
+          latitude < -90 ||
+          latitude > 90
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Latitude must be between -90 and 90",
+            });
+        }
+
+        if (
+          longitude < -180 ||
+          longitude > 180
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Longitude must be between -180 and 180",
+            });
+        }
+
+        updates.homeLocation = {
+          type: "Point",
+
+          coordinates: [
+            longitude,
+            latitude,
+          ],
+        };
+
+        delete updates.latitude;
+        delete updates.longitude;
+      }
+
+      /* ===================================================
+         NORMALIZE EMAIL
+      =================================================== */
+
+      if (
+        updates.email !==
+        undefined
+      ) {
+        const email =
+          String(
+            updates.email
+          )
+            .trim()
+            .toLowerCase();
+
+        const emailRegex =
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (
+          !emailRegex.test(
+            email
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Enter a valid email address",
+            });
+        }
+
+        /*
+          Prevent email duplication.
+        */
+
+        const existingEmail =
+          await Parent.findOne({
+            email,
+
+            _id: {
+              $ne:
+                req.params.id,
+            },
+          });
+
+        if (
+          existingEmail
+        ) {
+          return res
+            .status(409)
+            .json({
+              success: false,
+
+              message:
+                "Email is already registered",
+            });
+        }
+
+        updates.email =
+          email;
+      }
+
+      /* ===================================================
+         NORMALIZE TEXT
+      =================================================== */
+
+      if (
+        typeof updates.name ===
+        "string"
+      ) {
+        updates.name =
+          updates.name.trim();
+      }
+
+      if (
+        typeof updates.address ===
+        "string"
+      ) {
+        updates.address =
+          updates.address.trim();
+      }
+
+      /* ===================================================
+         UPDATE
+      =================================================== */
+
+      const updated =
+        await Parent.findByIdAndUpdate(
+          req.params.id,
+          updates,
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+
+      if (!updated) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Parent not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Parent updated successfully",
+
+          data: updated,
+        });
+    } catch (error) {
+      console.error(
+        "UPDATE PARENT ERROR:",
+        error
+      );
+
+      if (
+        error.name ===
+        "CastError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Parent ID",
+          });
+      }
+
+      if (
+        error.code === 11000
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Parent information already exists",
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Update failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   DELETE PARENT
+========================================================= */
+
+router.delete(
+  "/:id",
+  async (req, res) => {
+    try {
+      const parent =
+        await Parent.findById(
+          req.params.id
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Parent not found",
+          });
+      }
+
+      const parentId =
+        parent._id;
+
+      /* ===================================================
+         DELETE CHILDREN
+      =================================================== */
+
+      await Child.deleteMany({
+        parentId,
+      });
+
+      /* ===================================================
+         DELETE TRIPS
+      =================================================== */
+
+      await Trip.deleteMany({
+        parent: parentId,
+      });
+
+      /* ===================================================
+         DELETE NOTIFICATIONS
+      =================================================== */
+
+      await Notification.deleteMany({
+        parentId,
+      });
+
+      /* ===================================================
+         DELETE DRIVER REQUESTS
+      =================================================== */
+
+      await DriverRequest.deleteMany({
+        parentId,
+      });
+
+      /* ===================================================
+         DELETE PARENT
+      =================================================== */
+
+      await Parent.findByIdAndDelete(
+        parentId
+      );
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Parent and related records deleted successfully",
+        });
+    } catch (error) {
+      console.error(
+        "DELETE PARENT ERROR:",
+        error
+      );
+
+      if (
+        error.name ===
+        "CastError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Parent ID",
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Delete failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;
