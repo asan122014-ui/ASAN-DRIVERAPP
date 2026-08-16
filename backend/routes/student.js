@@ -28,7 +28,10 @@ const normalizeDriverId = (driverId) => {
 
   GET /api/students?driverId=ASAN-XXXXXX
 
-  Internally this now reads from Child collection.
+  This route now reads from the Child collection.
+
+  Child is the single source of truth for both
+  Parent and Driver applications.
 */
 
 router.get("/", async (req, res) => {
@@ -64,8 +67,7 @@ router.get("/", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to fetch students",
+      message: "Failed to fetch students",
     });
   }
 });
@@ -75,12 +77,12 @@ router.get("/", async (req, res) => {
 ========================================================= */
 
 /*
-  Active students are:
+  Active Child statuses for Driver:
 
   waiting
   onboard
 
-  dropped and absent students are excluded.
+  dropped and absent children are excluded.
 */
 
 router.get("/active", async (req, res) => {
@@ -134,16 +136,15 @@ router.get("/active", async (req, res) => {
 ========================================================= */
 
 /*
-  Legacy Driver endpoint:
-
   PUT /api/students/:id/pickup
 
   Body:
+
   {
     "driverId": "ASAN-XXXXXX"
   }
 
-  Updates the SAME Child document used by Parent app.
+  waiting -> onboard
 */
 
 router.put("/:id/pickup", async (req, res) => {
@@ -189,12 +190,14 @@ router.put("/:id/pickup", async (req, res) => {
     }
 
     /*
-      Keep response key as "student"
-      so existing Driver frontend does not break.
+      Keep "student" response key for
+      Driver frontend compatibility.
     */
 
     return res.status(200).json({
       success: true,
+      message:
+        "Student picked up successfully",
       student,
     });
   } catch (error) {
@@ -206,15 +209,13 @@ router.put("/:id/pickup", async (req, res) => {
     if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid Student ID",
+        message: "Invalid Student ID",
       });
     }
 
     return res.status(500).json({
       success: false,
-      message:
-        "Pickup update failed",
+      message: "Pickup update failed",
     });
   }
 });
@@ -222,6 +223,18 @@ router.put("/:id/pickup", async (req, res) => {
 /* =========================================================
    DROP STUDENT
 ========================================================= */
+
+/*
+  PUT /api/students/:id/drop
+
+  Body:
+
+  {
+    "driverId": "ASAN-XXXXXX"
+  }
+
+  onboard -> dropped
+*/
 
 router.put("/:id/drop", async (req, res) => {
   try {
@@ -267,6 +280,8 @@ router.put("/:id/drop", async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message:
+        "Student dropped successfully",
       student,
     });
   } catch (error) {
@@ -278,31 +293,39 @@ router.put("/:id/drop", async (req, res) => {
     if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid Student ID",
+        message: "Invalid Student ID",
       });
     }
 
     return res.status(500).json({
       success: false,
-      message:
-        "Drop update failed",
+      message: "Drop update failed",
     });
   }
 });
 
 /* =========================================================
-   END TRIP
+   END DRIVER TRIP
 ========================================================= */
 
 /*
-  IMPORTANT:
+  POST /api/students/end
 
-  We are intentionally keeping your existing Trip logic
-  for now.
+  Body:
 
-  We need to inspect models/Trips.js before changing
-  "active", "in_transit", "completed", etc.
+  {
+    "driverId": "ASAN-XXXXXX"
+  }
+
+  Trip lifecycle:
+
+  waiting
+      ↓
+  in_transit
+      ↓
+  completed
+
+  "active" is NOT a valid Trip status.
 */
 
 router.post("/end", async (req, res) => {
@@ -318,9 +341,13 @@ router.post("/end", async (req, res) => {
       });
     }
 
+    /* =====================================================
+       FIND LATEST IN-TRANSIT TRIP
+    ===================================================== */
+
     const trip = await Trip.findOne({
       driverId,
-      status: "active",
+      status: "in_transit",
     }).sort({
       createdAt: -1,
     });
@@ -328,21 +355,34 @@ router.post("/end", async (req, res) => {
     if (!trip) {
       return res.status(404).json({
         success: false,
-        message: "No active trip",
+        message:
+          "No trip currently in transit",
       });
     }
 
-    trip.endTime = new Date();
+    /* =====================================================
+       COMPLETE TRIP
+    ===================================================== */
+
+    const endTime = new Date();
+
+    trip.endTime = endTime;
 
     if (trip.startTime) {
       trip.duration = Math.max(
         0,
         Math.round(
-          (trip.endTime -
-            trip.startTime) /
+          (
+            endTime.getTime() -
+            new Date(
+              trip.startTime
+            ).getTime()
+          ) /
             60000
         )
       );
+    } else {
+      trip.duration = 0;
     }
 
     trip.status = "completed";
@@ -351,6 +391,10 @@ router.post("/end", async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
+      message:
+        "Trip completed successfully",
+
       trip,
     });
   } catch (error) {
@@ -361,8 +405,7 @@ router.post("/end", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to end trip",
+      message: "Failed to end trip",
     });
   }
 });
