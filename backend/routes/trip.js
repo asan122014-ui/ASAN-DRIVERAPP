@@ -1,4 +1,5 @@
 import express from "express";
+
 import {
   startTrip,
   endTrip,
@@ -24,110 +25,188 @@ import {
 
 const router = express.Router();
 
-/* ==================================================
+/* =========================================================
    DRIVER TRIP
-================================================== */
+========================================================= */
 
-// Start Trip
-router.post("/start", startTrip);
+/*
+  Start a new morning / afternoon trip
+*/
+router.post(
+  "/start",
+  startTrip
+);
 
-// End Trip
-router.post("/end", endTrip);
+/*
+  Complete the current trip
+*/
+router.post(
+  "/end",
+  endTrip
+);
 
-// Active Trips
-router.get("/active/:driverId", getActiveTrips);
+/*
+  Get currently in-transit trips
+  for a Driver
+*/
+router.get(
+  "/active/:driverId",
+  getActiveTrips
+);
 
-// Driver Trip History
-router.get("/history/:driverId", getTripHistory);
+/*
+  Driver trip history
+*/
+router.get(
+  "/history/:driverId",
+  getTripHistory
+);
 
-// Driver Trip Details
+/*
+  Get Driver trip details for
+  a particular date and trip type
+*/
 router.get(
   "/details/:driverId/:tripType/:date",
   getTripDetails
 );
 
-// Trip Progress
-router.get("/progress/:driverId", getTripProgress);
+/*
+  Current trip progress
+*/
+router.get(
+  "/progress/:driverId",
+  getTripProgress
+);
 
-// Today's Trip Status
-router.get("/today-status/:driverId", getTodayTripStatus);
+/*
+  Morning / afternoon trip status
+  for the current day
+*/
+router.get(
+  "/today-status/:driverId",
+  getTodayTripStatus
+);
 
-// Receive Payment
-router.post("/payment", receivePayment);
+/*
+  Record payment received
+*/
+router.post(
+  "/payment",
+  receivePayment
+);
 
-/* ==================================================
-   STUDENT ACTIONS
-================================================== */
+/* =========================================================
+   STUDENT TRIP ACTIONS
+========================================================= */
 
-// Pickup Student
+/*
+  Pickup student
+*/
 router.post(
   "/pickup/:tripId",
-  (req, res, next) => {
-    console.log("✅ POST /pickup", req.params.tripId);
-    next();
-  },
   pickupStudent
 );
 
-// Drop Student
+/*
+  Drop student
+*/
 router.post(
   "/drop/:tripId",
-  (req, res, next) => {
-    console.log("✅ POST /drop", req.params.tripId);
-    next();
-  },
   dropStudent
 );
 
-// Upload Morning Drop Photo
+/* =========================================================
+   STUDENT VERIFICATION PHOTOS
+========================================================= */
+
+/*
+  Morning:
+
+  Upload photo after school drop.
+*/
 router.post(
   "/morning-drop-photo/:tripId",
-  (req, res, next) => {
-    console.log("✅ POST /morning-drop-photo", req.params.tripId);
-    next();
-  },
-  studentVerificationUpload.single("photo"),
+
+  studentVerificationUpload.single(
+    "photo"
+  ),
+
   uploadMorningDropPhoto
 );
 
-// Upload Afternoon Pickup Photo
+/*
+  Afternoon:
+
+  Upload photo during school pickup.
+*/
 router.post(
   "/afternoon-pickup-photo/:tripId",
-  (req, res, next) => {
-    console.log("✅ POST /afternoon-pickup-photo", req.params.tripId);
-    next();
-  },
-  studentVerificationUpload.single("photo"),
+
+  studentVerificationUpload.single(
+    "photo"
+  ),
+
   uploadAfternoonPickupPhoto
 );
 
-/* ==================================================
-   VERIFICATION
-================================================== */
+/* =========================================================
+   VERIFICATION REVIEW
+========================================================= */
 
-// Verify Morning Drop Photo
+/*
+  Verify morning drop photo
+*/
 router.patch(
   "/verify/morning-drop/:tripId",
   verifyMorningDropPhoto
 );
 
-// Verify Afternoon Pickup Photo
+/*
+  Verify afternoon pickup photo
+*/
 router.patch(
   "/verify/afternoon-pickup/:tripId",
   verifyAfternoonPickupPhoto
 );
 
-/* ==================================================
+/* =========================================================
    PARENT
-================================================== */
+========================================================= */
 
-// Parent Trip History
-router.get("/parent/:parentId", getParentTripHistory);
+/*
+  Parent trip history
+*/
+router.get(
+  "/parent/:parentId",
+  getParentTripHistory
+);
 
-/* ==================================================
-   GET TRIP BY ID (KEEP LAST)
-================================================== */
+/* =========================================================
+   GET SINGLE TRIP
+========================================================= */
 
-router.get("/:tripId", getTripById);
+/*
+  IMPORTANT:
+
+  Keep this route LAST.
+
+  Otherwise values such as:
+
+  /history/...
+  /parent/...
+  /active/...
+
+  could potentially be interpreted as trip IDs.
+*/
+
+router.get(
+  "/:tripId",
+  getTripById
+);
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;
