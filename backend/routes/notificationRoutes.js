@@ -1,4 +1,6 @@
 import express from "express";
+import mongoose from "mongoose";
+
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
 
@@ -13,81 +15,312 @@ import {
 
 const router = express.Router();
 
-/* ================= TEST ================= */
-router.post("/test", sendTestNotification);
+/* =========================================================
+   HELPERS
+========================================================= */
 
-/* ================= SAVE FCM TOKEN ================= */
-router.post("/save-token", async (req, res) => {
-  try {
-    const { driverId, parentId, token } = req.body;
+const normalizeDriverId = (driverId) => {
+  if (!driverId) {
+    return "";
+  }
 
-    console.log("🔥 TOKEN RECEIVED:", req.body);
+  return String(driverId)
+    .trim()
+    .toUpperCase();
+};
 
-    if (!token) {
-      return res.status(400).json({
+/* =========================================================
+   TEST NOTIFICATION
+========================================================= */
+
+/*
+  Development/testing endpoint.
+
+  We will decide whether to keep or remove this
+  after inspecting notificationController.js.
+*/
+
+router.post(
+  "/test",
+  sendTestNotification
+);
+
+/* =========================================================
+   SAVE FCM TOKEN
+========================================================= */
+
+/*
+  POST /api/notifications/save-token
+
+  Parent:
+
+  {
+    "parentId": "...",
+    "token": "FCM_TOKEN"
+  }
+
+  Driver:
+
+  {
+    "driverId": "ASAN-XXXXXX",
+    "token": "FCM_TOKEN"
+  }
+
+  driverId can also temporarily accept a MongoDB ObjectId
+  for backwards compatibility.
+*/
+
+router.post(
+  "/save-token",
+  async (req, res) => {
+    try {
+      const {
+        driverId,
+        parentId,
+        token,
+      } = req.body;
+
+      /* ===================================================
+         TOKEN VALIDATION
+      =================================================== */
+
+      const normalizedToken =
+        typeof token === "string"
+          ? token.trim()
+          : "";
+
+      if (!normalizedToken) {
+        return res.status(400).json({
+          success: false,
+          message: "Token is required",
+        });
+      }
+
+      /* ===================================================
+         RECIPIENT VALIDATION
+      =================================================== */
+
+      if (!driverId && !parentId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Either driverId or parentId is required",
+        });
+      }
+
+      if (driverId && parentId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Provide either driverId or parentId, not both",
+        });
+      }
+
+      /* ===================================================
+         DRIVER TOKEN
+      =================================================== */
+
+      if (driverId) {
+        let driver = null;
+
+        /*
+          Backwards compatibility:
+
+          Some old frontend code may still send
+          MongoDB Driver _id.
+
+          New Driver APIs normally use custom IDs such as:
+
+          ASAN-9D0A01
+        */
+
+        if (
+          mongoose.Types.ObjectId.isValid(
+            String(driverId)
+          )
+        ) {
+          driver =
+            await Driver.findById(
+              driverId
+            );
+        }
+
+        /*
+          If MongoDB _id lookup did not find a Driver,
+          try the custom Driver ID.
+        */
+
+        if (!driver) {
+          const normalizedDriverId =
+            normalizeDriverId(
+              driverId
+            );
+
+          driver =
+            await Driver.findOne({
+              driverId:
+                normalizedDriverId,
+            });
+        }
+
+        if (!driver) {
+          return res.status(404).json({
+            success: false,
+            message: "Driver not found",
+          });
+        }
+
+        /*
+          $addToSet avoids duplicate tokens.
+        */
+
+        await Driver.updateOne(
+          {
+            _id: driver._id,
+          },
+          {
+            $addToSet: {
+              fcmTokens:
+                normalizedToken,
+            },
+          }
+        );
+
+        return res.status(200).json({
+          success: true,
+          message:
+            "Driver notification token saved successfully",
+        });
+      }
+
+      /* ===================================================
+         PARENT TOKEN
+      =================================================== */
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          String(parentId)
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid Parent ID",
+        });
+      }
+
+      const parent =
+        await Parent.findById(
+          parentId
+        );
+
+      if (!parent) {
+        return res.status(404).json({
+          success: false,
+          message: "Parent not found",
+        });
+      }
+
+      await Parent.updateOne(
+        {
+          _id: parent._id,
+        },
+        {
+          $addToSet: {
+            fcmTokens:
+              normalizedToken,
+          },
+        }
+      );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Parent notification token saved successfully",
+      });
+    } catch (error) {
+      console.error(
+        "SAVE NOTIFICATION TOKEN ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
-        message: "Token is required",
+        message:
+          "Failed to save notification token",
       });
     }
-
-    /* ================= DRIVER ================= */
-    if (driverId) {
-      await Driver.findByIdAndUpdate(
-        driverId,
-        {
-          $addToSet: { fcmTokens: token }, // ✅ ARRAY SUPPORT
-        },
-        { new: true }
-      );
-
-      console.log("✅ Driver token saved");
-    }
-
-    /* ================= PARENT ================= */
-    if (parentId) {
-      await Parent.findByIdAndUpdate(
-        parentId,
-        {
-          $addToSet: { fcmTokens: token }, // ✅ ARRAY SUPPORT
-        },
-        { new: true }
-      );
-
-      console.log("✅ Parent token saved");
-    }
-
-    return res.json({
-      success: true,
-      message: "Token saved successfully",
-    });
-
-  } catch (err) {
-    console.error("❌ Save token error:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
   }
-});
+);
 
-/* ================= FETCH ================= */
+/* =========================================================
+   FETCH NOTIFICATIONS
+========================================================= */
 
-// Driver notifications
-router.get("/", getNotifications);
+/*
+  Driver notifications.
 
-// All notifications
-router.get("/all", getAllNotifications);
+  Existing controller contract is preserved.
+*/
 
-// Parent-specific notifications
-router.get("/parent/:parentId", getParentNotifications);
+router.get(
+  "/",
+  getNotifications
+);
 
-/* ================= UPDATE ================= */
+/*
+  All notifications.
 
-// mark one as read
-router.put("/:id/read", markAsRead);
+  This should eventually become Admin-only.
+*/
 
-// mark all as read
-router.put("/read-all", markAllAsRead);
+router.get(
+  "/all",
+  getAllNotifications
+);
+
+/*
+  Parent notification history.
+*/
+
+router.get(
+  "/parent/:parentId",
+  getParentNotifications
+);
+
+/* =========================================================
+   MARK ALL AS READ
+========================================================= */
+
+/*
+  IMPORTANT:
+
+  This MUST be defined before:
+
+  /:id/read
+
+  Otherwise Express could interpret:
+
+  "read-all"
+
+  as an arbitrary notification ID.
+*/
+
+router.put(
+  "/read-all",
+  markAllAsRead
+);
+
+/* =========================================================
+   MARK SINGLE NOTIFICATION AS READ
+========================================================= */
+
+router.put(
+  "/:id/read",
+  markAsRead
+);
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;
