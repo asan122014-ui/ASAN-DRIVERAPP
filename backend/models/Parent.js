@@ -46,6 +46,7 @@ const parentSchema = new mongoose.Schema(
         enum: ["Point"],
         default: "Point",
       },
+
       coordinates: {
         type: [Number], // [longitude, latitude]
         required: true,
@@ -76,12 +77,14 @@ const parentSchema = new mongoose.Schema(
     },
 
     /* ================= PROFILE PHOTO ================= */
+
     profilePhoto: {
       type: String,
       default: null,
     },
 
     /* ================= REFERRAL CODE ================= */
+
     referralCode: {
       type: String,
       unique: true,
@@ -89,6 +92,7 @@ const parentSchema = new mongoose.Schema(
     },
 
     /* ================= REFERRED BY ================= */
+
     referredBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Parent",
@@ -96,7 +100,7 @@ const parentSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: true, // This automatically adds createdAt and updatedAt
+    timestamps: true,
   }
 );
 
@@ -106,43 +110,47 @@ parentSchema.index({
   homeLocation: "2dsphere",
 });
 
-parentSchema.index({
-  driverId: 1,
-});
+/*
+  driverId, email and phone already get indexes from
+  index:true / unique:true above.
 
-parentSchema.index({
-  email: 1,
-});
-
-parentSchema.index({
-  phone: 1,
-});
+  No need to define duplicate indexes here.
+*/
 
 /* ================= HASH PASSWORD ================= */
 
-parentSchema.pre("save", async function (next) {
-  try {
-    if (!this.isModified("password")) {
-      return next();
-    }
-
-    if (!this.password) {
-      return next();
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-
-    next();
-  } catch (error) {
-    next(error);
+parentSchema.pre("save", async function () {
+  /*
+    If password was not changed, don't hash it again.
+  */
+  if (!this.isModified("password")) {
+    return;
   }
+
+  /*
+    Extra safety check.
+  */
+  if (!this.password) {
+    return;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+
+  this.password = await bcrypt.hash(
+    this.password,
+    salt
+  );
 });
 
 /* ================= COMPARE PASSWORD ================= */
 
-parentSchema.methods.comparePassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+parentSchema.methods.comparePassword = async function (
+  enteredPassword
+) {
+  return bcrypt.compare(
+    enteredPassword,
+    this.password
+  );
 };
 
 /* ================= VIRTUAL FIELDS ================= */
@@ -157,6 +165,7 @@ parentSchema.set("toJSON", {
   transform: function (doc, ret) {
     delete ret.password;
     delete ret.__v;
+
     return ret;
   },
 });
@@ -165,23 +174,37 @@ parentSchema.set("toJSON", {
 
 // Find parent by email
 parentSchema.statics.findByEmail = function (email) {
-  return this.findOne({ email: email.toLowerCase().trim() });
+  return this.findOne({
+    email: email.toLowerCase().trim(),
+  });
 };
 
 // Find parent by phone
 parentSchema.statics.findByPhone = function (phone) {
-  return this.findOne({ phone: phone.trim() });
+  return this.findOne({
+    phone: phone.trim(),
+  });
 };
 
 // Check if email exists
-parentSchema.statics.emailExists = async function (email) {
-  const count = await this.countDocuments({ email: email.toLowerCase().trim() });
+parentSchema.statics.emailExists = async function (
+  email
+) {
+  const count = await this.countDocuments({
+    email: email.toLowerCase().trim(),
+  });
+
   return count > 0;
 };
 
 // Check if phone exists
-parentSchema.statics.phoneExists = async function (phone) {
-  const count = await this.countDocuments({ phone: phone.trim() });
+parentSchema.statics.phoneExists = async function (
+  phone
+) {
+  const count = await this.countDocuments({
+    phone: phone.trim(),
+  });
+
   return count > 0;
 };
 
@@ -212,6 +235,11 @@ parentSchema.virtual("driver", {
   justOne: true,
 });
 
-const Parent = mongoose.model("Parent", parentSchema);
+/* ================= MODEL ================= */
+
+const Parent = mongoose.model(
+  "Parent",
+  parentSchema
+);
 
 export default Parent;
