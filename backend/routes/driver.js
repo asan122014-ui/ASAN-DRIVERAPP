@@ -1,8 +1,10 @@
 import express from "express";
 import mongoose from "mongoose";
+
 import Driver from "../models/Driver.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
+
 import {
   cloudinary,
   driverUpload,
@@ -10,368 +12,1131 @@ import {
 
 const router = express.Router();
 
-/* ================= HELPER FUNCTION ================= */
-const findDriver = async (driverId) => {
-  if (mongoose.Types.ObjectId.isValid(driverId)) {
-    return await Driver.findById(driverId);
-  } else {
-    return await Driver.findOne({ driverId });
-  }
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const IST_OFFSET_MS =
+  5.5 * 60 * 60 * 1000;
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const normalizeDriverId = (
+  driverId
+) => {
+  return String(
+    driverId || ""
+  )
+    .trim()
+    .toUpperCase();
 };
 
-/* ================= SAVE FCM TOKEN ================= */
-router.post("/save-token", async (req, res) => {
-  try {
-    const { driverId, token } = req.body;
+/* =========================================================
+   SAFE REGEX
+========================================================= */
 
-    if (!driverId || !token) {
-      return res.status(400).json({
-        success: false,
-        message: "driverId and token required",
-      });
+const escapeRegex = (
+  value
+) => {
+  return String(value)
+    .replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+};
+
+/* =========================================================
+   FIND DRIVER
+========================================================= */
+
+/*
+  Supports:
+
+  ASAN-XXXXXX
+
+  OR
+
+  MongoDB Driver _id
+*/
+
+const findDriver =
+  async (
+    identifier
+  ) => {
+    if (!identifier) {
+      return null;
     }
 
-    const driver = await Driver.findOneAndUpdate(
-      { driverId },
-      {
-        $addToSet: { fcmTokens: token },
-      },
-      { new: true }
+    const value =
+      String(identifier)
+        .trim();
+
+    if (!value) {
+      return null;
+    }
+
+    /* =====================================================
+       CUSTOM DRIVER ID FIRST
+    ===================================================== */
+
+    const normalizedDriverId =
+      normalizeDriverId(
+        value
+      );
+
+    const driverByCustomId =
+      await Driver.findOne({
+        driverId:
+          normalizedDriverId,
+      });
+
+    if (
+      driverByCustomId
+    ) {
+      return driverByCustomId;
+    }
+
+    /* =====================================================
+       MONGODB ID FALLBACK
+    ===================================================== */
+
+    if (
+      mongoose.Types.ObjectId.isValid(
+        value
+      )
+    ) {
+      return Driver.findById(
+        value
+      );
+    }
+
+    return null;
+  };
+
+/* =========================================================
+   IST DAY RANGE
+========================================================= */
+
+const getTodayRangeIST = () => {
+  const now =
+    new Date();
+
+  const istNow =
+    new Date(
+      now.getTime() +
+        IST_OFFSET_MS
     );
 
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
+  const year =
+    istNow.getUTCFullYear();
+
+  const month =
+    istNow.getUTCMonth();
+
+  const day =
+    istNow.getUTCDate();
+
+  const start =
+    new Date(
+      Date.UTC(
+        year,
+        month,
+        day,
+        0,
+        0,
+        0,
+        0
+      ) -
+        IST_OFFSET_MS
+    );
+
+  const end =
+    new Date(
+      Date.UTC(
+        year,
+        month,
+        day + 1,
+        0,
+        0,
+        0,
+        0
+      ) -
+        IST_OFFSET_MS
+    );
+
+  return {
+    start,
+    end,
+  };
+};
+
+/* =========================================================
+   SAVE DRIVER FCM TOKEN
+========================================================= */
+
+router.post(
+  "/save-token",
+  async (req, res) => {
+    try {
+      const {
+        driverId,
+        token,
+      } = req.body;
+
+      const normalizedDriverId =
+        normalizeDriverId(
+          driverId
+        );
+
+      const normalizedToken =
+        typeof token ===
+          "string"
+          ? token.trim()
+          : "";
+
+      if (
+        !normalizedDriverId ||
+        !normalizedToken
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "driverId and token are required",
+          });
+      }
+
+      const driver =
+        await Driver.findOneAndUpdate(
+          {
+            driverId:
+              normalizedDriverId,
+          },
+
+          {
+            $addToSet: {
+              fcmTokens:
+                normalizedToken,
+            },
+          },
+
+          {
+            new: true,
+          }
+        );
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Token saved successfully",
+        });
+    } catch (error) {
+      console.error(
+        "SAVE DRIVER TOKEN ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to save token",
+        });
     }
-
-    console.log("✅ Driver FCM token saved");
-
-    res.json({
-      success: true,
-      message: "Token saved successfully",
-    });
-  } catch (error) {
-    console.error("❌ Save token error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to save token",
-    });
   }
-});
+);
 
-/* ================= GET ALL DRIVERS ================= */
-router.get("/", async (req, res) => {
-  try {
-    const drivers = await Driver.find()
-      .select("name driverId vehicleNumber")
-      .lean();
+/* =========================================================
+   GET ALL DRIVERS
+========================================================= */
 
-    res.json({
-      success: true,
-      data: drivers,
-    });
-  } catch (error) {
-    console.error("Get all drivers error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch drivers",
-    });
+/*
+  Eventually this should become Admin-only.
+*/
+
+router.get(
+  "/",
+  async (req, res) => {
+    try {
+      const drivers =
+        await Driver.find()
+          .select(
+            "name driverId vehicleNumber vehicleType status"
+          )
+          .sort({
+            name: 1,
+          })
+          .lean();
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          count:
+            drivers.length,
+
+          data:
+            drivers,
+        });
+    } catch (error) {
+      console.error(
+        "GET ALL DRIVERS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to fetch drivers",
+        });
+    }
   }
-});
+);
 
-/* ================= SEARCH DRIVERS ================= */
-router.get("/search", async (req, res) => {
-  try {
-    const { query } = req.query;
+/* =========================================================
+   SEARCH DRIVERS
+========================================================= */
 
-    if (!query) {
-      return res.json({ success: true, data: [] });
+router.get(
+  "/search",
+  async (req, res) => {
+    try {
+      const query =
+        String(
+          req.query.query ||
+            ""
+        ).trim();
+
+      if (!query) {
+        return res
+          .status(200)
+          .json({
+            success: true,
+            data: [],
+          });
+      }
+
+      /*
+        Avoid passing raw user input
+        directly into MongoDB regex.
+      */
+
+      const safeQuery =
+        escapeRegex(
+          query
+        );
+
+      const drivers =
+        await Driver.find({
+          $or: [
+            {
+              name: {
+                $regex:
+                  safeQuery,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              phone: {
+                $regex:
+                  safeQuery,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              driverId: {
+                $regex:
+                  safeQuery,
+
+                $options:
+                  "i",
+              },
+            },
+          ],
+        })
+          .select(
+            "name phone driverId vehicleNumber vehicleType status"
+          )
+          .limit(10)
+          .lean();
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+          data: drivers,
+        });
+    } catch (error) {
+      console.error(
+        "DRIVER SEARCH ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Search failed",
+        });
     }
-
-    const drivers = await Driver.find({
-      $or: [
-        { name: { $regex: query, $options: "i" } },
-        { phone: { $regex: query, $options: "i" } },
-        { driverId: { $regex: query, $options: "i" } },
-      ],
-    })
-      .select("name phone driverId vehicleNumber")
-      .limit(10);
-
-    res.json({
-      success: true,
-      data: drivers,
-    });
-  } catch (error) {
-    console.error("Driver search error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Search failed",
-    });
   }
-});
+);
 
-/* ================= GET DRIVER LAST LOCATION ================= */
-router.get("/location", async (req, res) => {
-  try {
-    const { driverId } = req.query;
+/* =========================================================
+   GET DRIVER LAST LOCATION
+========================================================= */
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID required",
-      });
+router.get(
+  "/location",
+  async (req, res) => {
+    try {
+      const {
+        driverId,
+      } = req.query;
+
+      if (!driverId) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Driver ID is required",
+          });
+      }
+
+      const driver =
+        await findDriver(
+          driverId
+        );
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          data: {
+            driverId:
+              driver.driverId,
+
+            isOnline:
+              driver.isOnline,
+
+            currentStatus:
+              driver.currentStatus,
+
+            lastLocation:
+              driver.lastLocation ||
+              null,
+          },
+        });
+    } catch (error) {
+      console.error(
+        "GET DRIVER LOCATION ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to fetch driver location",
+        });
     }
-
-    const driver = await findDriver(driverId);
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        lastLocation: driver.lastLocation || null,
-      },
-    });
-  } catch (error) {
-    console.error("Get last location error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch driver location",
-    });
   }
-});
+);
 
-/* ================= DRIVER DASHBOARD ================= */
-router.get("/dashboard/:driverId", async (req, res) => {
-  try {
-    const { driverId } = req.params;
+/* =========================================================
+   DRIVER DASHBOARD
+========================================================= */
 
-    const driver = await findDriver(driverId);
+router.get(
+  "/dashboard/:driverId",
+  async (req, res) => {
+    try {
+      const driver =
+        await findDriver(
+          req.params.driverId
+        );
 
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+            message:
+              "Driver not found",
+          });
+      }
 
-    const [totalTrips, todayTrips, studentsAssigned] =
-      await Promise.all([
-        Trips.countDocuments({ driverId }),
-        Trips.countDocuments({
-          driverId,
-          createdAt: { $gte: today },
-        }),
-        Child.countDocuments({ driverId }),
-      ]);
+      /*
+        IMPORTANT:
 
-    res.json({
-      success: true,
-      data: {
-        name: driver.name,
-        vehicleNumber: driver.vehicleNumber,
-        vehicleType: driver.vehicleType,
+        Even if MongoDB _id was supplied in the URL,
+        Trip and Child schemas use the custom driverId.
+      */
+
+      const driverId =
+        driver.driverId;
+
+      if (!driverId) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Driver ID is not configured",
+          });
+      }
+
+      const {
+        start,
+        end,
+      } =
+        getTodayRangeIST();
+
+      const [
         totalTrips,
         todayTrips,
         studentsAssigned,
-      },
-    });
-  } catch (error) {
-    console.error("Dashboard error:", error.message);
-    res.status(500).json({
-      success: false,
-      message: "Failed to load dashboard",
-    });
+      ] =
+        await Promise.all([
+          Trips.countDocuments({
+            driverId,
+          }),
+
+          Trips.countDocuments({
+            driverId,
+
+            createdAt: {
+              $gte: start,
+              $lt: end,
+            },
+          }),
+
+          Child.countDocuments({
+            driverId,
+          }),
+        ]);
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          data: {
+            driverId,
+
+            name:
+              driver.name,
+
+            vehicleNumber:
+              driver.vehicleNumber,
+
+            vehicleType:
+              driver.vehicleType,
+
+            rating:
+              driver.rating,
+
+            status:
+              driver.status,
+
+            isOnline:
+              driver.isOnline,
+
+            currentStatus:
+              driver.currentStatus,
+
+            totalTrips,
+
+            todayTrips,
+
+            studentsAssigned,
+          },
+        });
+    } catch (error) {
+      console.error(
+        "DRIVER DASHBOARD ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to load dashboard",
+        });
+    }
   }
-});
+);
 
-/* ================= DRIVER PROFILE ================= */
-router.get("/profile/:driverId", async (req, res) => {
-  try {
-    const { driverId } = req.params;
+/* =========================================================
+   DRIVER PROFILE
+========================================================= */
 
-    const driver = await findDriver(driverId);
+router.get(
+  "/profile/:driverId",
+  async (req, res) => {
+    try {
+      const driver =
+        await findDriver(
+          req.params.driverId
+        );
 
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const todayTrips = await Trips.countDocuments({
-      driverId,
-      createdAt: {
-        $gte: today,
-        $lt: tomorrow,
-      },
-    });
-
-    res.json({
-      success: true,
-      data: {
-        ...driver.toObject(),
-        todayTrips,
-      },
-    });
-  } catch (error) {
-    console.error("Driver profile error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to load profile",
-    });
-  }
-});
-
-/* ================= DRIVER TRACKING ================= */
-router.get("/tracking/:driverId", async (req, res) => {
-  try {
-    const driver = await findDriver(req.params.driverId);
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        name: driver.name,
-        phone: driver.phone,
-        vehicleNumber: driver.vehicleNumber,
-        location: driver.location,
-        lastLocation: driver.lastLocation,
-      },
-    });
-  } catch (error) {
-    console.error("Tracking error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Tracking failed",
-    });
-  }
-});
-
-/* ================= UPDATE DRIVER ================= */
-router.put("/update", driverUpload.single("profilePhoto"), async (req, res) => {
-  try {
-    const { driverId, ...updates } = req.body;
-
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID required",
-      });
-    }
-
-    const driver = await Driver.findOne({ driverId });
-
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
-    }
-
-    /* ===== REMOVE UNWANTED ===== */
-    delete updates._id;
-    delete updates.__v;
-    delete updates.password;
-    delete updates.profilePhoto;
-    delete updates.profilePhotoPublicId;
-
-    /* ===== IMAGE UPDATE ===== */
-    if (req.file) {
-      if (driver.profilePhotoPublicId) {
-        await cloudinary.uploader.destroy(driver.profilePhotoPublicId);
+            message:
+              "Driver not found",
+          });
       }
 
-      driver.profilePhoto = req.file.path;
-      driver.profilePhotoPublicId = req.file.filename;
-    }
+      const driverId =
+        driver.driverId;
 
-    /* ===== UPDATE FIELDS ===== */
-    Object.keys(updates).forEach((key) => {
-      if (
-        updates[key] !== undefined &&
-        ![
-          "_id",
-          "__v",
-          "password",
-          "profilePhoto",
-          "profilePhotoPublicId",
-          "homeLocation",
-          "location",
-          "lastLocation",
-          "createdAt",
-          "updatedAt",
-          "fcmTokens"
-        ].includes(key)
+      const {
+        start,
+        end,
+      } =
+        getTodayRangeIST();
+
+      const todayTrips =
+        driverId
+          ? await Trips.countDocuments({
+              driverId,
+
+              createdAt: {
+                $gte: start,
+                $lt: end,
+              },
+            })
+          : 0;
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          data: {
+            ...driver.toObject(),
+
+            todayTrips,
+          },
+        });
+    } catch (error) {
+      console.error(
+        "DRIVER PROFILE ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to load profile",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   DRIVER TRACKING
+========================================================= */
+
+router.get(
+  "/tracking/:driverId",
+  async (req, res) => {
+    try {
+      const driver =
+        await findDriver(
+          req.params.driverId
+        );
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          data: {
+            driverId:
+              driver.driverId,
+
+            name:
+              driver.name,
+
+            phone:
+              driver.phone,
+
+            vehicleNumber:
+              driver.vehicleNumber,
+
+            vehicleType:
+              driver.vehicleType,
+
+            isOnline:
+              driver.isOnline,
+
+            currentStatus:
+              driver.currentStatus,
+
+            /*
+              GeoJSON location used for
+              map/nearby queries.
+            */
+
+            location:
+              driver.location,
+
+            /*
+              Latest Socket.IO location.
+            */
+
+            lastLocation:
+              driver.lastLocation,
+          },
+        });
+    } catch (error) {
+      console.error(
+        "DRIVER TRACKING ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Tracking failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   UPDATE DRIVER PROFILE
+========================================================= */
+
+/*
+  This endpoint is strictly for normal
+  Driver profile information.
+
+  It MUST NOT modify:
+
+  authentication
+  approval
+  trip state
+  location
+  FCM
+  system statistics
+*/
+
+router.put(
+  "/update",
+
+  driverUpload.single(
+    "profilePhoto"
+  ),
+
+  async (req, res) => {
+    try {
+      const {
+        driverId:
+          rawDriverId,
+
+        ...updates
+      } = req.body;
+
+      const driverId =
+        normalizeDriverId(
+          rawDriverId
+        );
+
+      if (!driverId) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Driver ID is required",
+          });
+      }
+
+      const driver =
+        await Driver.findOne({
+          driverId,
+        });
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      /* ===================================================
+         PROFILE IMAGE
+      =================================================== */
+
+      let oldPhotoPublicId =
+        null;
+
+      if (req.file) {
+        oldPhotoPublicId =
+          driver
+            .profilePhotoPublicId ||
+          null;
+
+        driver.profilePhoto =
+          req.file.path;
+
+        driver.profilePhotoPublicId =
+          req.file.filename;
+      }
+
+      /* ===================================================
+         PROFILE FIELD ALLOWLIST
+      =================================================== */
+
+      /*
+        Only these fields may be changed from
+        this normal profile endpoint.
+      */
+
+      const allowedFields =
+        [
+          "name",
+          "email",
+          "address",
+          "vehicleNumber",
+          "vehicleType",
+          "vehicleModel",
+          "licenseNumber",
+          "avatar",
+        ];
+
+      for (
+        const field of
+        allowedFields
       ) {
-        driver[key] = updates[key];
+        if (
+          updates[field] ===
+          undefined
+        ) {
+          continue;
+        }
+
+        if (
+          typeof updates[
+            field
+          ] === "string"
+        ) {
+          updates[field] =
+            updates[
+              field
+            ].trim();
+        }
+
+        driver[field] =
+          updates[field];
       }
-    });
 
-    await driver.save();
+      /* ===================================================
+         NORMALIZE EMAIL
+      =================================================== */
 
-    res.json({
-      success: true,
-      message: "Driver updated successfully",
-      data: driver,
-    });
+      if (
+        updates.email !==
+        undefined
+      ) {
+        const email =
+          String(
+            updates.email
+          )
+            .trim()
+            .toLowerCase();
 
-  } catch (error) {
-    console.error("🔥 UPDATE ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Update failed",
-      error: error.message,
-    });
-  }
-});
+        const emailRegex =
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/* ================= GET DRIVER BY ID ================= */
-router.get("/:id", async (req, res) => {
-  try {
-    const driver = await findDriver(req.params.id);
+        if (
+          !emailRegex.test(
+            email
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
 
-    if (!driver) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver not found",
-      });
+              message:
+                "Enter a valid email address",
+            });
+        }
+
+        const duplicateEmail =
+          await Driver.findOne({
+            email,
+
+            _id: {
+              $ne:
+                driver._id,
+            },
+          });
+
+        if (
+          duplicateEmail
+        ) {
+          return res
+            .status(409)
+            .json({
+              success: false,
+
+              message:
+                "Email is already registered",
+            });
+        }
+
+        driver.email =
+          email;
+      }
+
+      /* ===================================================
+         NORMALIZE VEHICLE NUMBER
+      =================================================== */
+
+      if (
+        updates.vehicleNumber !==
+        undefined
+      ) {
+        driver.vehicleNumber =
+          String(
+            updates.vehicleNumber
+          )
+            .trim()
+            .toUpperCase();
+      }
+
+      /* ===================================================
+         SAVE DRIVER
+      =================================================== */
+
+      await driver.save();
+
+      /* ===================================================
+         REMOVE OLD PROFILE IMAGE
+      =================================================== */
+
+      /*
+        Delete old Cloudinary image only AFTER
+        the Driver document successfully saves.
+
+        This avoids losing the old image if
+        MongoDB validation fails.
+      */
+
+      if (
+        req.file &&
+        oldPhotoPublicId &&
+        oldPhotoPublicId !==
+          driver
+            .profilePhotoPublicId
+      ) {
+        try {
+          await cloudinary
+            .uploader
+            .destroy(
+              oldPhotoPublicId
+            );
+        } catch (
+          cloudinaryError
+        ) {
+          console.error(
+            "OLD DRIVER PHOTO DELETE ERROR:",
+            cloudinaryError.message
+          );
+        }
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Driver updated successfully",
+
+          data:
+            driver,
+        });
+    } catch (error) {
+      console.error(
+        "DRIVER UPDATE ERROR:",
+        error
+      );
+
+      if (
+        error.code ===
+        11000
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Driver information already exists",
+          });
+      }
+
+      if (
+        error.name ===
+        "ValidationError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              error.message,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Update failed",
+        });
     }
-
-    res.json({
-      success: true,
-      data: driver,
-    });
-  } catch (error) {
-    console.error("Get driver error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch driver",
-    });
   }
-});
+);
+
+/* =========================================================
+   GET DRIVER BY ID
+========================================================= */
+
+/*
+  Keep this LAST because /:id can otherwise
+  interfere with named routes.
+*/
+
+router.get(
+  "/:id",
+  async (req, res) => {
+    try {
+      const driver =
+        await findDriver(
+          req.params.id
+        );
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+          data: driver,
+        });
+    } catch (error) {
+      console.error(
+        "GET DRIVER ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to fetch driver",
+        });
+    }
+  }
+);
 
 export default router;
