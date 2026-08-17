@@ -1,50 +1,161 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
-const adminSchema = new mongoose.Schema(
-  {
-    username: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      minlength: 3
+/* =========================================================
+   ADMIN SCHEMA
+========================================================= */
+
+const adminSchema =
+  new mongoose.Schema(
+    {
+      /* =====================================================
+         USERNAME
+      ===================================================== */
+
+      username: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+        lowercase: true,
+        minlength: 3,
+        index: true,
+      },
+
+      /* =====================================================
+         PASSWORD
+      ===================================================== */
+
+      password: {
+        type: String,
+        required: true,
+        minlength: 6,
+        select: false,
+      },
+
+      /* =====================================================
+         ROLE
+      ===================================================== */
+
+      role: {
+        type: String,
+
+        enum: [
+          "superadmin",
+          "reviewer",
+        ],
+
+        default:
+          "reviewer",
+      },
     },
-    password: {
-      type: String,
-      required: true,
-      minlength: 6,
-      select: false   // 🔥 hide password by default
-    },
-    role: {
-      type: String,
-      enum: ["superadmin", "reviewer"],
-      default: "reviewer"
+
+    {
+      timestamps: true,
+
+      toJSON: {
+        virtuals: true,
+      },
+
+      toObject: {
+        virtuals: true,
+      },
     }
-  },
-  {
-    timestamps: true
+  );
+
+/* =========================================================
+   HASH PASSWORD
+========================================================= */
+
+adminSchema.pre(
+  "save",
+  async function () {
+    if (
+      !this.isModified(
+        "password"
+      )
+    ) {
+      return;
+    }
+
+    const salt =
+      await bcrypt.genSalt(
+        10
+      );
+
+    this.password =
+      await bcrypt.hash(
+        this.password,
+        salt
+      );
   }
 );
 
-/* ================= HASH PASSWORD ================= */
-adminSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+/* =========================================================
+   COMPARE PASSWORD
+========================================================= */
 
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
+adminSchema.methods.comparePassword =
+  function (
+    enteredPassword
+  ) {
+    return bcrypt.compare(
+      enteredPassword,
+      this.password
+    );
+  };
+
+/* =========================================================
+   JSON CLEANUP
+========================================================= */
+
+adminSchema.set(
+  "toJSON",
+  {
+    virtuals: true,
+
+    transform(
+      doc,
+      ret
+    ) {
+      delete ret.password;
+      delete ret.__v;
+
+      return ret;
+    },
   }
-});
+);
 
-/* ================= COMPARE PASSWORD ================= */
-adminSchema.methods.comparePassword = function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
-};
+/* =========================================================
+   OBJECT CLEANUP
+========================================================= */
 
-const Admin = mongoose.model("Admin", adminSchema);
+adminSchema.set(
+  "toObject",
+  {
+    virtuals: true,
+
+    transform(
+      doc,
+      ret
+    ) {
+      delete ret.password;
+      delete ret.__v;
+
+      return ret;
+    },
+  }
+);
+
+/* =========================================================
+   MODEL
+========================================================= */
+
+const Admin =
+  mongoose.models.Admin ||
+  mongoose.model(
+    "Admin",
+    adminSchema
+  );
 
 export default Admin;
