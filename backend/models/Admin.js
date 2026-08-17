@@ -9,16 +9,15 @@ const adminSchema =
   new mongoose.Schema(
     {
       /* =====================================================
-         USERNAME
+         EMAIL
       ===================================================== */
 
-      username: {
+      email: {
         type: String,
         required: true,
         unique: true,
         trim: true,
         lowercase: true,
-        minlength: 3,
         index: true,
       },
 
@@ -45,8 +44,7 @@ const adminSchema =
           "reviewer",
         ],
 
-        default:
-          "reviewer",
+        default: "reviewer",
       },
     },
 
