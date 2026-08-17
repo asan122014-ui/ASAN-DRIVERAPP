@@ -1,7 +1,16 @@
 import express from "express";
+import mongoose from "mongoose";
 
 import Child from "../models/Child.js";
 import Trip from "../models/Trips.js";
+
+import verifyDriver from "../middleware/verifyDriver.js";
+
+import {
+  pickupStudentService,
+  dropStudentService,
+  endTripService,
+} from "../services/tripService.js";
 
 const router = express.Router();
 
@@ -9,406 +18,591 @@ const router = express.Router();
    HELPERS
 ========================================================= */
 
-const normalizeDriverId = (driverId) => {
-  if (!driverId) {
-    return "";
-  }
-
-  return String(driverId)
+const normalizeDriverId = (
+  driverId
+) => {
+  return String(
+    driverId || ""
+  )
     .trim()
     .toUpperCase();
 };
 
 /* =========================================================
-   GET ALL ASSIGNED STUDENTS
+   SERVICE ERROR RESPONSE
+========================================================= */
+
+const handleServiceError = (
+  error,
+  res,
+  fallbackMessage
+) => {
+  console.error(
+    fallbackMessage,
+    error
+  );
+
+  if (
+    error?.statusCode
+  ) {
+    return res.status(
+      error.statusCode
+    ).json({
+      success: false,
+
+      message:
+        error.message,
+    });
+  }
+
+  if (
+    error?.name ===
+    "ValidationError"
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        error.message,
+    });
+  }
+
+  if (
+    error?.name ===
+    "CastError"
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "Invalid ID",
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+
+    message:
+      fallbackMessage,
+  });
+};
+
+/* =========================================================
+   VERIFY LEGACY DRIVER ID
 ========================================================= */
 
 /*
-  Legacy Driver endpoint:
+  Old frontend code may still send:
+
+  ?driverId=ASAN-XXXXXX
+
+  or:
+
+  {
+    "driverId": "ASAN-XXXXXX"
+  }
+
+  The value is NOT trusted.
+
+  If it is supplied, it must match the authenticated
+  Driver JWT.
+*/
+
+const verifyLegacyDriverId = (
+  req,
+  res,
+  next
+) => {
+  const authenticatedDriverId =
+    normalizeDriverId(
+      req.driver?.driverId
+    );
+
+  if (!authenticatedDriverId) {
+    return res.status(401).json({
+      success: false,
+
+      message:
+        "Driver authentication required",
+    });
+  }
+
+  const suppliedDriverId =
+    normalizeDriverId(
+      req.query?.driverId ||
+        req.body?.driverId
+    );
+
+  if (
+    suppliedDriverId &&
+    suppliedDriverId !==
+      authenticatedDriverId
+  ) {
+    return res.status(403).json({
+      success: false,
+
+      message:
+        "You cannot access another Driver's students",
+    });
+  }
+
+  req.authenticatedDriverId =
+    authenticatedDriverId;
+
+  return next();
+};
+
+/* =========================================================
+   RESOLVE ACTIVE TRIP FOR STUDENT
+========================================================= */
+
+/*
+  Legacy endpoint identifies the Student:
+
+      /api/students/:id/pickup
+
+  Official trip logic identifies the Trip:
+
+      /api/trip/pickup/:tripId
+
+  This middleware securely converts:
+
+      Child ID
+        ↓
+      authenticated Driver
+        ↓
+      active Trip ID
+*/
+
+const resolveActiveTripForStudent =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const studentId =
+        req.params.id;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          String(
+            studentId || ""
+          )
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid Student ID",
+        });
+      }
+
+      /* ===================================================
+         VERIFY CHILD ASSIGNMENT
+      =================================================== */
+
+      const child =
+        await Child.findOne({
+          _id:
+            studentId,
+
+          driverId:
+            req.authenticatedDriverId,
+        }).select(
+          "_id name driverId status"
+        );
+
+      if (!child) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "Student not found or not assigned to this Driver",
+        });
+      }
+
+      /* ===================================================
+         FIND ACTIVE TRIP
+      =================================================== */
+
+      const trip =
+        await Trip.findOne({
+          child:
+            child._id,
+
+          driverId:
+            req.authenticatedDriverId,
+
+          status:
+            "in_transit",
+        })
+          .sort({
+            createdAt:
+              -1,
+          })
+          .select(
+            "_id child driverId status tripType"
+          );
+
+      if (!trip) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "No active Trip found for this Student",
+        });
+      }
+
+      req.legacyStudent =
+        child;
+
+      req.legacyTrip =
+        trip;
+
+      return next();
+    } catch (error) {
+      console.error(
+        "STUDENT TRIP RESOLUTION ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          "Failed to resolve Student Trip",
+      });
+    }
+  };
+
+/* =========================================================
+   GET ALL ASSIGNED STUDENTS
+   DRIVER ONLY
+========================================================= */
+
+/*
+  Legacy:
 
   GET /api/students?driverId=ASAN-XXXXXX
 
-  This route now reads from the Child collection.
+  driverId query remains optional for old frontend
+  compatibility.
 
-  Child is the single source of truth for both
-  Parent and Driver applications.
+  Actual identity comes from Driver JWT.
 */
 
-router.get("/", async (req, res) => {
-  try {
-    const driverId = normalizeDriverId(
-      req.query.driverId
-    );
+router.get(
+  "/",
 
-    if (!driverId) {
-      return res.status(400).json({
+  verifyDriver,
+  verifyLegacyDriverId,
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const students =
+        await Child.find({
+          driverId:
+            req.authenticatedDriverId,
+        })
+          .sort({
+            createdAt:
+              1,
+          })
+          .lean();
+
+      return res.status(200).json({
+        success: true,
+
+        data:
+          students,
+      });
+    } catch (error) {
+      console.error(
+        "GET STUDENTS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
-        message: "Driver ID is required",
+
+        message:
+          "Failed to fetch students",
       });
     }
-
-    const students = await Child.find({
-      driverId,
-    })
-      .sort({
-        createdAt: 1,
-      })
-      .lean();
-
-    return res.status(200).json({
-      success: true,
-      data: students,
-    });
-  } catch (error) {
-    console.error(
-      "GET STUDENTS ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch students",
-    });
   }
-});
+);
 
 /* =========================================================
    GET ACTIVE STUDENTS
+   DRIVER ONLY
 ========================================================= */
 
-/*
-  Active Child statuses for Driver:
+router.get(
+  "/active",
 
-  waiting
-  onboard
+  verifyDriver,
+  verifyLegacyDriverId,
 
-  dropped and absent children are excluded.
-*/
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const students =
+        await Child.find({
+          driverId:
+            req.authenticatedDriverId,
 
-router.get("/active", async (req, res) => {
-  try {
-    const driverId = normalizeDriverId(
-      req.query.driverId
-    );
+          status: {
+            $in: [
+              "waiting",
+              "onboard",
+            ],
+          },
+        })
+          .sort({
+            createdAt:
+              1,
+          })
+          .lean();
 
-    if (!driverId) {
-      return res.status(400).json({
+      return res.status(200).json({
+        success: true,
+
+        data:
+          students,
+      });
+    } catch (error) {
+      console.error(
+        "GET ACTIVE STUDENTS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
-        message: "Driver ID is required",
+
+        message:
+          "Failed to fetch active students",
       });
     }
-
-    const students = await Child.find({
-      driverId,
-
-      status: {
-        $in: [
-          "waiting",
-          "onboard",
-        ],
-      },
-    })
-      .sort({
-        createdAt: 1,
-      })
-      .lean();
-
-    return res.status(200).json({
-      success: true,
-      data: students,
-    });
-  } catch (error) {
-    console.error(
-      "GET ACTIVE STUDENTS ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Failed to fetch active students",
-    });
   }
-});
+);
 
 /* =========================================================
    PICKUP STUDENT
+   DRIVER ONLY
 ========================================================= */
 
 /*
+  Legacy endpoint:
+
   PUT /api/students/:id/pickup
 
-  Body:
+  We DO NOT directly update Child.status here anymore.
 
-  {
-    "driverId": "ASAN-XXXXXX"
-  }
+  The official Trip service performs the transition so:
 
-  waiting -> onboard
+  Trip pickupStatus
+  Child status
+  notifications
+  transactions
+
+  stay synchronized.
 */
 
-router.put("/:id/pickup", async (req, res) => {
-  try {
-    const driverId = normalizeDriverId(
-      req.body.driverId
-    );
+router.put(
+  "/:id/pickup",
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
-    }
+  verifyDriver,
+  verifyLegacyDriverId,
+  resolveActiveTripForStudent,
 
-    const student =
-      await Child.findOneAndUpdate(
-        {
-          _id: req.params.id,
-          driverId,
-          status: "waiting",
-        },
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const trip =
+        await pickupStudentService(
+          req.legacyTrip._id,
 
-        {
-          $set: {
-            status: "onboard",
-          },
-        },
+          req.app.get(
+            "io"
+          )
+        );
 
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+      const student =
+        await Child.findById(
+          req.legacyStudent._id
+        );
 
-    if (!student) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
 
         message:
-          "Student not found, not assigned to this driver, or already picked up",
+          "Student picked up successfully",
+
+        /*
+          Keep legacy response key.
+        */
+
+        student,
+
+        /*
+          Newer clients may also use Trip data.
+        */
+
+        trip,
       });
+    } catch (error) {
+      return handleServiceError(
+        error,
+        res,
+        "Pickup update failed"
+      );
     }
-
-    /*
-      Keep "student" response key for
-      Driver frontend compatibility.
-    */
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Student picked up successfully",
-      student,
-    });
-  } catch (error) {
-    console.error(
-      "STUDENT PICKUP ERROR:",
-      error
-    );
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Student ID",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Pickup update failed",
-    });
   }
-});
+);
 
 /* =========================================================
    DROP STUDENT
+   DRIVER ONLY
 ========================================================= */
 
-/*
-  PUT /api/students/:id/drop
+router.put(
+  "/:id/drop",
 
-  Body:
+  verifyDriver,
+  verifyLegacyDriverId,
+  resolveActiveTripForStudent,
 
-  {
-    "driverId": "ASAN-XXXXXX"
-  }
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const trip =
+        await dropStudentService(
+          req.legacyTrip._id,
 
-  onboard -> dropped
-*/
+          req.app.get(
+            "io"
+          )
+        );
 
-router.put("/:id/drop", async (req, res) => {
-  try {
-    const driverId = normalizeDriverId(
-      req.body.driverId
-    );
+      const student =
+        await Child.findById(
+          req.legacyStudent._id
+        );
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
-    }
-
-    const student =
-      await Child.findOneAndUpdate(
-        {
-          _id: req.params.id,
-          driverId,
-          status: "onboard",
-        },
-
-        {
-          $set: {
-            status: "dropped",
-          },
-        },
-
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
-
-    if (!student) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
 
         message:
-          "Student not found, not assigned to this driver, or not onboard",
+          "Student dropped successfully",
+
+        student,
+
+        trip,
       });
+    } catch (error) {
+      return handleServiceError(
+        error,
+        res,
+        "Drop update failed"
+      );
     }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Student dropped successfully",
-      student,
-    });
-  } catch (error) {
-    console.error(
-      "STUDENT DROP ERROR:",
-      error
-    );
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Student ID",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Drop update failed",
-    });
   }
-});
+);
 
 /* =========================================================
    END DRIVER TRIP
+   DRIVER ONLY
 ========================================================= */
 
 /*
+  Legacy endpoint:
+
   POST /api/students/end
 
-  Body:
+  Previously this endpoint completed only the newest
+  Trip document.
 
-  {
-    "driverId": "ASAN-XXXXXX"
-  }
+  That is dangerous because one Driver trip contains
+  separate Trip documents for multiple children.
 
-  Trip lifecycle:
-
-  waiting
-      ↓
-  in_transit
-      ↓
-  completed
-
-  "active" is NOT a valid Trip status.
+  We now delegate to endTripService(), which completes
+  the entire Driver trip correctly.
 */
 
-router.post("/end", async (req, res) => {
-  try {
-    const driverId = normalizeDriverId(
-      req.body.driverId
-    );
+router.post(
+  "/end",
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
-    }
+  verifyDriver,
+  verifyLegacyDriverId,
 
-    /* =====================================================
-       FIND LATEST IN-TRANSIT TRIP
-    ===================================================== */
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const trips =
+        await endTripService(
+          req.authenticatedDriverId,
 
-    const trip = await Trip.findOne({
-      driverId,
-      status: "in_transit",
-    }).sort({
-      createdAt: -1,
-    });
+          req.app.get(
+            "io"
+          )
+        );
 
-    if (!trip) {
-      return res.status(404).json({
-        success: false,
+      if (
+        !Array.isArray(
+          trips
+        ) ||
+        trips.length ===
+          0
+      ) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "No Trip currently in transit",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+
         message:
-          "No trip currently in transit",
+          "Trip completed successfully",
+
+        /*
+          Keep the old singular key for compatibility.
+        */
+
+        trip:
+          trips[0],
+
+        /*
+          Correct complete result.
+        */
+
+        trips,
       });
-    }
-
-    /* =====================================================
-       COMPLETE TRIP
-    ===================================================== */
-
-    const endTime = new Date();
-
-    trip.endTime = endTime;
-
-    if (trip.startTime) {
-      trip.duration = Math.max(
-        0,
-        Math.round(
-          (
-            endTime.getTime() -
-            new Date(
-              trip.startTime
-            ).getTime()
-          ) /
-            60000
-        )
+    } catch (error) {
+      return handleServiceError(
+        error,
+        res,
+        "Failed to end Trip"
       );
-    } else {
-      trip.duration = 0;
     }
-
-    trip.status = "completed";
-
-    await trip.save();
-
-    return res.status(200).json({
-      success: true,
-
-      message:
-        "Trip completed successfully",
-
-      trip,
-    });
-  } catch (error) {
-    console.error(
-      "END TRIP ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to end trip",
-    });
   }
-});
+);
 
 /* =========================================================
    EXPORT
