@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 
 /* =========================================================
    PARENT SCHEMA
@@ -10,19 +9,6 @@ const parentSchema = new mongoose.Schema(
     /* =====================================================
        FIREBASE AUTHENTICATION
     ===================================================== */
-
-    /*
-      Firebase UID becomes the primary authentication
-      identity for Parent accounts.
-
-      sparse: true allows existing legacy Parent accounts
-      to remain in MongoDB even if they do not yet have
-      a firebaseUid.
-
-      As soon as an old Parent successfully signs in
-      through Firebase Phone Auth, we will attach the
-      Firebase UID to that existing account.
-    */
 
     firebaseUid: {
       type: String,
@@ -51,21 +37,12 @@ const parentSchema = new mongoose.Schema(
     },
 
     /*
-      IMPORTANT:
-
-      Existing Parent accounts may currently store:
+      Parent phone numbers may exist in either form:
 
       8309649713
-
-      while Firebase normally gives:
-
       +918309649713
 
-      We are NOT enforcing an E.164 validator here yet
-      because that could break existing Parent records.
-
-      The Firebase authentication controller will handle
-      phone normalization/migration safely.
+      Firebase normally returns E.164 format.
     */
 
     phone: {
@@ -73,35 +50,6 @@ const parentSchema = new mongoose.Schema(
       required: true,
       unique: true,
       trim: true,
-    },
-
-    /* =====================================================
-       LEGACY PASSWORD
-    ===================================================== */
-
-    /*
-      Password authentication is being replaced by
-      Firebase Phone OTP authentication.
-
-      We are keeping this field TEMPORARILY so that:
-
-      1. Existing Parent accounts remain compatible.
-      2. Existing /parent/login does not immediately break.
-      3. We can migrate Firebase authentication gradually.
-
-      New Firebase-created parents will NOT require
-      this field.
-
-      After Firebase Parent authentication is completely
-      tested, this field and the old password endpoints
-      can be removed.
-    */
-
-    password: {
-      type: String,
-      required: false,
-      minlength: 6,
-      select: false,
     },
 
     /* =====================================================
@@ -123,18 +71,33 @@ const parentSchema = new mongoose.Schema(
 
       coordinates: {
         type: [Number],
-
-        /*
-          GeoJSON format:
-
-          [
-            longitude,
-            latitude
-          ]
-        */
-
         required: true,
         default: [0, 0],
+
+        validate: {
+          validator(value) {
+            if (
+              !Array.isArray(value) ||
+              value.length !== 2
+            ) {
+              return false;
+            }
+
+            const [lng, lat] = value;
+
+            return (
+              Number.isFinite(lng) &&
+              Number.isFinite(lat) &&
+              lng >= -180 &&
+              lng <= 180 &&
+              lat >= -90 &&
+              lat <= 90
+            );
+          },
+
+          message:
+            "Invalid home location coordinates",
+        },
       },
     },
 
@@ -147,6 +110,7 @@ const parentSchema = new mongoose.Schema(
       default: null,
       index: true,
       trim: true,
+      uppercase: true,
     },
 
     /* =====================================================
@@ -177,7 +141,7 @@ const parentSchema = new mongoose.Schema(
     },
 
     /* =====================================================
-       REFERRAL CODE
+       REFERRAL
     ===================================================== */
 
     referralCode: {
@@ -185,26 +149,21 @@ const parentSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
       trim: true,
+      uppercase: true,
     },
 
-    /* =====================================================
-       REFERRED BY
-    ===================================================== */
-
     referredBy: {
-      type: mongoose.Schema.Types.ObjectId,
+      type:
+        mongoose.Schema.Types.ObjectId,
+
       ref: "Parent",
+
       default: null,
     },
   },
 
   {
     timestamps: true,
-
-    /*
-      Include virtual fields whenever we convert a Parent
-      document into JSON or a plain object.
-    */
 
     toJSON: {
       virtuals: true,
@@ -217,7 +176,7 @@ const parentSchema = new mongoose.Schema(
 );
 
 /* =========================================================
-   GEO INDEX
+   INDEXES
 ========================================================= */
 
 parentSchema.index({
@@ -225,178 +184,8 @@ parentSchema.index({
 });
 
 /* =========================================================
-   LEGACY PASSWORD HASHING
-========================================================= */
-
-/*
-  TEMPORARY.
-
-  This remains only while the old Parent password
-  authentication routes still exist.
-
-  Firebase-created Parent accounts will normally
-  have no password, so this middleware simply exits.
-*/
-
-parentSchema.pre(
-  "save",
-  async function () {
-    /*
-      Password not changed / not provided.
-    */
-
-    if (
-      !this.isModified(
-        "password"
-      )
-    ) {
-      return;
-    }
-
-    /*
-      Firebase Parent account with no password.
-    */
-
-    if (!this.password) {
-      return;
-    }
-
-    const salt =
-      await bcrypt.genSalt(
-        10
-      );
-
-    this.password =
-      await bcrypt.hash(
-        this.password,
-        salt
-      );
-  }
-);
-
-/* =========================================================
-   LEGACY PASSWORD COMPARISON
-========================================================= */
-
-/*
-  TEMPORARY compatibility method.
-
-  This prevents the existing old /parent/login route
-  from breaking while Firebase authentication is being
-  added.
-
-  Eventually this method will be removed.
-*/
-
-parentSchema.methods.comparePassword =
-  async function (
-    enteredPassword
-  ) {
-    if (
-      !enteredPassword ||
-      !this.password
-    ) {
-      return false;
-    }
-
-    return bcrypt.compare(
-      enteredPassword,
-      this.password
-    );
-  };
-
-/* =========================================================
-   VIRTUAL FIELDS
-========================================================= */
-
-parentSchema
-  .virtual("fullName")
-  .get(function () {
-    return this.name;
-  });
-
-/* =========================================================
-   JSON TRANSFORM
-========================================================= */
-
-parentSchema.set(
-  "toJSON",
-  {
-    virtuals: true,
-
-    transform:
-      function (
-        doc,
-        ret
-      ) {
-        /*
-          Never expose password.
-        */
-
-        delete ret.password;
-
-        /*
-          Firebase UID is an internal authentication
-          identifier. Frontend does not need it.
-        */
-
-        delete ret.firebaseUid;
-
-        /*
-          Remove MongoDB version key.
-        */
-
-        delete ret.__v;
-
-        return ret;
-      },
-  }
-);
-
-/* =========================================================
-   OBJECT TRANSFORM
-========================================================= */
-
-parentSchema.set(
-  "toObject",
-  {
-    virtuals: true,
-
-    transform:
-      function (
-        doc,
-        ret
-      ) {
-        /*
-          Prevent accidental exposure when controllers
-          use parent.toObject().
-        */
-
-        delete ret.password;
-        delete ret.firebaseUid;
-        delete ret.__v;
-
-        return ret;
-      },
-  }
-);
-
-/* =========================================================
    PHONE HELPERS
 ========================================================= */
-
-/*
-  Firebase returns phone numbers in E.164 format:
-
-  +918309649713
-
-  Older ASAN accounts may contain:
-
-  8309649713
-
-  These helpers allow the upcoming Firebase controller
-  to safely migrate existing Indian Parent accounts.
-*/
 
 parentSchema.statics.getPhoneVariants =
   function (phone) {
@@ -408,30 +197,20 @@ parentSchema.statics.getPhoneVariants =
       String(phone).trim();
 
     const digits =
-      raw.replace(
-        /\D/g,
-        ""
-      );
+      raw.replace(/\D/g, "");
 
     const variants =
       new Set();
 
-    /*
-      Original supplied value.
-    */
-
     variants.add(raw);
-
-    /*
-      Digits-only representation.
-    */
 
     if (digits) {
       variants.add(digits);
     }
 
     /*
-      Indian Firebase E.164:
+      Firebase Indian number:
+
       +91XXXXXXXXXX
     */
 
@@ -448,6 +227,10 @@ parentSchema.statics.getPhoneVariants =
 
       variants.add(
         `+91${nationalNumber}`
+      );
+
+      variants.add(
+        `91${nationalNumber}`
       );
     }
 
@@ -485,9 +268,10 @@ parentSchema.statics.findByEmail =
     }
 
     return this.findOne({
-      email: String(email)
-        .trim()
-        .toLowerCase(),
+      email:
+        String(email)
+          .trim()
+          .toLowerCase(),
     });
   };
 
@@ -530,11 +314,13 @@ parentSchema.statics.findByFirebaseUid =
         String(
           firebaseUid
         ).trim(),
-    });
+    }).select(
+      "+firebaseUid"
+    );
   };
 
 /* =========================================================
-   CHECK EMAIL EXISTS
+   EMAIL EXISTS
 ========================================================= */
 
 parentSchema.statics.emailExists =
@@ -544,20 +330,18 @@ parentSchema.statics.emailExists =
     }
 
     const count =
-      await this.countDocuments(
-        {
-          email:
-            String(email)
-              .trim()
-              .toLowerCase(),
-        }
-      );
+      await this.countDocuments({
+        email:
+          String(email)
+            .trim()
+            .toLowerCase(),
+      });
 
     return count > 0;
   };
 
 /* =========================================================
-   CHECK PHONE EXISTS
+   PHONE EXISTS
 ========================================================= */
 
 parentSchema.statics.phoneExists =
@@ -574,13 +358,11 @@ parentSchema.statics.phoneExists =
     }
 
     const count =
-      await this.countDocuments(
-        {
-          phone: {
-            $in: variants,
-          },
-        }
-      );
+      await this.countDocuments({
+        phone: {
+          $in: variants,
+        },
+      });
 
     return count > 0;
   };
@@ -607,14 +389,9 @@ parentSchema.virtual(
 ========================================================= */
 
 /*
-  Your current Trip queries use:
+  Trip model uses:
 
-  Trip.find({
-    parent: parentId
-  })
-
-  Therefore foreignField must be "parent",
-  not "parentId".
+  parent: ObjectId
 */
 
 parentSchema.virtual(
@@ -634,16 +411,23 @@ parentSchema.virtual(
    NOTIFICATIONS VIRTUAL
 ========================================================= */
 
+/*
+  Notification model uses:
+
+  parent: ObjectId
+*/
+
 parentSchema.virtual(
   "notifications",
   {
-    ref: "Notification",
+    ref:
+      "Notification",
 
     localField:
       "_id",
 
     foreignField:
-      "parentId",
+      "parent",
   }
 );
 
@@ -667,10 +451,41 @@ parentSchema.virtual(
 );
 
 /* =========================================================
+   JSON CLEANUP
+========================================================= */
+
+const cleanParent =
+  (doc, ret) => {
+    delete ret.firebaseUid;
+    delete ret.__v;
+
+    return ret;
+  };
+
+parentSchema.set(
+  "toJSON",
+  {
+    virtuals: true,
+    transform:
+      cleanParent,
+  }
+);
+
+parentSchema.set(
+  "toObject",
+  {
+    virtuals: true,
+    transform:
+      cleanParent,
+  }
+);
+
+/* =========================================================
    MODEL
 ========================================================= */
 
 const Parent =
+  mongoose.models.Parent ||
   mongoose.model(
     "Parent",
     parentSchema
