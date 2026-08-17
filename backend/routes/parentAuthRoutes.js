@@ -1,14 +1,16 @@
 import express from "express";
+import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+import Admin from "../models/Admin.js";
+import Driver from "../models/Driver.js";
+import AdminLog from "../models/AdminLog.js";
+
+import verifyAdmin from "../middleware/verifyAdmin.js";
+
 import {
-  parentAuthLimiter,
+  loginLimiter,
 } from "../middleware/rateLimiters.js";
-
-import {
-  loginParentWithFirebase,
-  registerParentWithFirebase,
-} from "../controllers/parentAuthController.js";
 
 const router = express.Router();
 
