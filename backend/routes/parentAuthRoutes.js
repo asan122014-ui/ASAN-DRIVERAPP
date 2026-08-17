@@ -1,16 +1,15 @@
 import express from "express";
-import mongoose from "mongoose";
-import jwt from "jsonwebtoken";
 
-import Admin from "../models/Admin.js";
-import Driver from "../models/Driver.js";
-import AdminLog from "../models/AdminLog.js";
-
-import verifyAdmin from "../middleware/verifyAdmin.js";
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
 
 import {
-  loginLimiter,
+  parentAuthLimiter,
 } from "../middleware/rateLimiters.js";
+
+import {
+  loginParentWithFirebase,
+  registerParentWithFirebase,
+} from "../controllers/parentAuthController.js";
 
 const router = express.Router();
 
@@ -19,21 +18,27 @@ const router = express.Router();
 ========================================================= */
 
 /*
-  IMPORTANT:
-
-  Firebase itself handles:
+  Firebase handles:
 
   1. Send OTP
   2. Verify OTP
 
-  After OTP verification, the frontend receives
-  a Firebase ID token.
+  After successful OTP verification,
+  the frontend receives a Firebase ID token.
 
-  That ID token is sent to these backend routes:
+  Send it to the backend as:
 
   Authorization: Bearer <FIREBASE_ID_TOKEN>
 
-  verifyFirebaseToken.js verifies the token first.
+  Flow:
+
+  Firebase ID Token
+        ↓
+  Rate Limiter
+        ↓
+  verifyFirebaseToken
+        ↓
+  Parent Auth Controller
 */
 
 /* =========================================================
@@ -53,28 +58,33 @@ const router = express.Router();
   No OTP required.
   No password required.
 
-  The verified phone number comes from Firebase.
-
-  Possible result:
+  Phone and Firebase UID are obtained only
+  from the verified Firebase token.
 
   Existing Parent:
+
   {
-    success: true,
-    needsRegistration: false,
-    data: {...}
+    "success": true,
+    "needsRegistration": false,
+    "data": {}
   }
 
   New Parent:
+
   {
-    success: true,
-    needsRegistration: true,
-    phone: "+91XXXXXXXXXX"
+    "success": true,
+    "needsRegistration": true,
+    "phone": "+91XXXXXXXXXX"
   }
 */
 
 router.post(
   "/login",
+
+  parentAuthLimiter,
+
   verifyFirebaseToken,
+
   loginParentWithFirebase
 );
 
@@ -104,14 +114,19 @@ router.post(
   password
   otp
   phone
+  firebaseUid
 
-  Phone is taken only from the verified
-  Firebase ID token.
+  Phone and Firebase UID are taken only
+  from the verified Firebase ID token.
 */
 
 router.post(
   "/register",
+
+  parentAuthLimiter,
+
   verifyFirebaseToken,
+
   registerParentWithFirebase
 );
 
