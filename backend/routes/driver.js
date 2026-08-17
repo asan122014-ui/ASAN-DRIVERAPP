@@ -2,6 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 
 import Driver from "../models/Driver.js";
+import Parent from "../models/Parent.js";
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
 
@@ -10,14 +11,22 @@ import {
   driverUpload,
 } from "../config/cloudinary.js";
 
-const router = express.Router();
+import verifyDriver from "../middleware/verifyDriver.js";
+import verifyAdmin from "../middleware/verifyAdmin.js";
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+
+const router =
+  express.Router();
 
 /* =========================================================
    CONSTANTS
 ========================================================= */
 
 const IST_OFFSET_MS =
-  5.5 * 60 * 60 * 1000;
+  5.5 *
+  60 *
+  60 *
+  1000;
 
 /* =========================================================
    HELPERS
@@ -40,26 +49,39 @@ const normalizeDriverId = (
 const escapeRegex = (
   value
 ) => {
-  return String(value)
-    .replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&"
-    );
+  return String(
+    value || ""
+  ).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+};
+
+/* =========================================================
+   SAFE DRIVER
+========================================================= */
+
+const getSafeDriver = (
+  driver
+) => {
+  if (!driver) {
+    return null;
+  }
+
+  const data =
+    typeof driver.toObject ===
+    "function"
+      ? driver.toObject()
+      : { ...driver };
+
+  delete data.password;
+
+  return data;
 };
 
 /* =========================================================
    FIND DRIVER
 ========================================================= */
-
-/*
-  Supports:
-
-  ASAN-XXXXXX
-
-  OR
-
-  MongoDB Driver _id
-*/
 
 const findDriver =
   async (
@@ -70,16 +92,13 @@ const findDriver =
     }
 
     const value =
-      String(identifier)
-        .trim();
+      String(
+        identifier
+      ).trim();
 
     if (!value) {
       return null;
     }
-
-    /* =====================================================
-       CUSTOM DRIVER ID FIRST
-    ===================================================== */
 
     const normalizedDriverId =
       normalizeDriverId(
@@ -98,10 +117,6 @@ const findDriver =
       return driverByCustomId;
     }
 
-    /* =====================================================
-       MONGODB ID FALLBACK
-    ===================================================== */
-
     if (
       mongoose.Types.ObjectId.isValid(
         value
@@ -119,211 +134,403 @@ const findDriver =
    IST DAY RANGE
 ========================================================= */
 
-const getTodayRangeIST = () => {
-  const now =
-    new Date();
+const getTodayRangeIST =
+  () => {
+    const now =
+      new Date();
 
-  const istNow =
-    new Date(
-      now.getTime() +
-        IST_OFFSET_MS
-    );
+    const istNow =
+      new Date(
+        now.getTime() +
+          IST_OFFSET_MS
+      );
 
-  const year =
-    istNow.getUTCFullYear();
+    const year =
+      istNow.getUTCFullYear();
 
-  const month =
-    istNow.getUTCMonth();
+    const month =
+      istNow.getUTCMonth();
 
-  const day =
-    istNow.getUTCDate();
+    const day =
+      istNow.getUTCDate();
 
-  const start =
-    new Date(
-      Date.UTC(
-        year,
-        month,
-        day,
-        0,
-        0,
-        0,
-        0
-      ) -
-        IST_OFFSET_MS
-    );
+    const start =
+      new Date(
+        Date.UTC(
+          year,
+          month,
+          day,
+          0,
+          0,
+          0,
+          0
+        ) -
+          IST_OFFSET_MS
+      );
 
-  const end =
-    new Date(
-      Date.UTC(
-        year,
-        month,
-        day + 1,
-        0,
-        0,
-        0,
-        0
-      ) -
-        IST_OFFSET_MS
-    );
+    const end =
+      new Date(
+        Date.UTC(
+          year,
+          month,
+          day + 1,
+          0,
+          0,
+          0,
+          0
+        ) -
+          IST_OFFSET_MS
+      );
 
-  return {
-    start,
-    end,
+    return {
+      start,
+      end,
+    };
   };
+
+/* =========================================================
+   DRIVER OWNERSHIP CHECK
+========================================================= */
+
+const requireOwnDriverIdentifier =
+  (
+    paramName
+  ) => {
+    return (
+      req,
+      res,
+      next
+    ) => {
+      const identifier =
+        String(
+          req.params?.[
+            paramName
+          ] || ""
+        ).trim();
+
+      if (!identifier) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Driver ID is required",
+        });
+      }
+
+      const authenticatedMongoId =
+        String(
+          req.driver._id
+        );
+
+      const authenticatedDriverId =
+        normalizeDriverId(
+          req.driver.driverId
+        );
+
+      const requestedDriverId =
+        normalizeDriverId(
+          identifier
+        );
+
+      const mongoIdMatch =
+        mongoose.Types.ObjectId.isValid(
+          identifier
+        ) &&
+        identifier ===
+          authenticatedMongoId;
+
+      const customIdMatch =
+        requestedDriverId ===
+        authenticatedDriverId;
+
+      if (
+        !mongoIdMatch &&
+        !customIdMatch
+      ) {
+        return res.status(403).json({
+          success: false,
+
+          message:
+            "You cannot access another Driver account",
+        });
+      }
+
+      return next();
+    };
+  };
+
+/* =========================================================
+   LOAD AUTHENTICATED PARENT
+========================================================= */
+
+const requireParentAccount = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const firebaseUid =
+      req.firebaseUser?.uid;
+
+    if (!firebaseUid) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Parent authentication required",
+      });
+    }
+
+    const parent =
+      await Parent.findOne({
+        firebaseUid,
+      }).select(
+        "+firebaseUid"
+      );
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Parent account not found",
+      });
+    }
+
+    if (
+      parent.status ===
+      "inactive"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Parent account is inactive",
+      });
+    }
+
+    req.parent =
+      parent;
+
+    return next();
+  } catch (error) {
+    console.error(
+      "LOAD PARENT ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Parent authentication failed",
+    });
+  }
 };
 
 /* =========================================================
+   VERIFY LINKED DRIVER
+========================================================= */
+
+const requireLinkedDriver = (
+  req,
+  res,
+  next
+) => {
+  const requestedDriverId =
+    normalizeDriverId(
+      req.params?.driverId ||
+        req.query?.driverId
+    );
+
+  const linkedDriverId =
+    normalizeDriverId(
+      req.parent?.driverId
+    );
+
+  if (!linkedDriverId) {
+    return res.status(409).json({
+      success: false,
+      message:
+        "No Driver is linked to this Parent account",
+    });
+  }
+
+  if (
+    !requestedDriverId
+  ) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Driver ID is required",
+    });
+  }
+
+  if (
+    requestedDriverId !==
+    linkedDriverId
+  ) {
+    return res.status(403).json({
+      success: false,
+
+      message:
+        "You cannot access another Driver",
+    });
+  }
+
+  req.linkedDriverId =
+    linkedDriverId;
+
+  return next();
+};
+
+/* =========================================================
+   CLEANUP NEW PROFILE PHOTO
+========================================================= */
+
+const cleanupUploadedPhoto =
+  async (
+    file
+  ) => {
+    try {
+      if (
+        !file?.filename
+      ) {
+        return;
+      }
+
+      await cloudinary.uploader.destroy(
+        file.filename
+      );
+    } catch (error) {
+      console.error(
+        "NEW DRIVER PHOTO CLEANUP ERROR:",
+        error.message
+      );
+    }
+  };
+
+/* =========================================================
    SAVE DRIVER FCM TOKEN
+   DRIVER ONLY
 ========================================================= */
 
 router.post(
   "/save-token",
-  async (req, res) => {
+
+  verifyDriver,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        driverId,
-        token,
-      } = req.body;
-
-      const normalizedDriverId =
-        normalizeDriverId(
-          driverId
-        );
-
       const normalizedToken =
-        typeof token ===
-          "string"
-          ? token.trim()
+        typeof req.body
+          ?.token ===
+        "string"
+          ? req.body.token.trim()
           : "";
 
-      if (
-        !normalizedDriverId ||
-        !normalizedToken
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "driverId and token are required",
-          });
-      }
-
-      const driver =
-        await Driver.findOneAndUpdate(
-          {
-            driverId:
-              normalizedDriverId,
-          },
-
-          {
-            $addToSet: {
-              fcmTokens:
-                normalizedToken,
-            },
-          },
-
-          {
-            new: true,
-          }
-        );
-
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
-
+      if (!normalizedToken) {
+        return res.status(400).json({
+          success: false,
           message:
-            "Token saved successfully",
+            "FCM token is required",
         });
+      }
+
+      await Driver.findByIdAndUpdate(
+        req.driver._id,
+
+        {
+          $addToSet: {
+            fcmTokens:
+              normalizedToken,
+          },
+        }
+      );
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Token saved successfully",
+      });
     } catch (error) {
       console.error(
         "SAVE DRIVER TOKEN ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to save token",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to save token",
+      });
     }
   }
 );
 
 /* =========================================================
    GET ALL DRIVERS
+   ADMIN ONLY
 ========================================================= */
-
-/*
-  Eventually this should become Admin-only.
-*/
 
 router.get(
   "/",
-  async (req, res) => {
+
+  verifyAdmin,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const drivers =
         await Driver.find()
           .select(
-            "name driverId vehicleNumber vehicleType status"
+            "name phone email driverId vehicleNumber vehicleType status profilePhoto"
           )
           .sort({
             name: 1,
           })
           .lean();
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          count:
-            drivers.length,
+        count:
+          drivers.length,
 
-          data:
-            drivers,
-        });
+        data:
+          drivers,
+      });
     } catch (error) {
       console.error(
         "GET ALL DRIVERS ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
+      return res.status(500).json({
+        success: false,
 
-          message:
-            "Failed to fetch drivers",
-        });
+        message:
+          "Failed to fetch Drivers",
+      });
     }
   }
 );
 
 /* =========================================================
    SEARCH DRIVERS
+   ADMIN ONLY
 ========================================================= */
 
 router.get(
   "/search",
-  async (req, res) => {
+
+  verifyAdmin,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const query =
         String(
@@ -332,18 +539,11 @@ router.get(
         ).trim();
 
       if (!query) {
-        return res
-          .status(200)
-          .json({
-            success: true,
-            data: [],
-          });
+        return res.status(200).json({
+          success: true,
+          data: [],
+        });
       }
-
-      /*
-        Avoid passing raw user input
-        directly into MongoDB regex.
-      */
 
       const safeQuery =
         escapeRegex(
@@ -385,156 +585,124 @@ router.get(
           ],
         })
           .select(
-            "name phone driverId vehicleNumber vehicleType status"
+            "name phone email driverId vehicleNumber vehicleType status profilePhoto"
           )
           .limit(10)
           .lean();
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: drivers,
-        });
+      return res.status(200).json({
+        success: true,
+        data:
+          drivers,
+      });
     } catch (error) {
       console.error(
         "DRIVER SEARCH ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Search failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Search failed",
+      });
     }
   }
 );
 
 /* =========================================================
-   GET DRIVER LAST LOCATION
+   GET LINKED DRIVER LOCATION
+   PARENT ONLY
 ========================================================= */
 
 router.get(
   "/location",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+  requireLinkedDriver,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        driverId,
-      } = req.query;
-
-      if (!driverId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is required",
-          });
-      }
-
       const driver =
-        await findDriver(
-          driverId
+        await Driver.findOne({
+          driverId:
+            req.linkedDriverId,
+
+          status:
+            "approved",
+        }).select(
+          "driverId isOnline currentStatus lastLocation"
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          data: {
-            driverId:
-              driver.driverId,
+        data: {
+          driverId:
+            driver.driverId,
 
-            isOnline:
-              driver.isOnline,
+          isOnline:
+            driver.isOnline,
 
-            currentStatus:
-              driver.currentStatus,
+          currentStatus:
+            driver.currentStatus,
 
-            lastLocation:
-              driver.lastLocation ||
-              null,
-          },
-        });
+          lastLocation:
+            driver.lastLocation ||
+            null,
+        },
+      });
     } catch (error) {
       console.error(
         "GET DRIVER LOCATION ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
+      return res.status(500).json({
+        success: false,
 
-          message:
-            "Failed to fetch driver location",
-        });
+        message:
+          "Failed to fetch Driver location",
+      });
     }
   }
 );
 
 /* =========================================================
    DRIVER DASHBOARD
+   DRIVER OWN ACCOUNT ONLY
 ========================================================= */
 
 router.get(
   "/dashboard/:driverId",
-  async (req, res) => {
+
+  verifyDriver,
+  requireOwnDriverIdentifier(
+    "driverId"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const driver =
-        await findDriver(
-          req.params.driverId
-        );
-
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
-      }
-
-      /*
-        IMPORTANT:
-
-        Even if MongoDB _id was supplied in the URL,
-        Trip and Child schemas use the custom driverId.
-      */
+        req.driver;
 
       const driverId =
         driver.driverId;
-
-      if (!driverId) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is not configured",
-          });
-      }
 
       const {
         start,
@@ -556,8 +724,11 @@ router.get(
             driverId,
 
             createdAt: {
-              $gte: start,
-              $lt: end,
+              $gte:
+                start,
+
+              $lt:
+                end,
             },
           }),
 
@@ -566,86 +737,76 @@ router.get(
           }),
         ]);
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          data: {
-            driverId,
+        data: {
+          driverId,
 
-            name:
-              driver.name,
+          name:
+            driver.name,
 
-            vehicleNumber:
-              driver.vehicleNumber,
+          vehicleNumber:
+            driver.vehicleNumber,
 
-            vehicleType:
-              driver.vehicleType,
+          vehicleType:
+            driver.vehicleType,
 
-            rating:
-              driver.rating,
+          rating:
+            driver.rating,
 
-            status:
-              driver.status,
+          status:
+            driver.status,
 
-            isOnline:
-              driver.isOnline,
+          isOnline:
+            driver.isOnline,
 
-            currentStatus:
-              driver.currentStatus,
+          currentStatus:
+            driver.currentStatus,
 
-            totalTrips,
+          totalTrips,
 
-            todayTrips,
+          todayTrips,
 
-            studentsAssigned,
-          },
-        });
+          studentsAssigned,
+        },
+      });
     } catch (error) {
       console.error(
         "DRIVER DASHBOARD ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
+      return res.status(500).json({
+        success: false,
 
-          message:
-            "Failed to load dashboard",
-        });
+        message:
+          "Failed to load dashboard",
+      });
     }
   }
 );
 
 /* =========================================================
    DRIVER PROFILE
+   DRIVER OWN ACCOUNT ONLY
 ========================================================= */
 
 router.get(
   "/profile/:driverId",
-  async (req, res) => {
+
+  verifyDriver,
+  requireOwnDriverIdentifier(
+    "driverId"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const driver =
-        await findDriver(
-          req.params.driverId
-        );
-
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
-      }
-
-      const driverId =
-        driver.driverId;
+        req.driver;
 
       const {
         start,
@@ -654,210 +815,197 @@ router.get(
         getTodayRangeIST();
 
       const todayTrips =
-        driverId
-          ? await Trips.countDocuments({
-              driverId,
+        await Trips.countDocuments({
+          driverId:
+            driver.driverId,
 
-              createdAt: {
-                $gte: start,
-                $lt: end,
-              },
-            })
-          : 0;
+          createdAt: {
+            $gte:
+              start,
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          data: {
-            ...driver.toObject(),
-
-            todayTrips,
+            $lt:
+              end,
           },
         });
+
+      return res.status(200).json({
+        success: true,
+
+        data: {
+          ...getSafeDriver(
+            driver
+          ),
+
+          todayTrips,
+        },
+      });
     } catch (error) {
       console.error(
         "DRIVER PROFILE ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to load profile",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to load profile",
+      });
     }
   }
 );
 
 /* =========================================================
    DRIVER TRACKING
+   LINKED PARENT ONLY
 ========================================================= */
 
 router.get(
   "/tracking/:driverId",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+  requireLinkedDriver,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const driver =
-        await findDriver(
-          req.params.driverId
+        await Driver.findOne({
+          driverId:
+            req.linkedDriverId,
+
+          status:
+            "approved",
+        }).select(
+          "driverId name phone vehicleNumber vehicleType isOnline currentStatus location lastLocation profilePhoto"
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          data: {
-            driverId:
-              driver.driverId,
+        data: {
+          driverId:
+            driver.driverId,
 
-            name:
-              driver.name,
+          name:
+            driver.name,
 
-            phone:
-              driver.phone,
+          phone:
+            driver.phone,
 
-            vehicleNumber:
-              driver.vehicleNumber,
+          profilePhoto:
+            driver.profilePhoto,
 
-            vehicleType:
-              driver.vehicleType,
+          vehicleNumber:
+            driver.vehicleNumber,
 
-            isOnline:
-              driver.isOnline,
+          vehicleType:
+            driver.vehicleType,
 
-            currentStatus:
-              driver.currentStatus,
+          isOnline:
+            driver.isOnline,
 
-            /*
-              GeoJSON location used for
-              map/nearby queries.
-            */
+          currentStatus:
+            driver.currentStatus,
 
-            location:
-              driver.location,
+          location:
+            driver.location,
 
-            /*
-              Latest Socket.IO location.
-            */
-
-            lastLocation:
-              driver.lastLocation,
-          },
-        });
+          lastLocation:
+            driver.lastLocation,
+        },
+      });
     } catch (error) {
       console.error(
         "DRIVER TRACKING ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Tracking failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Tracking failed",
+      });
     }
   }
 );
 
 /* =========================================================
    UPDATE DRIVER PROFILE
+   DRIVER OWN ACCOUNT ONLY
 ========================================================= */
-
-/*
-  This endpoint is strictly for normal
-  Driver profile information.
-
-  It MUST NOT modify:
-
-  authentication
-  approval
-  trip state
-  location
-  FCM
-  system statistics
-*/
 
 router.put(
   "/update",
+
+  verifyDriver,
 
   driverUpload.single(
     "profilePhoto"
   ),
 
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
+    let newPhotoSaved =
+      false;
+
     try {
-      const {
-        driverId:
-          rawDriverId,
-
-        ...updates
-      } = req.body;
-
-      const driverId =
-        normalizeDriverId(
-          rawDriverId
-        );
-
-      if (!driverId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is required",
-          });
-      }
-
       const driver =
-        await Driver.findOne({
-          driverId,
-        });
+        req.driver;
 
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
+      /* ===================================================
+         OPTIONAL BODY DRIVER ID CHECK
+      =================================================== */
+
+      if (
+        req.body?.driverId
+      ) {
+        const suppliedDriverId =
+          normalizeDriverId(
+            req.body.driverId
+          );
+
+        if (
+          suppliedDriverId !==
+          normalizeDriverId(
+            driver.driverId
+          )
+        ) {
+          await cleanupUploadedPhoto(
+            req.file
+          );
+
+          return res.status(403).json({
             success: false,
 
             message:
-              "Driver not found",
+              "You cannot update another Driver account",
           });
+        }
       }
 
       /* ===================================================
-         PROFILE IMAGE
+         PROFILE PHOTO
       =================================================== */
 
-      let oldPhotoPublicId =
+      const oldPhotoPublicId =
+        driver
+          .profilePhotoPublicId ||
         null;
 
       if (req.file) {
-        oldPhotoPublicId =
-          driver
-            .profilePhotoPublicId ||
-          null;
-
         driver.profilePhoto =
           req.file.path;
 
@@ -866,54 +1014,90 @@ router.put(
       }
 
       /* ===================================================
-         PROFILE FIELD ALLOWLIST
+         ALLOWED PROFILE FIELDS
       =================================================== */
 
-      /*
-        Only these fields may be changed from
-        this normal profile endpoint.
-      */
+      const allowedFields = [
+        "name",
+        "email",
+        "address",
+        "vehicleNumber",
+        "vehicleType",
+        "vehicleModel",
+        "licenseNumber",
+        "avatar",
+      ];
 
-      const allowedFields =
-        [
-          "name",
-          "email",
-          "address",
-          "vehicleNumber",
-          "vehicleType",
-          "vehicleModel",
-          "licenseNumber",
-          "avatar",
-        ];
+      const updates = {};
 
       for (
         const field of
         allowedFields
       ) {
         if (
-          updates[field] ===
+          req.body?.[
+            field
+          ] ===
           undefined
         ) {
           continue;
         }
 
-        if (
-          typeof updates[
+        updates[field] =
+          typeof req.body[
             field
-          ] === "string"
-        ) {
-          updates[field] =
-            updates[
-              field
-            ].trim();
-        }
-
-        driver[field] =
-          updates[field];
+          ] ===
+          "string"
+            ? req.body[
+                field
+              ].trim()
+            : req.body[
+                field
+              ];
       }
 
       /* ===================================================
-         NORMALIZE EMAIL
+         NAME
+      =================================================== */
+
+      if (
+        updates.name !==
+          undefined &&
+        !updates.name
+      ) {
+        await cleanupUploadedPhoto(
+          req.file
+        );
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Name cannot be empty",
+        });
+      }
+
+      /* ===================================================
+         ADDRESS
+      =================================================== */
+
+      if (
+        updates.address !==
+          undefined &&
+        !updates.address
+      ) {
+        await cleanupUploadedPhoto(
+          req.file
+        );
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Address cannot be empty",
+        });
+      }
+
+      /* ===================================================
+         EMAIL
       =================================================== */
 
       if (
@@ -935,14 +1119,16 @@ router.put(
             email
           )
         ) {
-          return res
-            .status(400)
-            .json({
-              success: false,
+          await cleanupUploadedPhoto(
+            req.file
+          );
 
-              message:
-                "Enter a valid email address",
-            });
+          return res.status(400).json({
+            success: false,
+
+            message:
+              "Enter a valid email address",
+          });
         }
 
         const duplicateEmail =
@@ -953,58 +1139,120 @@ router.put(
               $ne:
                 driver._id,
             },
-          });
+          }).select(
+            "_id"
+          );
 
         if (
           duplicateEmail
         ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
+          await cleanupUploadedPhoto(
+            req.file
+          );
 
-              message:
-                "Email is already registered",
-            });
+          return res.status(409).json({
+            success: false,
+
+            message:
+              "Email is already registered",
+          });
         }
 
-        driver.email =
+        updates.email =
           email;
       }
 
       /* ===================================================
-         NORMALIZE VEHICLE NUMBER
+         VEHICLE NUMBER
       =================================================== */
 
       if (
         updates.vehicleNumber !==
         undefined
       ) {
-        driver.vehicleNumber =
+        updates.vehicleNumber =
           String(
             updates.vehicleNumber
           )
             .trim()
             .toUpperCase();
+
+        if (
+          !updates.vehicleNumber
+        ) {
+          await cleanupUploadedPhoto(
+            req.file
+          );
+
+          return res.status(400).json({
+            success: false,
+
+            message:
+              "Vehicle number cannot be empty",
+          });
+        }
       }
 
       /* ===================================================
-         SAVE DRIVER
+         LICENSE NUMBER
+      =================================================== */
+
+      if (
+        updates.licenseNumber !==
+        undefined
+      ) {
+        updates.licenseNumber =
+          String(
+            updates.licenseNumber
+          )
+            .trim()
+            .toUpperCase();
+
+        if (
+          !updates.licenseNumber
+        ) {
+          await cleanupUploadedPhoto(
+            req.file
+          );
+
+          return res.status(400).json({
+            success: false,
+
+            message:
+              "License number cannot be empty",
+          });
+        }
+      }
+
+      /* ===================================================
+         APPLY UPDATES
+      =================================================== */
+
+      for (
+        const [
+          field,
+          value,
+        ] of
+        Object.entries(
+          updates
+        )
+      ) {
+        driver[field] =
+          value;
+      }
+
+      /* ===================================================
+         SAVE
       =================================================== */
 
       await driver.save();
 
+      newPhotoSaved =
+        true;
+
       /* ===================================================
-         REMOVE OLD PROFILE IMAGE
+         DELETE OLD PHOTO AFTER SAVE
       =================================================== */
-
-      /*
-        Delete old Cloudinary image only AFTER
-        the Driver document successfully saves.
-
-        This avoids losing the old image if
-        MongoDB validation fails.
-      */
 
       if (
         req.file &&
@@ -1019,85 +1267,97 @@ router.put(
             .destroy(
               oldPhotoPublicId
             );
-        } catch (
-          cloudinaryError
-        ) {
+        } catch (error) {
           console.error(
             "OLD DRIVER PHOTO DELETE ERROR:",
-            cloudinaryError.message
+            error.message
           );
         }
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Driver updated successfully",
+        message:
+          "Driver updated successfully",
 
-          data:
-            driver,
-        });
+        data:
+          getSafeDriver(
+            driver
+          ),
+      });
     } catch (error) {
+      /*
+        If MongoDB save fails, remove the newly
+        uploaded Cloudinary image.
+      */
+
+      if (
+        req.file &&
+        !newPhotoSaved
+      ) {
+        await cleanupUploadedPhoto(
+          req.file
+        );
+      }
+
       console.error(
         "DRIVER UPDATE ERROR:",
         error
       );
 
       if (
-        error.code ===
+        error?.code ===
         11000
       ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Driver information already exists",
-          });
-      }
-
-      if (
-        error.name ===
-        "ValidationError"
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
-      }
-
-      return res
-        .status(500)
-        .json({
+        return res.status(409).json({
           success: false,
 
           message:
-            "Update failed",
+            "Driver information already exists",
         });
+      }
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message,
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Update failed",
+      });
     }
   }
 );
 
 /* =========================================================
    GET DRIVER BY ID
+   ADMIN ONLY
 ========================================================= */
 
 /*
-  Keep this LAST because /:id can otherwise
-  interfere with named routes.
+  Keep LAST because /:id could otherwise
+  match named routes.
 */
 
 router.get(
   "/:id",
-  async (req, res) => {
+
+  verifyAdmin,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const driver =
         await findDriver(
@@ -1105,38 +1365,39 @@ router.get(
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: driver,
-        });
+      return res.status(200).json({
+        success: true,
+
+        data:
+          getSafeDriver(
+            driver
+          ),
+      });
     } catch (error) {
       console.error(
         "GET DRIVER ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
+      return res.status(500).json({
+        success: false,
 
-          message:
-            "Failed to fetch driver",
-        });
+        message:
+          "Failed to fetch Driver",
+      });
     }
   }
 );
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;
