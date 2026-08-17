@@ -3,6 +3,10 @@ import jwt from "jsonwebtoken";
 
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
+import {
+  loginLimiter,
+  signupLimiter,
+} from "../middleware/rateLimiters.js";
 
 import {
   cloudinary,
