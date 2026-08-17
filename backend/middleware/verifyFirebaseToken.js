@@ -11,12 +11,12 @@ const verifyFirebaseToken = async (
 ) => {
   try {
     /* =====================================================
-       CHECK FIREBASE CONFIGURATION
+       FIREBASE CONFIGURATION
     ===================================================== */
 
     if (!parentAuth) {
       console.error(
-        "❌ Parent Firebase Auth is not initialized"
+        "Parent Firebase Auth is not initialized"
       );
 
       return res.status(500).json({
@@ -27,7 +27,7 @@ const verifyFirebaseToken = async (
     }
 
     /* =====================================================
-       GET AUTH HEADER
+       AUTHORIZATION HEADER
     ===================================================== */
 
     const authHeader =
@@ -52,8 +52,8 @@ const verifyFirebaseToken = async (
 
     const idToken =
       authHeader
-        .split(" ")[1]
-        ?.trim();
+        .slice(7)
+        .trim();
 
     if (!idToken) {
       return res.status(401).json({
@@ -64,16 +64,22 @@ const verifyFirebaseToken = async (
     }
 
     /* =====================================================
-       VERIFY FIREBASE ID TOKEN
+       VERIFY FIREBASE TOKEN
     ===================================================== */
+
+    /*
+      true = also verify whether the Firebase
+      refresh-token session was revoked.
+    */
 
     const decodedToken =
       await parentAuth.verifyIdToken(
-        idToken
+        idToken,
+        true
       );
 
     /* =====================================================
-       REQUIRE FIREBASE UID
+       FIREBASE UID
     ===================================================== */
 
     if (!decodedToken?.uid) {
@@ -85,16 +91,8 @@ const verifyFirebaseToken = async (
     }
 
     /* =====================================================
-       REQUIRE PHONE NUMBER
+       PHONE NUMBER
     ===================================================== */
-
-    /*
-      Parent authentication is based on Firebase
-      Phone Authentication.
-
-      Firebase should provide a verified phone number
-      after successful OTP verification.
-    */
 
     if (
       !decodedToken.phone_number
@@ -107,7 +105,26 @@ const verifyFirebaseToken = async (
     }
 
     /* =====================================================
-       ATTACH FIREBASE USER TO REQUEST
+       REQUIRE PHONE AUTH PROVIDER
+    ===================================================== */
+
+    const signInProvider =
+      decodedToken.firebase
+        ?.sign_in_provider;
+
+    if (
+      signInProvider !==
+      "phone"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Parent login requires phone authentication",
+      });
+    }
+
+    /* =====================================================
+       ATTACH VERIFIED FIREBASE USER
     ===================================================== */
 
     req.firebaseUser = {
@@ -121,9 +138,7 @@ const verifyFirebaseToken = async (
         decodedToken.phone_number,
 
       provider:
-        decodedToken.firebase
-          ?.sign_in_provider ||
-        "phone",
+        signInProvider,
 
       authTime:
         decodedToken.auth_time,
@@ -135,20 +150,16 @@ const verifyFirebaseToken = async (
         decodedToken.exp,
     };
 
-    /* =====================================================
-       CONTINUE
-    ===================================================== */
-
     next();
   } catch (error) {
     console.error(
-      "❌ Firebase Auth Error:",
+      "FIREBASE PARENT AUTH ERROR:",
       error.code ||
         error.message
     );
 
     /* =====================================================
-       EXPIRED TOKEN
+       EXPIRED
     ===================================================== */
 
     if (
@@ -163,7 +174,7 @@ const verifyFirebaseToken = async (
     }
 
     /* =====================================================
-       REVOKED TOKEN
+       REVOKED
     ===================================================== */
 
     if (
@@ -193,10 +204,6 @@ const verifyFirebaseToken = async (
           "Invalid Firebase authentication token",
       });
     }
-
-    /* =====================================================
-       GENERAL AUTH FAILURE
-    ===================================================== */
 
     return res.status(401).json({
       success: false,
