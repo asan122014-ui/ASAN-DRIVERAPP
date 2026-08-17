@@ -33,7 +33,6 @@ const verifyAdmin = async (
 
       return res.status(500).json({
         success: false,
-
         message:
           "Server authentication configuration error",
       });
@@ -56,7 +55,6 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Access denied. Token missing",
         });
@@ -76,7 +74,6 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Access denied. Token missing",
         });
@@ -104,7 +101,6 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Invalid token",
         });
@@ -119,7 +115,6 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Invalid token",
         });
@@ -138,7 +133,6 @@ const verifyAdmin = async (
         .status(403)
         .json({
           success: false,
-
           message:
             "Admin access denied",
         });
@@ -148,16 +142,11 @@ const verifyAdmin = async (
        VERIFY ADMIN STILL EXISTS
     ===================================================== */
 
-    /*
-      A valid JWT should not continue working if the
-      Admin account was deleted or disabled later.
-    */
-
     const admin =
       await Admin.findById(
         decoded.id
       ).select(
-        "_id username role"
+        "_id email role"
       );
 
     if (!admin) {
@@ -165,20 +154,14 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Admin account not found",
         });
     }
 
     /* =====================================================
-       DATABASE ROLE CHECK
+       CURRENT DATABASE ROLE CHECK
     ===================================================== */
-
-    /*
-      Use the current database role rather than trusting
-      only the role stored inside an old JWT.
-    */
 
     if (
       !ALLOWED_ADMIN_ROLES.has(
@@ -189,7 +172,6 @@ const verifyAdmin = async (
         .status(403)
         .json({
           success: false,
-
           message:
             "Admin access denied",
         });
@@ -203,8 +185,8 @@ const verifyAdmin = async (
       id:
         String(admin._id),
 
-      username:
-        admin.username,
+      email:
+        admin.email,
 
       role:
         admin.role,
@@ -224,14 +206,13 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Token expired",
         });
     }
 
     /* =====================================================
-       INVALID JWT
+       INVALID TOKEN
     ===================================================== */
 
     if (
@@ -244,7 +225,6 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
-
           message:
             "Invalid token",
         });
@@ -259,7 +239,6 @@ const verifyAdmin = async (
       .status(500)
       .json({
         success: false,
-
         message:
           "Admin authentication failed",
       });
