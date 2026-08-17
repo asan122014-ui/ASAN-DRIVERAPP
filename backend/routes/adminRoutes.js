@@ -1,7 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
-import verifyAdmin from "../middleware/verifyAdmin.js";
 
 import {
   loginLimiter,
