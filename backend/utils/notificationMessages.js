@@ -288,4 +288,10 @@ export const DRIVER_NOTIFICATIONS = {
     message:
       "{childName}'s pickup from {schoolName} has been verified successfully.",
   },
+
+  DRIVER_REQUEST_REJECTED: {
+  title: "Driver Request Rejected",
+  message:
+    "Your Driver request was rejected. Reason: {rejectionReason}",
+},
 };
