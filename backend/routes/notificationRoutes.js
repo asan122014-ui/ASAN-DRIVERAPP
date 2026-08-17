@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 
-import Driver from "../models/Driver.js";
+import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 
 import {
@@ -13,35 +13,491 @@ import {
   sendTestNotification,
 } from "../controllers/notificationController.js";
 
+import verifyDriver from "../middleware/verifyDriver.js";
+import verifyAdmin from "../middleware/verifyAdmin.js";
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+
 const router = express.Router();
 
 /* =========================================================
    HELPERS
 ========================================================= */
 
-const normalizeDriverId = (driverId) => {
-  if (!driverId) {
-    return "";
-  }
-
-  return String(driverId)
+const normalizeDriverId = (
+  driverId
+) => {
+  return String(
+    driverId || ""
+  )
     .trim()
     .toUpperCase();
 };
 
 /* =========================================================
+   LOAD AUTHENTICATED PARENT
+========================================================= */
+
+const requireParentAccount = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const firebaseUid =
+      req.firebaseUser?.uid;
+
+    if (!firebaseUid) {
+      return res.status(401).json({
+        success: false,
+
+        message:
+          "Parent authentication required",
+      });
+    }
+
+    const parent =
+      await Parent.findOne({
+        firebaseUid,
+      }).select(
+        "+firebaseUid"
+      );
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+
+        message:
+          "Parent account not found",
+      });
+    }
+
+    if (
+      parent.status ===
+      "inactive"
+    ) {
+      return res.status(403).json({
+        success: false,
+
+        message:
+          "Parent account is inactive",
+      });
+    }
+
+    req.parent =
+      parent;
+
+    return next();
+  } catch (error) {
+    console.error(
+      "LOAD NOTIFICATION PARENT ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Parent authentication failed",
+    });
+  }
+};
+
+/* =========================================================
+   VERIFY PARENT PARAM OWNERSHIP
+========================================================= */
+
+const requireOwnParentParam = (
+  req,
+  res,
+  next
+) => {
+  const parentId =
+    String(
+      req.params?.parentId ||
+        ""
+    );
+
+  if (!parentId) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "Parent ID is required",
+    });
+  }
+
+  if (
+    parentId !==
+    String(
+      req.parent._id
+    )
+  ) {
+    return res.status(403).json({
+      success: false,
+
+      message:
+        "You cannot access another Parent's notifications",
+    });
+  }
+
+  return next();
+};
+
+/* =========================================================
+   AUTHORIZE MARK-ALL REQUEST
+========================================================= */
+
+/*
+  Existing endpoint remains:
+
+  PUT /api/notifications/read-all
+
+  DRIVER:
+  ?driverId=ASAN-XXXXXX
+
+  PARENT:
+  ?parentId=<MongoId>
+
+  The supplied ID is NEVER trusted by itself.
+  Authentication must prove ownership.
+*/
+
+const authorizeReadAll = (
+  req,
+  res,
+  next
+) => {
+  const {
+    driverId,
+    parentId,
+  } =
+    req.query || {};
+
+  /* =======================================================
+     EXACTLY ONE RECIPIENT
+  ======================================================= */
+
+  if (
+    driverId &&
+    parentId
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "Provide either driverId or parentId, not both",
+    });
+  }
+
+  if (
+    !driverId &&
+    !parentId
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "driverId or parentId is required",
+    });
+  }
+
+  /* =======================================================
+     DRIVER
+  ======================================================= */
+
+  if (driverId) {
+    return verifyDriver(
+      req,
+      res,
+
+      () => {
+        const requestedDriverId =
+          normalizeDriverId(
+            driverId
+          );
+
+        const authenticatedDriverId =
+          normalizeDriverId(
+            req.driver?.driverId
+          );
+
+        if (
+          !requestedDriverId ||
+          requestedDriverId !==
+            authenticatedDriverId
+        ) {
+          return res.status(403).json({
+            success: false,
+
+            message:
+              "You cannot modify another Driver's notifications",
+          });
+        }
+
+        req.notificationRecipient = {
+          type:
+            "driver",
+
+          driverId:
+            authenticatedDriverId,
+        };
+
+        return next();
+      }
+    );
+  }
+
+  /* =======================================================
+     PARENT
+  ======================================================= */
+
+  if (
+    !mongoose.Types.ObjectId.isValid(
+      String(
+        parentId
+      )
+    )
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "Invalid Parent ID",
+    });
+  }
+
+  return verifyFirebaseToken(
+    req,
+    res,
+
+    () => {
+      return requireParentAccount(
+        req,
+        res,
+
+        () => {
+          if (
+            String(
+              parentId
+            ) !==
+            String(
+              req.parent._id
+            )
+          ) {
+            return res.status(403).json({
+              success: false,
+
+              message:
+                "You cannot modify another Parent's notifications",
+            });
+          }
+
+          req.notificationRecipient = {
+            type:
+              "parent",
+
+            parentId:
+              req.parent._id,
+          };
+
+          return next();
+        }
+      );
+    }
+  );
+};
+
+/* =========================================================
+   AUTHORIZE SINGLE NOTIFICATION
+========================================================= */
+
+const authorizeSingleNotification =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const {
+        id,
+      } =
+        req.params;
+
+      /* ===================================================
+         VALIDATE NOTIFICATION ID
+      =================================================== */
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          String(
+            id
+          )
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid Notification ID",
+        });
+      }
+
+      /* ===================================================
+         FIND NOTIFICATION RECIPIENT
+      =================================================== */
+
+      const notification =
+        await Notification.findById(
+          id
+        ).select(
+          "_id recipientType driver parent"
+        );
+
+      if (!notification) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "Notification not found",
+        });
+      }
+
+      /* ===================================================
+         DRIVER NOTIFICATION
+      =================================================== */
+
+      if (
+        notification.recipientType ===
+        "driver"
+      ) {
+        return verifyDriver(
+          req,
+          res,
+
+          () => {
+            const notificationDriverId =
+              normalizeDriverId(
+                notification.driver
+              );
+
+            const authenticatedDriverId =
+              normalizeDriverId(
+                req.driver?.driverId
+              );
+
+            if (
+              !notificationDriverId ||
+              notificationDriverId !==
+                authenticatedDriverId
+            ) {
+              return res.status(403).json({
+                success: false,
+
+                message:
+                  "You cannot modify another Driver's notification",
+              });
+            }
+
+            req.notificationRecipient = {
+              type:
+                "driver",
+
+              driverId:
+                authenticatedDriverId,
+            };
+
+            return next();
+          }
+        );
+      }
+
+      /* ===================================================
+         PARENT NOTIFICATION
+      =================================================== */
+
+      if (
+        notification.recipientType ===
+        "parent"
+      ) {
+        return verifyFirebaseToken(
+          req,
+          res,
+
+          () => {
+            return requireParentAccount(
+              req,
+              res,
+
+              () => {
+                if (
+                  !notification.parent ||
+                  String(
+                    notification.parent
+                  ) !==
+                    String(
+                      req.parent._id
+                    )
+                ) {
+                  return res.status(403).json({
+                    success: false,
+
+                    message:
+                      "You cannot modify another Parent's notification",
+                  });
+                }
+
+                req.notificationRecipient = {
+                  type:
+                    "parent",
+
+                  parentId:
+                    req.parent._id,
+                };
+
+                return next();
+              }
+            );
+          }
+        );
+      }
+
+      return res.status(403).json({
+        success: false,
+
+        message:
+          "Invalid notification recipient",
+      });
+    } catch (error) {
+      console.error(
+        "NOTIFICATION AUTHORIZATION ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          "Notification authorization failed",
+      });
+    }
+  };
+
+/* =========================================================
    TEST NOTIFICATION
+   ADMIN ONLY
 ========================================================= */
 
 /*
   Development/testing endpoint.
 
-  We will decide whether to keep or remove this
-  after inspecting notificationController.js.
+  It can no longer be called publicly.
 */
 
 router.post(
   "/test",
+
+  verifyAdmin,
+
   sendTestNotification
 );
 
@@ -50,240 +506,63 @@ router.post(
 ========================================================= */
 
 /*
-  POST /api/notifications/save-token
+  REMOVED from this router.
 
-  Parent:
+  Parent secured token registration:
 
-  {
-    "parentId": "...",
-    "token": "FCM_TOKEN"
-  }
+  POST /api/auth/save-token
+  Firebase authenticated.
 
-  Driver:
+  Driver secured token registration:
 
-  {
-    "driverId": "ASAN-XXXXXX",
-    "token": "FCM_TOKEN"
-  }
+  POST /api/driver/save-token
+  Driver JWT authenticated.
 
-  driverId can also temporarily accept a MongoDB ObjectId
-  for backwards compatibility.
+  Do not create a third public token-registration route here.
 */
 
-router.post(
-  "/save-token",
-  async (req, res) => {
-    try {
-      const {
-        driverId,
-        parentId,
-        token,
-      } = req.body;
-
-      /* ===================================================
-         TOKEN VALIDATION
-      =================================================== */
-
-      const normalizedToken =
-        typeof token === "string"
-          ? token.trim()
-          : "";
-
-      if (!normalizedToken) {
-        return res.status(400).json({
-          success: false,
-          message: "Token is required",
-        });
-      }
-
-      /* ===================================================
-         RECIPIENT VALIDATION
-      =================================================== */
-
-      if (!driverId && !parentId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Either driverId or parentId is required",
-        });
-      }
-
-      if (driverId && parentId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Provide either driverId or parentId, not both",
-        });
-      }
-
-      /* ===================================================
-         DRIVER TOKEN
-      =================================================== */
-
-      if (driverId) {
-        let driver = null;
-
-        /*
-          Backwards compatibility:
-
-          Some old frontend code may still send
-          MongoDB Driver _id.
-
-          New Driver APIs normally use custom IDs such as:
-
-          ASAN-9D0A01
-        */
-
-        if (
-          mongoose.Types.ObjectId.isValid(
-            String(driverId)
-          )
-        ) {
-          driver =
-            await Driver.findById(
-              driverId
-            );
-        }
-
-        /*
-          If MongoDB _id lookup did not find a Driver,
-          try the custom Driver ID.
-        */
-
-        if (!driver) {
-          const normalizedDriverId =
-            normalizeDriverId(
-              driverId
-            );
-
-          driver =
-            await Driver.findOne({
-              driverId:
-                normalizedDriverId,
-            });
-        }
-
-        if (!driver) {
-          return res.status(404).json({
-            success: false,
-            message: "Driver not found",
-          });
-        }
-
-        /*
-          $addToSet avoids duplicate tokens.
-        */
-
-        await Driver.updateOne(
-          {
-            _id: driver._id,
-          },
-          {
-            $addToSet: {
-              fcmTokens:
-                normalizedToken,
-            },
-          }
-        );
-
-        return res.status(200).json({
-          success: true,
-          message:
-            "Driver notification token saved successfully",
-        });
-      }
-
-      /* ===================================================
-         PARENT TOKEN
-      =================================================== */
-
-      if (
-        !mongoose.Types.ObjectId.isValid(
-          String(parentId)
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid Parent ID",
-        });
-      }
-
-      const parent =
-        await Parent.findById(
-          parentId
-        );
-
-      if (!parent) {
-        return res.status(404).json({
-          success: false,
-          message: "Parent not found",
-        });
-      }
-
-      await Parent.updateOne(
-        {
-          _id: parent._id,
-        },
-        {
-          $addToSet: {
-            fcmTokens:
-              normalizedToken,
-          },
-        }
-      );
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Parent notification token saved successfully",
-      });
-    } catch (error) {
-      console.error(
-        "SAVE NOTIFICATION TOKEN ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to save notification token",
-      });
-    }
-  }
-);
-
 /* =========================================================
-   FETCH NOTIFICATIONS
+   DRIVER UNREAD NOTIFICATIONS
 ========================================================= */
 
 /*
-  Driver notifications.
+  Driver identity comes from Driver JWT.
 
-  Existing controller contract is preserved.
+  Query driverId is no longer trusted.
 */
 
 router.get(
   "/",
+
+  verifyDriver,
+
   getNotifications
 );
 
-/*
-  All notifications.
-
-  This should eventually become Admin-only.
-*/
+/* =========================================================
+   ALL NOTIFICATIONS
+   ADMIN ONLY
+========================================================= */
 
 router.get(
   "/all",
+
+  verifyAdmin,
+
   getAllNotifications
 );
 
-/*
-  Parent notification history.
-*/
+/* =========================================================
+   PARENT NOTIFICATION HISTORY
+========================================================= */
 
 router.get(
   "/parent/:parentId",
+
+  verifyFirebaseToken,
+  requireParentAccount,
+  requireOwnParentParam,
+
   getParentNotifications
 );
 
@@ -291,22 +570,11 @@ router.get(
    MARK ALL AS READ
 ========================================================= */
 
-/*
-  IMPORTANT:
-
-  This MUST be defined before:
-
-  /:id/read
-
-  Otherwise Express could interpret:
-
-  "read-all"
-
-  as an arbitrary notification ID.
-*/
-
 router.put(
   "/read-all",
+
+  authorizeReadAll,
+
   markAllAsRead
 );
 
@@ -316,6 +584,9 @@ router.put(
 
 router.put(
   "/:id/read",
+
+  authorizeSingleNotification,
+
   markAsRead
 );
 
