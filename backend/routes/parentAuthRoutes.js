@@ -1,4 +1,7 @@
 import express from "express";
+import {
+  parentAuthLimiter,
+} from "../middleware/rateLimiters.js";
 
 import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
 
