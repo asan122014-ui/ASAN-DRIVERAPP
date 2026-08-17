@@ -1279,3 +1279,400 @@ export const assignDriver =
         });
     }
   };
+/* =========================================================
+   REJECT DRIVER REQUEST
+========================================================= */
+
+export const rejectDriverRequest =
+  async (req, res) => {
+    try {
+      const {
+        id,
+      } = req.params;
+
+      const {
+        rejectionReason,
+      } = req.body;
+
+      /* ===================================================
+         REQUEST ID
+      =================================================== */
+
+      if (
+        !isValidObjectId(id)
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Driver Request ID",
+          });
+      }
+
+      /* ===================================================
+         REJECTION REASON
+      =================================================== */
+
+      const reason =
+        String(
+          rejectionReason ||
+            ""
+        ).trim();
+
+      if (!reason) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Rejection reason is required",
+          });
+      }
+
+      /* ===================================================
+         FIND REQUEST
+      =================================================== */
+
+      const request =
+        await DriverRequest.findById(
+          id
+        );
+
+      if (!request) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver request not found",
+          });
+      }
+
+      /* ===================================================
+         STATE VALIDATION
+      =================================================== */
+
+      if (
+        request.status ===
+        "Assigned"
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Assigned request cannot be rejected",
+          });
+      }
+
+      if (
+        request.status ===
+        "Rejected"
+      ) {
+        return res
+          .status(200)
+          .json({
+            success: true,
+
+            message:
+              "Driver request is already rejected",
+
+            data:
+              request,
+          });
+      }
+
+      /* ===================================================
+         PARENT
+      =================================================== */
+
+      const parent =
+        await Parent.findById(
+          request.parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Parent linked to this request no longer exists",
+          });
+      }
+
+      /* ===================================================
+         CHILD
+      =================================================== */
+
+      let child = null;
+
+      if (
+        request.childId
+      ) {
+        child =
+          await Child.findById(
+            request.childId
+          );
+      }
+
+      /* ===================================================
+         UPDATE REQUEST
+      =================================================== */
+
+      request.status =
+        "Rejected";
+
+      request.rejectionReason =
+        reason;
+
+      request.assignedDriverId =
+        "";
+
+      request.assignedAt =
+        null;
+
+      await request.save();
+
+      /* ===================================================
+         PARENT NOTIFICATION
+      =================================================== */
+
+      try {
+        const template =
+          PARENT_NOTIFICATIONS
+            .DRIVER_REQUEST_SUBMITTED;
+
+        /*
+          We do not yet have a dedicated
+          DRIVER_REQUEST_REJECTED template.
+
+          So create a direct notification.
+        */
+
+        const notification =
+          await Notification.create({
+            parent:
+              parent._id,
+
+            child:
+              child?._id ||
+              null,
+
+            recipientType:
+              "parent",
+
+            notificationKey:
+              "DRIVER_REQUEST_REJECTED",
+
+            title:
+              "Driver Request Rejected",
+
+            message:
+              `Your Driver request was rejected. Reason: ${reason}`,
+
+            type:
+              "driver_request_rejected",
+
+            priority:
+              "medium",
+
+            meta: {
+              requestId:
+                String(
+                  request._id
+                ),
+
+              rejectionReason:
+                reason,
+            },
+          });
+
+        const io =
+          req.app.get("io");
+
+        if (io) {
+          io.to(
+            String(
+              parent._id
+            )
+          ).emit(
+            "notification",
+            notification
+          );
+        }
+
+        if (
+          parentMessaging
+        ) {
+          const tokens = [
+            ...new Set(
+              (
+                parent.fcmTokens ||
+                []
+              )
+                .filter(
+                  (token) =>
+                    typeof token ===
+                      "string" &&
+                    token.trim()
+                )
+                .map(
+                  (token) =>
+                    token.trim()
+                )
+            ),
+          ];
+
+          if (
+            tokens.length
+          ) {
+            for (
+              let index = 0;
+              index <
+              tokens.length;
+              index += 500
+            ) {
+              const chunk =
+                tokens.slice(
+                  index,
+                  index + 500
+                );
+
+              await parentMessaging.sendEachForMulticast(
+                {
+                  tokens:
+                    chunk,
+
+                  notification: {
+                    title:
+                      "Driver Request Rejected",
+
+                    body:
+                      `Your Driver request was rejected. Reason: ${reason}`,
+                  },
+
+                  android: {
+                    priority:
+                      "high",
+
+                    notification: {
+                      sound:
+                        "default",
+                    },
+                  },
+
+                  data: {
+                    type:
+                      "driver_request_rejected",
+
+                    notificationKey:
+                      "DRIVER_REQUEST_REJECTED",
+
+                    requestId:
+                      String(
+                        request._id
+                      ),
+                  },
+                }
+              );
+            }
+          }
+        }
+      } catch (
+        notificationError
+      ) {
+        console.error(
+          "DRIVER REQUEST REJECTION NOTIFICATION ERROR:",
+          notificationError.message
+        );
+      }
+
+      /* ===================================================
+         SOCKET EVENT
+      =================================================== */
+
+      const io =
+        req.app.get("io");
+
+      if (io) {
+        io.emit(
+          "driver_request_rejected",
+          {
+            requestId:
+              String(
+                request._id
+              ),
+
+            parentId:
+              String(
+                parent._id
+              ),
+          }
+        );
+      }
+
+      /* ===================================================
+         RESPONSE
+      =================================================== */
+
+      const updatedRequest =
+        await DriverRequest.findById(
+          request._id
+        )
+          .populate(
+            "parentId",
+            "name email phone address"
+          )
+          .populate(
+            "childId",
+            "name school grade"
+          );
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Driver request rejected successfully",
+
+          data:
+            updatedRequest,
+        });
+    } catch (error) {
+      console.error(
+        "REJECT DRIVER REQUEST ERROR:",
+        error
+      );
+
+      if (
+        error.name ===
+        "ValidationError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              error.message,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to reject Driver request",
+        });
+    }
+  };
