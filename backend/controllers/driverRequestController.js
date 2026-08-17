@@ -32,20 +32,107 @@ const INVALID_FCM_TOKEN_CODES =
    HELPERS
 ========================================================= */
 
-const isValidObjectId = (value) =>
+const isValidObjectId = (
+  value
+) =>
   mongoose.Types.ObjectId.isValid(
-    String(value)
+    String(
+      value || ""
+    )
   );
 
 const normalizeDriverId = (
   driverId
 ) =>
-  String(driverId || "")
+  String(
+    driverId || ""
+  )
     .trim()
     .toUpperCase();
 
 /* =========================================================
-   DISTANCE CALCULATOR — HAVERSINE
+   HTTP ERROR
+========================================================= */
+
+const createHttpError = (
+  statusCode,
+  message,
+  data = undefined
+) => {
+  const error =
+    new Error(message);
+
+  error.statusCode =
+    statusCode;
+
+  if (
+    data !==
+    undefined
+  ) {
+    error.data =
+      data;
+  }
+
+  return error;
+};
+
+/* =========================================================
+   ERROR RESPONSE
+========================================================= */
+
+const handleControllerError = (
+  error,
+  res,
+  fallbackMessage
+) => {
+  if (
+    error?.statusCode
+  ) {
+    return res
+      .status(
+        error.statusCode
+      )
+      .json({
+        success: false,
+
+        message:
+          error.message,
+
+        ...(error.data !==
+        undefined
+          ? {
+              data:
+                error.data,
+            }
+          : {}),
+      });
+  }
+
+  if (
+    error?.name ===
+    "ValidationError"
+  ) {
+    return res.status(400).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+
+  console.error(
+    fallbackMessage,
+    error
+  );
+
+  return res.status(500).json({
+    success: false,
+    message:
+      fallbackMessage,
+  });
+};
+
+/* =========================================================
+   DISTANCE CALCULATOR
 ========================================================= */
 
 const getDistance = (
@@ -64,7 +151,9 @@ const getDistance = (
   if (
     values.some(
       (value) =>
-        !Number.isFinite(value)
+        !Number.isFinite(
+          value
+        )
     )
   ) {
     return null;
@@ -75,46 +164,75 @@ const getDistance = (
     startLon,
     endLat,
     endLon,
-  ] = values;
+  ] =
+    values;
 
-  const R = 6371;
+  if (
+    startLat < -90 ||
+    startLat > 90 ||
+    endLat < -90 ||
+    endLat > 90 ||
+    startLon < -180 ||
+    startLon > 180 ||
+    endLon < -180 ||
+    endLon > 180
+  ) {
+    return null;
+  }
+
+  const R =
+    6371;
 
   const dLat =
-    ((endLat - startLat) *
+    ((endLat -
+      startLat) *
       Math.PI) /
     180;
 
   const dLon =
-    ((endLon - startLon) *
+    ((endLon -
+      startLon) *
       Math.PI) /
     180;
 
   const a =
-    Math.sin(dLat / 2) *
-      Math.sin(dLat / 2) +
+    Math.sin(
+      dLat / 2
+    ) *
+      Math.sin(
+        dLat / 2
+      ) +
     Math.cos(
-      (startLat * Math.PI) /
+      (startLat *
+        Math.PI) /
         180
     ) *
       Math.cos(
-        (endLat * Math.PI) /
+        (endLat *
+          Math.PI) /
           180
       ) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+      Math.sin(
+        dLon / 2
+      ) *
+      Math.sin(
+        dLon / 2
+      );
 
   return (
     R *
     (2 *
       Math.atan2(
         Math.sqrt(a),
-        Math.sqrt(1 - a)
+        Math.sqrt(
+          1 - a
+        )
       ))
   );
 };
 
 /* =========================================================
-   TEMPLATE REPLACEMENT
+   TEMPLATE VALUES
 ========================================================= */
 
 const replaceTemplateValues = (
@@ -122,81 +240,86 @@ const replaceTemplateValues = (
   values = {}
 ) => {
   let result =
-    String(text || "");
+    String(
+      text || ""
+    );
 
   for (
     const [
       key,
       value,
-    ] of Object.entries(values)
+    ] of Object.entries(
+      values
+    )
   ) {
-    result = result.replaceAll(
-      `{${key}}`,
-      String(value ?? "")
-    );
+    result =
+      result.replaceAll(
+        `{${key}}`,
+        String(
+          value ?? ""
+        )
+      );
   }
 
   return result;
 };
 
 /* =========================================================
-   PARENT-ONLY REQUEST NOTIFICATION
+   SEND PARENT-ONLY DRIVER REQUEST NOTIFICATION
 ========================================================= */
 
-/*
-  DRIVER_REQUEST_SUBMITTED is special:
-
-  At this stage no Driver has been assigned yet.
-
-  Therefore we cannot use the normal sendNotification()
-  helper because that helper is Driver-linked.
-
-  This helper sends the Parent confirmation directly.
-*/
-
-const sendRequestSubmittedNotification =
+const sendParentRequestNotification =
   async ({
     parent,
     child,
+    notificationKey,
+    type,
+    priority = "medium",
+    values = {},
+    fallbackTitle,
+    fallbackMessage,
+    meta = {},
     io,
   }) => {
     try {
       const template =
-        PARENT_NOTIFICATIONS
-          .DRIVER_REQUEST_SUBMITTED;
+        PARENT_NOTIFICATIONS?.[
+          notificationKey
+        ];
 
-      if (!template) {
-        console.warn(
-          "DRIVER_REQUEST_SUBMITTED Parent notification template missing"
-        );
-
-        return;
-      }
-
-      const values = {
+      const templateValues = {
         childName:
-          child?.name || "",
-
-        driverName: "",
+          child?.name ||
+          "",
 
         schoolName:
-          child?.school || "",
+          child?.school ||
+          "",
+
+        driverName:
+          "",
+
+        ...values,
       };
 
       const title =
-        replaceTemplateValues(
-          template.title,
-          values
-        );
+        template?.title
+          ? replaceTemplateValues(
+              template.title,
+              templateValues
+            )
+          : fallbackTitle;
 
       const message =
-        replaceTemplateValues(
-          template.message,
-          values
-        );
+        template?.message
+          ? replaceTemplateValues(
+              template.message,
+              templateValues
+            )
+          : fallbackMessage;
 
       /* ===================================================
-         SAVE IN DATABASE
+         DATABASE
       =================================================== */
 
       const notification =
@@ -211,18 +334,15 @@ const sendRequestSubmittedNotification =
           recipientType:
             "parent",
 
-          notificationKey:
-            "DRIVER_REQUEST_SUBMITTED",
+          notificationKey,
 
           title,
 
           message,
 
-          type:
-            "driver_request_submitted",
+          type,
 
-          priority:
-            "medium",
+          priority,
 
           meta: {
             parentId:
@@ -236,6 +356,8 @@ const sendRequestSubmittedNotification =
                     child._id
                   )
                 : "",
+
+            ...meta,
           },
         });
 
@@ -245,7 +367,9 @@ const sendRequestSubmittedNotification =
 
       if (io) {
         io.to(
-          String(parent._id)
+          String(
+            parent._id
+          )
         ).emit(
           "notification",
           notification
@@ -259,7 +383,7 @@ const sendRequestSubmittedNotification =
       if (
         !parentMessaging
       ) {
-        return;
+        return notification;
       }
 
       const tokens = [
@@ -281,8 +405,11 @@ const sendRequestSubmittedNotification =
         ),
       ];
 
-      if (!tokens.length) {
-        return;
+      if (
+        tokens.length ===
+        0
+      ) {
+        return notification;
       }
 
       const invalidTokens =
@@ -292,7 +419,8 @@ const sendRequestSubmittedNotification =
         let index = 0;
         index <
         tokens.length;
-        index += 500
+        index +=
+        500
       ) {
         const chunk =
           tokens.slice(
@@ -323,11 +451,9 @@ const sendRequestSubmittedNotification =
               },
 
               data: {
-                type:
-                  "driver_request_submitted",
+                type,
 
-                notificationKey:
-                  "DRIVER_REQUEST_SUBMITTED",
+                notificationKey,
 
                 parentId:
                   String(
@@ -374,108 +500,117 @@ const sendRequestSubmittedNotification =
       }
 
       /* ===================================================
-         REMOVE INVALID TOKENS
+         INVALID TOKEN CLEANUP
       =================================================== */
 
+      const uniqueInvalidTokens = [
+        ...new Set(
+          invalidTokens
+        ),
+      ];
+
       if (
-        invalidTokens.length
+        uniqueInvalidTokens.length >
+        0
       ) {
         await Parent.updateOne(
           {
             _id:
               parent._id,
           },
+
           {
             $pull: {
               fcmTokens: {
                 $in:
-                  invalidTokens,
+                  uniqueInvalidTokens,
               },
             },
           }
         );
       }
+
+      return notification;
     } catch (error) {
       /*
-        Notification failure must NOT fail
-        Driver Request creation.
+        Notification delivery must never
+        roll back the Driver Request action.
       */
 
       console.error(
-        "REQUEST SUBMITTED NOTIFICATION ERROR:",
+        `${notificationKey} NOTIFICATION ERROR:`,
         error.message
       );
+
+      return null;
     }
   };
 
 /* =========================================================
    CREATE DRIVER REQUEST
+   AUTHENTICATED PARENT ONLY
 ========================================================= */
 
 export const createRequest =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
+      const parent =
+        req.parent;
+
+      if (!parent) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Parent authentication required",
+        });
+      }
+
       const {
         parentId,
         childId,
         notes,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* ===================================================
-         PARENT ID
+         OPTIONAL LEGACY PARENT ID
       =================================================== */
 
-      if (!parentId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+      /*
+        Existing frontend may still send parentId.
 
-            message:
-              "Parent ID is required",
-          });
-      }
+        It is not trusted.
+
+        If supplied, it must match the Parent identified
+        by the Firebase token.
+      */
 
       if (
-        !isValidObjectId(
+        parentId &&
+        String(
           parentId
-        )
+        ) !==
+          String(
+            parent._id
+          )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(403).json({
+          success: false,
 
-            message:
-              "Invalid Parent ID",
-          });
+          message:
+            "You cannot create a Driver request for another Parent",
+        });
       }
 
       /* ===================================================
-         PARENT
+         CHILD
       =================================================== */
 
-      const parent =
-        await Parent.findById(
-          parentId
-        );
-
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent not found",
-          });
-      }
-
-      /* ===================================================
-         CHILD — OPTIONAL
-      =================================================== */
-
-      let child = null;
+      let child =
+        null;
 
       if (childId) {
         if (
@@ -483,14 +618,11 @@ export const createRequest =
             childId
           )
         ) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              message:
-                "Invalid Child ID",
-            });
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid Child ID",
+          });
         }
 
         child =
@@ -503,40 +635,50 @@ export const createRequest =
           });
 
         if (!child) {
-          return res
-            .status(404)
-            .json({
-              success: false,
+          return res.status(404).json({
+            success: false,
 
-              message:
-                "Child not found for this Parent",
-            });
+            message:
+              "Child not found for this Parent",
+          });
         }
       }
 
       /* ===================================================
-         EXISTING DRIVER
+         NOTES
       =================================================== */
 
-      /*
-        If the Parent already has a Driver,
-        there is normally no reason to create another
-        Pending assignment request through this flow.
+      const normalizedNotes =
+        typeof notes ===
+        "string"
+          ? notes.trim()
+          : "";
 
-        Driver-change workflow can be added separately.
-      */
+      if (
+        normalizedNotes.length >
+        1000
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Notes must not exceed 1000 characters",
+        });
+      }
+
+      /* ===================================================
+         ALREADY HAS DRIVER
+      =================================================== */
 
       if (
         parent.driverId
       ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
+        return res.status(409).json({
+          success: false,
 
-            message:
-              "A Driver is already linked to this Parent",
-          });
+          message:
+            "A Driver is already linked to this Parent",
+        });
       }
 
       /* ===================================================
@@ -555,21 +697,19 @@ export const createRequest =
       if (
         existingRequest
       ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
+        return res.status(409).json({
+          success: false,
 
-            message:
-              "A pending Driver request already exists",
+          message:
+            "A pending Driver request already exists",
 
-            data:
-              existingRequest,
-          });
+          data:
+            existingRequest,
+        });
       }
 
       /* ===================================================
-         CREATE REQUEST
+         CREATE
       =================================================== */
 
       const request =
@@ -585,33 +725,62 @@ export const createRequest =
             "Pending",
 
           notes:
-            typeof notes ===
-              "string"
-              ? notes.trim()
-              : "",
+            normalizedNotes,
         });
 
+      const io =
+        req.app.get(
+          "io"
+        );
+
       /* ===================================================
-         NOTIFICATION
+         PARENT CONFIRMATION
       =================================================== */
 
-      const io =
-        req.app.get("io");
+      await sendParentRequestNotification({
+        parent,
+        child,
 
-      await sendRequestSubmittedNotification(
-        {
-          parent,
-          child,
-          io,
-        }
-      );
+        notificationKey:
+          "DRIVER_REQUEST_SUBMITTED",
+
+        type:
+          "driver_request_submitted",
+
+        priority:
+          "medium",
+
+        fallbackTitle:
+          "Driver Request Submitted",
+
+        fallbackMessage:
+          "Your Driver request has been submitted successfully.",
+
+        meta: {
+          requestId:
+            String(
+              request._id
+            ),
+        },
+
+        io,
+      });
 
       /* ===================================================
          ADMIN SOCKET EVENT
       =================================================== */
 
+      /*
+        Do not broadcast this event to every Socket.IO user.
+
+        Admin socket authentication/room joining will be
+        finalized during the Socket.IO security pass.
+      */
+
       if (io) {
-        io.emit(
+        io.to(
+          "admin"
+        ).emit(
           "driver_request_created",
           {
             requestId:
@@ -627,54 +796,34 @@ export const createRequest =
         );
       }
 
-      return res
-        .status(201)
-        .json({
-          success: true,
+      return res.status(201).json({
+        success: true,
 
-          message:
-            "Driver request submitted successfully",
+        message:
+          "Driver request submitted successfully",
 
-          data:
-            request,
-        });
+        data:
+          request,
+      });
     } catch (error) {
-      console.error(
-        "CREATE DRIVER REQUEST ERROR:",
-        error
+      return handleControllerError(
+        error,
+        res,
+        "Failed to submit Driver request"
       );
-
-      if (
-        error.name ===
-        "ValidationError"
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to submit Driver request",
-        });
     }
   };
 
 /* =========================================================
-   GET ALL REQUESTS WITH NEAREST DRIVERS
+   GET ALL DRIVER REQUESTS
+   ADMIN ONLY
 ========================================================= */
 
 export const getAllRequests =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const requests =
         await DriverRequest.find()
@@ -687,12 +836,9 @@ export const getAllRequests =
             "name school grade"
           )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           });
-
-      /* ===================================================
-         APPROVED DRIVERS
-      =================================================== */
 
       const approvedDrivers =
         await Driver.find({
@@ -709,12 +855,9 @@ export const getAllRequests =
         const request of
         requests
       ) {
-        /*
-          Do NOT delete orphan records during a GET.
-
-          GET endpoints should not silently mutate
-          database state.
-        */
+        /* =================================================
+           ORPHAN REQUEST
+        ================================================= */
 
         if (
           !request.parentId
@@ -850,9 +993,14 @@ export const getAllRequests =
                     };
                   }
                 )
-                .filter(Boolean)
+                .filter(
+                  Boolean
+                )
                 .sort(
-                  (a, b) =>
+                  (
+                    a,
+                    b
+                  ) =>
                     a.distance -
                     b.distance
                 )
@@ -873,63 +1021,73 @@ export const getAllRequests =
         });
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          count:
-            data.length,
+        count:
+          data.length,
 
-          data,
-        });
+        data,
+      });
     } catch (error) {
-      console.error(
-        "GET DRIVER REQUESTS ERROR:",
-        error
+      return handleControllerError(
+        error,
+        res,
+        "Failed to fetch Driver requests"
       );
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch Driver requests",
-        });
     }
   };
 
 /* =========================================================
    ASSIGN DRIVER
+   ADMIN ONLY
 ========================================================= */
 
 export const assignDriver =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
+    const session =
+      await mongoose.startSession();
+
+    let assignedRequest =
+      null;
+
+    let assignedDriver =
+      null;
+
+    let assignedParent =
+      null;
+
+    let assignedChild =
+      null;
+
     try {
       const {
-        driverId,
-      } = req.body;
+        id,
+      } =
+        req.params;
 
       const {
-        id,
-      } = req.params;
+        driverId,
+      } =
+        req.body || {};
 
       /* ===================================================
          REQUEST ID
       =================================================== */
 
       if (
-        !isValidObjectId(id)
+        !isValidObjectId(
+          id
+        )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Driver Request ID",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Driver Request ID",
+        });
       }
 
       /* ===================================================
@@ -944,230 +1102,241 @@ export const assignDriver =
       if (
         !normalizedDriverId
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is required",
-          });
-      }
-
-      /* ===================================================
-         REQUEST
-      =================================================== */
-
-      const request =
-        await DriverRequest.findById(
-          id
-        );
-
-      if (!request) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver request not found",
-          });
-      }
-
-      /* ===================================================
-         REQUEST STATE
-      =================================================== */
-
-      if (
-        request.status ===
-        "Assigned"
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Driver already assigned",
-
-            data:
-              request,
-          });
-      }
-
-      if (
-        request.status ===
-        "Rejected"
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Rejected request cannot be assigned",
-          });
-      }
-
-      /* ===================================================
-         DRIVER
-      =================================================== */
-
-      const driver =
-        await Driver.findOne({
-          driverId:
-            normalizedDriverId,
+        return res.status(400).json({
+          success: false,
+          message:
+            "Driver ID is required",
         });
-
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
       }
 
       /* ===================================================
-         DRIVER APPROVAL
+         TRANSACTION
       =================================================== */
 
-      if (
-        String(
-          driver.status ||
-            ""
-        ).toLowerCase() !==
-        "approved"
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
+      await session.withTransaction(
+        async () => {
+          /* ===============================================
+             REQUEST
+          =============================================== */
 
-            message:
-              "Only an approved Driver can be assigned",
+          const request =
+            await DriverRequest.findById(
+              id
+            ).session(
+              session
+            );
+
+          if (!request) {
+            throw createHttpError(
+              404,
+              "Driver request not found"
+            );
+          }
+
+          if (
+            request.status ===
+            "Assigned"
+          ) {
+            throw createHttpError(
+              409,
+              "Driver already assigned",
+              request
+            );
+          }
+
+          if (
+            request.status ===
+            "Rejected"
+          ) {
+            throw createHttpError(
+              409,
+              "Rejected request cannot be assigned"
+            );
+          }
+
+          if (
+            request.status !==
+            "Pending"
+          ) {
+            throw createHttpError(
+              409,
+              "Driver request is not pending"
+            );
+          }
+
+          /* ===============================================
+             DRIVER
+          =============================================== */
+
+          const driver =
+            await Driver.findOne({
+              driverId:
+                normalizedDriverId,
+            }).session(
+              session
+            );
+
+          if (!driver) {
+            throw createHttpError(
+              404,
+              "Driver not found"
+            );
+          }
+
+          if (
+            driver.status !==
+            "approved"
+          ) {
+            throw createHttpError(
+              409,
+              "Only an approved Driver can be assigned"
+            );
+          }
+
+          /* ===============================================
+             PARENT
+          =============================================== */
+
+          const parent =
+            await Parent.findById(
+              request.parentId
+            ).session(
+              session
+            );
+
+          if (!parent) {
+            throw createHttpError(
+              404,
+              "Parent linked to this request no longer exists"
+            );
+          }
+
+          /*
+            Prevent a stale request from overwriting
+            a Driver that may have been linked elsewhere
+            after this request was created.
+          */
+
+          if (
+            parent.driverId &&
+            normalizeDriverId(
+              parent.driverId
+            ) !==
+              driver.driverId
+          ) {
+            throw createHttpError(
+              409,
+              "Parent already has another Driver linked"
+            );
+          }
+
+          /* ===============================================
+             CHILD
+          =============================================== */
+
+          let child =
+            null;
+
+          if (
+            request.childId
+          ) {
+            child =
+              await Child.findOne({
+                _id:
+                  request.childId,
+
+                parentId:
+                  parent._id,
+              }).session(
+                session
+              );
+
+            if (!child) {
+              throw createHttpError(
+                409,
+                "Child linked to this request is invalid"
+              );
+            }
+          }
+
+          /* ===============================================
+             REQUEST UPDATE
+          =============================================== */
+
+          request.status =
+            "Assigned";
+
+          request.assignedDriverId =
+            driver.driverId;
+
+          request.assignedAt =
+            new Date();
+
+          request.rejectionReason =
+            "";
+
+          await request.save({
+            session,
           });
-      }
 
-      /* ===================================================
-         PARENT
-      =================================================== */
+          /* ===============================================
+             PARENT UPDATE
+          =============================================== */
 
-      const parent =
-        await Parent.findById(
-          request.parentId
-        );
+          parent.driverId =
+            driver.driverId;
 
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent linked to this request no longer exists",
-          });
-      }
-
-      /* ===================================================
-         CHILD VALIDATION
-      =================================================== */
-
-      let child = null;
-
-      if (
-        request.childId
-      ) {
-        child =
-          await Child.findOne({
-            _id:
-              request.childId,
-
-            parentId:
-              parent._id,
+          await parent.save({
+            session,
           });
 
-        if (!child) {
-          return res
-            .status(409)
-            .json({
-              success: false,
+          /* ===============================================
+             CHILDREN UPDATE
+          =============================================== */
 
-              message:
-                "Child linked to this request is invalid",
-            });
-        }
-      }
+          await Child.updateMany(
+            {
+              parentId:
+                parent._id,
+            },
 
-      /* ===================================================
-         UPDATE REQUEST
-      =================================================== */
+            {
+              $set: {
+                driverId:
+                  driver.driverId,
+              },
+            },
 
-      request.status =
-        "Assigned";
+            {
+              session,
+            }
+          );
 
-      request.assignedDriverId =
-        driver.driverId;
+          assignedRequest =
+            request;
 
-      request.assignedAt =
-        new Date();
+          assignedDriver =
+            driver;
 
-      request.rejectionReason =
-        "";
+          assignedParent =
+            parent;
 
-      await request.save();
-
-      /* ===================================================
-         UPDATE PARENT
-      =================================================== */
-
-      parent.driverId =
-        driver.driverId;
-
-      await parent.save();
-
-      /* ===================================================
-         UPDATE ALL CHILDREN
-      =================================================== */
-
-      /*
-        Driver assignment is currently Parent-level.
-
-        Therefore all children under this Parent
-        receive the same Driver.
-      */
-
-      await Child.updateMany(
-        {
-          parentId:
-            parent._id,
-        },
-        {
-          $set: {
-            driverId:
-              driver.driverId,
-          },
+          assignedChild =
+            child;
         }
       );
 
       /* ===================================================
-         NOTIFICATION
+         NOTIFICATION AFTER COMMIT
       =================================================== */
-
-      /*
-        A Driver exists now, therefore the shared
-        sendNotification() helper can be safely used.
-      */
 
       try {
         await sendNotification({
           driverId:
-            driver.driverId,
+            assignedDriver.driverId,
 
           childId:
-            child?._id ||
+            assignedChild?._id ||
             null,
 
           notificationKey:
@@ -1178,56 +1347,71 @@ export const assignDriver =
               "io"
             ),
         });
-      } catch (
-        notificationError
-      ) {
-        /*
-          Assignment is already committed.
-
-          Notification failure must not turn a successful
-          assignment into a failed API response.
-        */
-
+      } catch (error) {
         console.error(
           "DRIVER ASSIGNMENT NOTIFICATION ERROR:",
-          notificationError.message
+          error.message
         );
       }
 
       /* ===================================================
-         SOCKET EVENT
+         SOCKET EVENTS
       =================================================== */
 
       const io =
-        req.app.get("io");
+        req.app.get(
+          "io"
+        );
 
       if (io) {
-        io.emit(
+        const payload = {
+          requestId:
+            String(
+              assignedRequest._id
+            ),
+
+          parentId:
+            String(
+              assignedParent._id
+            ),
+
+          driverId:
+            assignedDriver.driverId,
+        };
+
+        io.to(
+          String(
+            assignedParent._id
+          )
+        ).emit(
           "driver_request_assigned",
-          {
-            requestId:
-              String(
-                request._id
-              ),
+          payload
+        );
 
-            parentId:
-              String(
-                parent._id
-              ),
+        io.to(
+          String(
+            assignedDriver.driverId
+          )
+        ).emit(
+          "driver_request_assigned",
+          payload
+        );
 
-            driverId:
-              driver.driverId,
-          }
+        io.to(
+          "admin"
+        ).emit(
+          "driver_request_assigned",
+          payload
         );
       }
 
       /* ===================================================
-         POPULATED RESPONSE
+         RESPONSE
       =================================================== */
 
       const updatedRequest =
         await DriverRequest.findById(
-          request._id
+          assignedRequest._id
         )
           .populate(
             "parentId",
@@ -1238,81 +1422,78 @@ export const assignDriver =
             "name school grade driverId"
           );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Driver assigned successfully",
+        message:
+          "Driver assigned successfully",
 
-          data:
-            updatedRequest,
-        });
+        data:
+          updatedRequest,
+      });
     } catch (error) {
-      console.error(
-        "ASSIGN DRIVER ERROR:",
-        error
+      return handleControllerError(
+        error,
+        res,
+        "Failed to assign Driver"
       );
-
-      if (
-        error.name ===
-        "ValidationError"
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to assign Driver",
-        });
+    } finally {
+      await session.endSession();
     }
   };
+
 /* =========================================================
    REJECT DRIVER REQUEST
+   ADMIN ONLY
 ========================================================= */
 
 export const rejectDriverRequest =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
+    const session =
+      await mongoose.startSession();
+
+    let rejectedRequest =
+      null;
+
+    let rejectedParent =
+      null;
+
+    let rejectedChild =
+      null;
+
     try {
       const {
         id,
-      } = req.params;
+      } =
+        req.params;
 
       const {
         rejectionReason,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* ===================================================
          REQUEST ID
       =================================================== */
 
       if (
-        !isValidObjectId(id)
+        !isValidObjectId(
+          id
+        )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Invalid Driver Request ID",
-          });
+          message:
+            "Invalid Driver Request ID",
+        });
       }
 
       /* ===================================================
-         REJECTION REASON
+         REASON
       =================================================== */
 
       const reason =
@@ -1322,299 +1503,220 @@ export const rejectDriverRequest =
         ).trim();
 
       if (!reason) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Rejection reason is required",
-          });
-      }
-
-      /* ===================================================
-         FIND REQUEST
-      =================================================== */
-
-      const request =
-        await DriverRequest.findById(
-          id
-        );
-
-      if (!request) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver request not found",
-          });
-      }
-
-      /* ===================================================
-         STATE VALIDATION
-      =================================================== */
-
-      if (
-        request.status ===
-        "Assigned"
-      ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Assigned request cannot be rejected",
-          });
+          message:
+            "Rejection reason is required",
+        });
       }
 
       if (
-        request.status ===
-        "Rejected"
+        reason.length >
+        500
       ) {
-        return res
-          .status(200)
-          .json({
-            success: true,
+        return res.status(400).json({
+          success: false,
 
-            message:
+          message:
+            "Rejection reason must not exceed 500 characters",
+        });
+      }
+
+      /* ===================================================
+         TRANSACTION
+      =================================================== */
+
+      await session.withTransaction(
+        async () => {
+          const request =
+            await DriverRequest.findById(
+              id
+            ).session(
+              session
+            );
+
+          if (!request) {
+            throw createHttpError(
+              404,
+              "Driver request not found"
+            );
+          }
+
+          if (
+            request.status ===
+            "Assigned"
+          ) {
+            throw createHttpError(
+              409,
+              "Assigned request cannot be rejected"
+            );
+          }
+
+          if (
+            request.status ===
+            "Rejected"
+          ) {
+            throw createHttpError(
+              409,
               "Driver request is already rejected",
+              request
+            );
+          }
 
-            data:
-              request,
-          });
-      }
+          if (
+            request.status !==
+            "Pending"
+          ) {
+            throw createHttpError(
+              409,
+              "Driver request is not pending"
+            );
+          }
 
-      /* ===================================================
-         PARENT
-      =================================================== */
+          const parent =
+            await Parent.findById(
+              request.parentId
+            ).session(
+              session
+            );
 
-      const parent =
-        await Parent.findById(
-          request.parentId
-        );
+          if (!parent) {
+            throw createHttpError(
+              404,
+              "Parent linked to this request no longer exists"
+            );
+          }
 
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
+          let child =
+            null;
 
-            message:
-              "Parent linked to this request no longer exists",
-          });
-      }
-
-      /* ===================================================
-         CHILD
-      =================================================== */
-
-      let child = null;
-
-      if (
-        request.childId
-      ) {
-        child =
-          await Child.findById(
+          if (
             request.childId
-          );
-      }
+          ) {
+            child =
+              await Child.findOne({
+                _id:
+                  request.childId,
 
-      /* ===================================================
-         UPDATE REQUEST
-      =================================================== */
+                parentId:
+                  parent._id,
+              }).session(
+                session
+              );
+          }
 
-      request.status =
-        "Rejected";
+          request.status =
+            "Rejected";
 
-      request.rejectionReason =
-        reason;
+          request.rejectionReason =
+            reason;
 
-      request.assignedDriverId =
-        "";
+          request.assignedDriverId =
+            "";
 
-      request.assignedAt =
-        null;
+          request.assignedAt =
+            null;
 
-      await request.save();
+          await request.save({
+            session,
+          });
+
+          rejectedRequest =
+            request;
+
+          rejectedParent =
+            parent;
+
+          rejectedChild =
+            child;
+        }
+      );
 
       /* ===================================================
          PARENT NOTIFICATION
       =================================================== */
 
-      try {
-        const template =
-          PARENT_NOTIFICATIONS
-            .DRIVER_REQUEST_SUBMITTED;
-
-        /*
-          We do not yet have a dedicated
-          DRIVER_REQUEST_REJECTED template.
-
-          So create a direct notification.
-        */
-
-        const notification =
-          await Notification.create({
-            parent:
-              parent._id,
-
-            child:
-              child?._id ||
-              null,
-
-            recipientType:
-              "parent",
-
-            notificationKey:
-              "DRIVER_REQUEST_REJECTED",
-
-            title:
-              "Driver Request Rejected",
-
-            message:
-              `Your Driver request was rejected. Reason: ${reason}`,
-
-            type:
-              "driver_request_rejected",
-
-            priority:
-              "medium",
-
-            meta: {
-              requestId:
-                String(
-                  request._id
-                ),
-
-              rejectionReason:
-                reason,
-            },
-          });
-
-        const io =
-          req.app.get("io");
-
-        if (io) {
-          io.to(
-            String(
-              parent._id
-            )
-          ).emit(
-            "notification",
-            notification
-          );
-        }
-
-        if (
-          parentMessaging
-        ) {
-          const tokens = [
-            ...new Set(
-              (
-                parent.fcmTokens ||
-                []
-              )
-                .filter(
-                  (token) =>
-                    typeof token ===
-                      "string" &&
-                    token.trim()
-                )
-                .map(
-                  (token) =>
-                    token.trim()
-                )
-            ),
-          ];
-
-          if (
-            tokens.length
-          ) {
-            for (
-              let index = 0;
-              index <
-              tokens.length;
-              index += 500
-            ) {
-              const chunk =
-                tokens.slice(
-                  index,
-                  index + 500
-                );
-
-              await parentMessaging.sendEachForMulticast(
-                {
-                  tokens:
-                    chunk,
-
-                  notification: {
-                    title:
-                      "Driver Request Rejected",
-
-                    body:
-                      `Your Driver request was rejected. Reason: ${reason}`,
-                  },
-
-                  android: {
-                    priority:
-                      "high",
-
-                    notification: {
-                      sound:
-                        "default",
-                    },
-                  },
-
-                  data: {
-                    type:
-                      "driver_request_rejected",
-
-                    notificationKey:
-                      "DRIVER_REQUEST_REJECTED",
-
-                    requestId:
-                      String(
-                        request._id
-                      ),
-                  },
-                }
-              );
-            }
-          }
-        }
-      } catch (
-        notificationError
-      ) {
-        console.error(
-          "DRIVER REQUEST REJECTION NOTIFICATION ERROR:",
-          notificationError.message
+      const io =
+        req.app.get(
+          "io"
         );
-      }
+
+      await sendParentRequestNotification({
+        parent:
+          rejectedParent,
+
+        child:
+          rejectedChild,
+
+        notificationKey:
+          "DRIVER_REQUEST_REJECTED",
+
+        type:
+          "driver_request_rejected",
+
+        priority:
+          "medium",
+
+        values: {
+          reason,
+
+          rejectionReason:
+            reason,
+        },
+
+        fallbackTitle:
+          "Driver Request Rejected",
+
+        fallbackMessage:
+          `Your Driver request was rejected. Reason: ${reason}`,
+
+        meta: {
+          requestId:
+            String(
+              rejectedRequest._id
+            ),
+
+          rejectionReason:
+            reason,
+        },
+
+        io,
+      });
 
       /* ===================================================
-         SOCKET EVENT
+         SOCKET EVENTS
       =================================================== */
 
-      const io =
-        req.app.get("io");
-
       if (io) {
-        io.emit(
-          "driver_request_rejected",
-          {
-            requestId:
-              String(
-                request._id
-              ),
+        const payload = {
+          requestId:
+            String(
+              rejectedRequest._id
+            ),
 
-            parentId:
-              String(
-                parent._id
-              ),
-          }
+          parentId:
+            String(
+              rejectedParent._id
+            ),
+
+          reason,
+        };
+
+        io.to(
+          String(
+            rejectedParent._id
+          )
+        ).emit(
+          "driver_request_rejected",
+          payload
+        );
+
+        io.to(
+          "admin"
+        ).emit(
+          "driver_request_rejected",
+          payload
         );
       }
 
@@ -1624,7 +1726,7 @@ export const rejectDriverRequest =
 
       const updatedRequest =
         await DriverRequest.findById(
-          request._id
+          rejectedRequest._id
         )
           .populate(
             "parentId",
@@ -1635,44 +1737,22 @@ export const rejectDriverRequest =
             "name school grade"
           );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Driver request rejected successfully",
+        message:
+          "Driver request rejected successfully",
 
-          data:
-            updatedRequest,
-        });
+        data:
+          updatedRequest,
+      });
     } catch (error) {
-      console.error(
-        "REJECT DRIVER REQUEST ERROR:",
-        error
+      return handleControllerError(
+        error,
+        res,
+        "Failed to reject Driver request"
       );
-
-      if (
-        error.name ===
-        "ValidationError"
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to reject Driver request",
-        });
+    } finally {
+      await session.endSession();
     }
   };
