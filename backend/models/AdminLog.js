@@ -1,52 +1,203 @@
 import mongoose from "mongoose";
 
-const adminLogSchema = new mongoose.Schema(
-  {
-    /* ================= ADMIN (OPTIONAL NOW) ================= */
-    adminId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
-      required: false, // ✅ FIXED (was causing 500 error)
-      index: true,
-      default: null
+/* =========================================================
+   ADMIN LOG SCHEMA
+========================================================= */
+
+const adminLogSchema =
+  new mongoose.Schema(
+    {
+      /* =====================================================
+         ADMIN
+      ===================================================== */
+
+      /*
+        The authenticated Admin who performed
+        the action.
+
+        This will be supplied using:
+
+        req.admin.id
+      */
+
+      adminId: {
+        type:
+          mongoose.Schema.Types
+            .ObjectId,
+
+        ref: "Admin",
+
+        required: true,
+      },
+
+      /* =====================================================
+         ACTION
+      ===================================================== */
+
+      /*
+        Examples:
+
+        DRIVER_APPROVED
+        DRIVER_REJECTED
+
+        Kept as String instead of an enum so future
+        Admin operations can add new audit actions
+        without requiring a schema migration.
+      */
+
+      action: {
+        type: String,
+        required: true,
+        trim: true,
+        uppercase: true,
+      },
+
+      /* =====================================================
+         DRIVER — OPTIONAL
+      ===================================================== */
+
+      driverId: {
+        type:
+          mongoose.Schema.Types
+            .ObjectId,
+
+        ref: "Driver",
+
+        default: null,
+      },
+
+      /* =====================================================
+         MESSAGE
+      ===================================================== */
+
+      message: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+
+      /* =====================================================
+         EXTRA AUDIT DATA
+      ===================================================== */
+
+      metadata: {
+        type:
+          mongoose.Schema.Types
+            .Mixed,
+
+        default: () => ({}),
+      },
     },
 
-    /* ================= ACTION ================= */
-    action: {
-      type: String,
-      required: true,
-      trim: true
-    },
+    {
+      timestamps: true,
 
-    /* ================= DRIVER (OPTIONAL) ================= */
-    driverId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Driver",
-      default: null
-    },
+      toJSON: {
+        virtuals: true,
+      },
 
-    /* ================= MESSAGE ================= */
-    message: {
-      type: String,
-      trim: true,
-      default: ""
+      toObject: {
+        virtuals: true,
+      },
     }
-  },
+  );
+
+/* =========================================================
+   INDEXES
+========================================================= */
+
+/*
+  Admin activity history.
+*/
+
+adminLogSchema.index({
+  adminId: 1,
+  createdAt: -1,
+});
+
+/*
+  Actions performed on a particular Driver.
+*/
+
+adminLogSchema.index({
+  driverId: 1,
+  createdAt: -1,
+});
+
+/*
+  Filter logs by action.
+*/
+
+adminLogSchema.index({
+  action: 1,
+  createdAt: -1,
+});
+
+/* =========================================================
+   STATIC — ADMIN ACTIVITY
+========================================================= */
+
+adminLogSchema.statics.findForAdmin =
+  function (adminId) {
+    return this.find({
+      adminId,
+    })
+      .populate(
+        "driverId",
+        "name driverId"
+      )
+      .sort({
+        createdAt: -1,
+      });
+  };
+
+/* =========================================================
+   STATIC — DRIVER ACTIVITY
+========================================================= */
+
+adminLogSchema.statics.findForDriver =
+  function (driverId) {
+    return this.find({
+      driverId,
+    })
+      .populate(
+        "adminId",
+        "username role"
+      )
+      .sort({
+        createdAt: -1,
+      });
+  };
+
+/* =========================================================
+   JSON CLEANUP
+========================================================= */
+
+adminLogSchema.set(
+  "toJSON",
   {
-    timestamps: true
+    virtuals: true,
+
+    transform(
+      doc,
+      ret
+    ) {
+      delete ret.__v;
+
+      return ret;
+    },
   }
 );
 
-/* ================= INDEXES ================= */
+/* =========================================================
+   MODEL
+========================================================= */
 
-// Fast queries for admin activity logs
-adminLogSchema.index({ adminId: 1, createdAt: -1 });
-
-// Faster filtering by driver
-adminLogSchema.index({ driverId: 1 });
-
-/* ================= MODEL ================= */
-
-const AdminLog = mongoose.model("AdminLog", adminLogSchema);
+const AdminLog =
+  mongoose.models.AdminLog ||
+  mongoose.model(
+    "AdminLog",
+    adminLogSchema
+  );
 
 export default AdminLog;
