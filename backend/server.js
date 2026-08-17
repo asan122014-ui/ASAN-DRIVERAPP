@@ -4,8 +4,8 @@
 
 /*
   IMPORTANT:
-  Load environment variables before modules that depend
-  on process.env, especially Firebase Admin.
+  Must be loaded before modules that depend on process.env,
+  especially Firebase Admin and Cloudinary.
 */
 
 import "dotenv/config";
@@ -42,12 +42,18 @@ import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
    ROUTES
 ========================================================= */
 
+/*
+  Driver authentication:
+
+  Email + Password
+*/
+
 import authRoutes from "./routes/authRoutes.js";
-import otpRoutes from "./routes/otp.js";
 
 /*
-  Firebase Phone Authentication routes
-  for the Parent application.
+  Parent authentication:
+
+  Firebase Phone OTP
 */
 
 import parentAuthRoutes from "./routes/parentAuthRoutes.js";
@@ -76,14 +82,16 @@ const app = express();
 const server = http.createServer(app);
 
 /* =========================================================
-   EXPRESS MIDDLEWARE
+   EXPRESS CORS
 ========================================================= */
 
 /*
-  CORS is currently open during development.
+  DEVELOPMENT:
 
-  Before production deployment, restrict this
-  to the required web/admin origins.
+  CORS remains open temporarily.
+
+  During the final security phase we will restrict this
+  to the Parent app, Driver app and Admin dashboard origins.
 */
 
 app.use(
@@ -137,28 +145,22 @@ app.use(
 );
 
 /* =========================================================
-   AUTH ROUTES
+   DRIVER AUTH ROUTES
 ========================================================= */
 
 /*
-  Existing shared / Driver authentication routes.
+  Current Driver authentication:
 
-  Keep these until Driver authentication migration
-  is handled separately.
+  POST /api/auth/signup
+  POST /api/auth/login
+
+  Driver authentication remains Email + Password
+  until the separate Driver auth migration.
 */
 
 app.use(
   "/api/auth",
   authRoutes
-);
-
-/* =========================================================
-   DRIVER OTP ROUTES
-========================================================= */
-
-app.use(
-  "/api/otp",
-  otpRoutes
 );
 
 /* =========================================================
@@ -168,6 +170,16 @@ app.use(
 /*
   POST /api/parent-auth/login
   POST /api/parent-auth/register
+
+  Firebase handles:
+
+  Send OTP
+       ↓
+  Verify OTP
+       ↓
+  Firebase ID Token
+       ↓
+  Backend verification
 */
 
 app.use(
@@ -212,8 +224,14 @@ app.use(
 );
 
 /* =========================================================
-   STUDENT ROUTES
+   STUDENT COMPATIBILITY ROUTES
 ========================================================= */
+
+/*
+  routes/student.js uses the Child model.
+
+  models/Students.js is legacy and should not be used.
+*/
 
 app.use(
   "/api/students",
@@ -223,6 +241,16 @@ app.use(
 /* =========================================================
    ADMIN ROUTES
 ========================================================= */
+
+/*
+  Admin authentication:
+
+  Email + Password
+       ↓
+  JWT
+       ↓
+  verifyAdmin
+*/
 
 app.use(
   "/api/admin",
@@ -284,7 +312,7 @@ const io = new Server(
 );
 
 /*
-  Controllers/services can access Socket.IO using:
+  Controllers and services can access Socket.IO using:
 
   req.app.get("io")
 */
@@ -308,7 +336,7 @@ const parentSockets =
   new Map();
 
 /*
-  Driver custom ID
+  Custom Driver ID
        ↓
   Socket ID
 */
@@ -319,7 +347,7 @@ const driverSockets =
 /*
   Driver ID
        ↓
-  Set of Parent IDs
+  Set of connected Parent IDs
 */
 
 const driverParentsMap =
@@ -345,11 +373,13 @@ io.on(
       "join_driver_room",
       (data) => {
         /*
-          Supports:
+          Supported:
 
-          join_driver_room("ASAN-123456")
+          join_driver_room(
+            "ASAN-123456"
+          )
 
-          OR
+          OR:
 
           join_driver_room({
             driverId: "ASAN-123456",
@@ -358,12 +388,14 @@ io.on(
         */
 
         const rawDriverId =
-          typeof data === "string"
+          typeof data ===
+          "string"
             ? data
             : data?.driverId;
 
         const parentId =
-          typeof data === "object"
+          typeof data ===
+          "object"
             ? data?.parentId
             : null;
 
@@ -372,7 +404,9 @@ io.on(
         }
 
         const driverId =
-          String(rawDriverId)
+          String(
+            rawDriverId
+          )
             .trim()
             .toUpperCase();
 
@@ -380,14 +414,17 @@ io.on(
           return;
         }
 
-        const room =
-          driverId;
+        /* ===============================================
+           JOIN ROOM
+        =============================================== */
 
-        socket.join(room);
+        socket.join(
+          driverId
+        );
 
         console.log(
           "🚗 Joined driver room:",
-          room,
+          driverId,
           parentId
             ? `as parent: ${parentId}`
             : ""
@@ -407,43 +444,47 @@ io.on(
             "🚗 Driver socket stored:",
             driverId
           );
+
+          return;
         }
 
         /* ===============================================
            PARENT CONNECTION
         =============================================== */
 
-        if (parentId) {
-          const normalizedParentId =
-            String(parentId);
-
-          parentSockets.set(
-            normalizedParentId,
-            socket.id
+        const normalizedParentId =
+          String(
+            parentId
           );
 
-          if (
-            !driverParentsMap.has(
-              driverId
-            )
-          ) {
-            driverParentsMap.set(
-              driverId,
-              new Set()
-            );
-          }
+        parentSockets.set(
+          normalizedParentId,
+          socket.id
+        );
 
-          driverParentsMap
-            .get(driverId)
-            .add(
-              normalizedParentId
-            );
-
-          console.log(
-            "👨‍👩‍👧 Parent stored, waiting for camera request:",
-            normalizedParentId
+        if (
+          !driverParentsMap.has(
+            driverId
+          )
+        ) {
+          driverParentsMap.set(
+            driverId,
+            new Set()
           );
         }
+
+        driverParentsMap
+          .get(driverId)
+          .add(
+            normalizedParentId
+          );
+
+        console.log(
+          "👨‍👩‍👧 Parent stored:",
+          normalizedParentId,
+          "Driver:",
+          driverId
+        );
       }
     );
 
@@ -452,7 +493,7 @@ io.on(
     ===================================================== */
 
     /*
-      Both aliases are supported:
+      Both existing aliases remain supported:
 
       join_parent_room
       join_parent
@@ -475,19 +516,23 @@ io.on(
         return;
       }
 
-      const id =
-        String(parentId);
+      const normalizedParentId =
+        String(
+          parentId
+        );
 
-      socket.join(id);
+      socket.join(
+        normalizedParentId
+      );
 
       parentSockets.set(
-        id,
+        normalizedParentId,
         socket.id
       );
 
       console.log(
         "👨‍👩‍👧 Joined parent room:",
-        id
+        normalizedParentId
       );
     };
 
@@ -508,7 +553,9 @@ io.on(
     socket.on(
       "start_camera",
       ({
-        driverId: rawDriverId,
+        driverId:
+          rawDriverId,
+
         parentId,
       }) => {
         if (
@@ -519,20 +566,28 @@ io.on(
         }
 
         const driverId =
-          String(rawDriverId)
+          String(
+            rawDriverId
+          )
             .trim()
             .toUpperCase();
 
         const normalizedParentId =
-          String(parentId);
+          String(
+            parentId
+          );
 
-        const room =
-          driverId;
+        if (
+          !driverId ||
+          !normalizedParentId
+        ) {
+          return;
+        }
 
         console.log(
           "📷 Parent requested camera:",
           normalizedParentId,
-          "for driver:",
+          "for Driver:",
           driverId
         );
 
@@ -546,7 +601,7 @@ io.on(
         );
 
         /* ===============================================
-           STORE DRIVER → PARENT RELATION
+           STORE DRIVER → PARENT
         =============================================== */
 
         if (
@@ -570,7 +625,9 @@ io.on(
            NOTIFY DRIVER
         =============================================== */
 
-        io.to(room).emit(
+        io.to(
+          driverId
+        ).emit(
           "parent_joined",
           {
             parentId:
@@ -579,7 +636,7 @@ io.on(
         );
 
         console.log(
-          "👨‍👩‍👧 Emitted parent_joined to driver for parent:",
+          "👨‍👩‍👧 parent_joined emitted:",
           normalizedParentId
         );
       }
@@ -593,7 +650,10 @@ io.on(
       "offer",
       ({
         offer,
-        driverId: rawDriverId,
+
+        driverId:
+          rawDriverId,
+
         parentId,
       }) => {
         const driverId =
@@ -607,34 +667,36 @@ io.on(
 
         const normalizedParentId =
           parentId
-            ? String(parentId)
+            ? String(
+                parentId
+              )
             : "";
 
-        console.log(
-          "📤 Offer from driver:",
-          driverId,
-          "for parent:",
-          normalizedParentId
-        );
-
         if (
+          !offer ||
+          !driverId ||
           !normalizedParentId
         ) {
-          console.log(
-            "⚠️ No parentId provided in offer, ignoring"
-          );
-
           return;
         }
+
+        console.log(
+          "📤 Offer from Driver:",
+          driverId,
+          "for Parent:",
+          normalizedParentId
+        );
 
         const parentSocketId =
           parentSockets.get(
             normalizedParentId
           );
 
-        if (!parentSocketId) {
+        if (
+          !parentSocketId
+        ) {
           console.log(
-            "⚠️ Parent socket not found for parent:",
+            "⚠️ Parent socket not found:",
             normalizedParentId
           );
 
@@ -656,7 +718,7 @@ io.on(
         );
 
         console.log(
-          "📤 Offer sent to parent socket:",
+          "📤 Offer sent to Parent:",
           parentSocketId
         );
       }
@@ -670,7 +732,10 @@ io.on(
       "answer",
       ({
         answer,
-        driverId: rawDriverId,
+
+        driverId:
+          rawDriverId,
+
         parentId,
       }) => {
         const driverId =
@@ -684,28 +749,35 @@ io.on(
 
         const normalizedParentId =
           parentId
-            ? String(parentId)
+            ? String(
+                parentId
+              )
             : "";
 
-        console.log(
-          "📩 Answer from parent:",
-          normalizedParentId,
-          "for driver:",
-          driverId
-        );
-
-        if (!driverId) {
+        if (
+          !answer ||
+          !driverId
+        ) {
           return;
         }
+
+        console.log(
+          "📩 Answer from Parent:",
+          normalizedParentId,
+          "for Driver:",
+          driverId
+        );
 
         const driverSocketId =
           driverSockets.get(
             driverId
           );
 
-        if (!driverSocketId) {
+        if (
+          !driverSocketId
+        ) {
           console.log(
-            "⚠️ Driver socket not found for driver:",
+            "⚠️ Driver socket not found:",
             driverId
           );
 
@@ -727,7 +799,7 @@ io.on(
         );
 
         console.log(
-          "📩 Answer sent to driver socket:",
+          "📩 Answer sent to Driver:",
           driverSocketId
         );
       }
@@ -741,10 +813,18 @@ io.on(
       "ice-candidate",
       ({
         candidate,
-        driverId: rawDriverId,
+
+        driverId:
+          rawDriverId,
+
         parentId,
+
         sender,
       }) => {
+        if (!candidate) {
+          return;
+        }
+
         const driverId =
           rawDriverId
             ? String(
@@ -756,25 +836,25 @@ io.on(
 
         const normalizedParentId =
           parentId
-            ? String(parentId)
+            ? String(
+                parentId
+              )
             : "";
-
-        console.log(
-          "📡 ICE candidate from:",
-          sender,
-          "driver:",
-          driverId,
-          "parent:",
-          normalizedParentId
-        );
 
         /* ===============================================
            DRIVER → PARENT
         =============================================== */
 
         if (
-          sender === "driver"
+          sender ===
+          "driver"
         ) {
+          if (
+            !normalizedParentId
+          ) {
+            return;
+          }
+
           const parentSocketId =
             parentSockets.get(
               normalizedParentId
@@ -784,7 +864,7 @@ io.on(
             !parentSocketId
           ) {
             console.log(
-              "⚠️ Parent socket not found for parent:",
+              "⚠️ Parent socket not found:",
               normalizedParentId
             );
 
@@ -813,8 +893,13 @@ io.on(
         =============================================== */
 
         if (
-          sender === "parent"
+          sender ===
+          "parent"
         ) {
+          if (!driverId) {
+            return;
+          }
+
           const driverSocketId =
             driverSockets.get(
               driverId
@@ -824,7 +909,7 @@ io.on(
             !driverSocketId
           ) {
             console.log(
-              "⚠️ Driver socket not found for driver:",
+              "⚠️ Driver socket not found:",
               driverId
             );
 
@@ -849,7 +934,7 @@ io.on(
         }
 
         console.log(
-          "⚠️ Unknown sender in ice-candidate, ignoring"
+          "⚠️ Unknown ICE sender"
         );
       }
     );
@@ -869,9 +954,15 @@ io.on(
         }
 
         const driverId =
-          String(rawDriverId)
+          String(
+            rawDriverId
+          )
             .trim()
             .toUpperCase();
+
+        if (!driverId) {
+          return;
+        }
 
         console.log(
           "📷 Driver camera ready:",
@@ -890,25 +981,25 @@ io.on(
           );
 
         if (
-          parentIdList.length >
+          parentIdList.length ===
           0
         ) {
-          io.to(
+          console.log(
+            "ℹ️ No existing Parents for Driver:",
             driverId
-          ).emit(
-            "existing_parents",
-            {
-              parentIds:
-                parentIdList,
-            }
           );
 
           return;
         }
 
-        console.log(
-          "ℹ️ No existing parents for driver:",
+        io.to(
           driverId
+        ).emit(
+          "existing_parents",
+          {
+            parentIds:
+              parentIdList,
+          }
         );
       }
     );
@@ -922,6 +1013,7 @@ io.on(
       ({
         driverId:
           rawDriverId,
+
         parentId,
       }) => {
         if (!parentId) {
@@ -929,7 +1021,9 @@ io.on(
         }
 
         const normalizedParentId =
-          String(parentId);
+          String(
+            parentId
+          );
 
         const driverId =
           rawDriverId
@@ -943,7 +1037,7 @@ io.on(
         console.log(
           "👋 Parent left:",
           normalizedParentId,
-          "from driver:",
+          "Driver:",
           driverId
         );
 
@@ -1014,8 +1108,7 @@ io.on(
         }
 
         /*
-          Fallback:
-          Driver room.
+          Fallback to Driver room.
         */
 
         io.to(
@@ -1037,19 +1130,22 @@ io.on(
     /*
       Driver emits:
 
-      socket.emit("send_location", {
-        driverId,
-        lat,
-        lng,
-        eta,
-        speed,
-        heading,
-        accuracy
-      });
+      socket.emit(
+        "send_location",
+        {
+          driverId,
+          lat,
+          lng,
+          eta,
+          speed,
+          heading,
+          accuracy
+        }
+      );
 
-      Parent receives:
+      Parent listens to:
 
-      socket.on("live_location", ...)
+      live_location
     */
 
     socket.on(
@@ -1066,10 +1162,11 @@ io.on(
             speed,
             heading,
             accuracy,
-          } = data || {};
+          } =
+            data || {};
 
           /* =============================================
-             REQUIRED VALUES
+             REQUIRED
           ============================================= */
 
           if (
@@ -1081,7 +1178,7 @@ io.on(
           }
 
           /* =============================================
-             NORMALIZE DRIVER ID
+             DRIVER ID
           ============================================= */
 
           const driverId =
@@ -1100,10 +1197,14 @@ io.on(
           ============================================= */
 
           const latitude =
-            Number(lat);
+            Number(
+              lat
+            );
 
           const longitude =
-            Number(lng);
+            Number(
+              lng
+            );
 
           if (
             !Number.isFinite(
@@ -1120,18 +1221,18 @@ io.on(
             return;
           }
 
-          /* =============================================
-             COORDINATE RANGE
-          ============================================= */
-
           if (
-            latitude < -90 ||
-            latitude > 90 ||
-            longitude < -180 ||
-            longitude > 180
+            latitude <
+              -90 ||
+            latitude >
+              90 ||
+            longitude <
+              -180 ||
+            longitude >
+              180
           ) {
             console.warn(
-              "⚠️ Driver location outside valid coordinate range"
+              "⚠️ Driver location outside valid range"
             );
 
             return;
@@ -1142,13 +1243,16 @@ io.on(
           ============================================= */
 
           const speedNumber =
-            Number(speed);
+            Number(
+              speed
+            );
 
           const safeSpeed =
             Number.isFinite(
               speedNumber
             ) &&
-            speedNumber >= 0
+            speedNumber >=
+              0
               ? speedNumber
               : 0;
 
@@ -1157,14 +1261,18 @@ io.on(
           ============================================= */
 
           const headingNumber =
-            Number(heading);
+            Number(
+              heading
+            );
 
           const safeHeading =
             Number.isFinite(
               headingNumber
             ) &&
-            headingNumber >= 0 &&
-            headingNumber <= 360
+            headingNumber >=
+              0 &&
+            headingNumber <=
+              360
               ? headingNumber
               : 0;
 
@@ -1173,13 +1281,16 @@ io.on(
           ============================================= */
 
           const accuracyNumber =
-            Number(accuracy);
+            Number(
+              accuracy
+            );
 
           const safeAccuracy =
             Number.isFinite(
               accuracyNumber
             ) &&
-            accuracyNumber >= 0
+            accuracyNumber >=
+              0
               ? accuracyNumber
               : null;
 
@@ -1198,7 +1309,7 @@ io.on(
             new Date();
 
           /* =============================================
-             UPDATE DRIVER LAST LOCATION
+             UPDATE DRIVER LOCATION
           ============================================= */
 
           const driver =
@@ -1235,7 +1346,9 @@ io.on(
 
               {
                 new: true,
-                runValidators: true,
+
+                runValidators:
+                  true,
               }
             );
 
@@ -1282,7 +1395,7 @@ io.on(
           };
 
           /* =============================================
-             BROADCAST TO DRIVER ROOM
+             BROADCAST LOCATION
           ============================================= */
 
           io.to(
@@ -1293,12 +1406,9 @@ io.on(
           );
 
           /*
-            IMPORTANT:
+            Do NOT log every GPS update.
 
-            Do not console.log every GPS ping.
-
-            If location updates happen every few seconds,
-            logging every update will flood Render logs.
+            Frequent GPS logs would flood Render logs.
           */
         } catch (error) {
           console.error(
@@ -1310,14 +1420,13 @@ io.on(
     );
 
     /* =====================================================
-       OLD CAMERA FRAME SUPPORT
+       LEGACY CAMERA FRAME SUPPORT
     ===================================================== */
 
     /*
       Keep temporarily for compatibility.
 
-      WebRTC should eventually replace
-      frame-by-frame Socket.IO broadcasting.
+      WebRTC is the preferred implementation.
     */
 
     socket.on(
@@ -1328,7 +1437,8 @@ io.on(
             rawDriverId,
 
           frame,
-        } = data || {};
+        } =
+          data || {};
 
         if (
           !rawDriverId ||
@@ -1343,6 +1453,10 @@ io.on(
           )
             .trim()
             .toUpperCase();
+
+        if (!driverId) {
+          return;
+        }
 
         io.to(
           driverId
@@ -1388,7 +1502,7 @@ io.on(
             );
 
             console.log(
-              "🧹 Removed driver from map:",
+              "🧹 Removed Driver from socket map:",
               driverId
             );
 
@@ -1397,7 +1511,7 @@ io.on(
         }
 
         /* ===============================================
-           FIND PARENT SOCKET
+           REMOVE PARENT SOCKET
         =============================================== */
 
         let foundParentId =
@@ -1425,7 +1539,7 @@ io.on(
             );
 
             console.log(
-              "🧹 Removed parent from map:",
+              "🧹 Removed Parent from socket map:",
               parentId
             );
 
@@ -1469,7 +1583,7 @@ io.on(
               }
 
               console.log(
-                "🧹 Removed parent from driver map:",
+                "🧹 Removed Parent from Driver map:",
                 driverId
               );
 
@@ -1508,8 +1622,7 @@ io.on(
           }
 
           /*
-            Fallback:
-            Driver room.
+            Fallback to Driver room.
           */
 
           io.to(
@@ -1539,7 +1652,8 @@ app.get(
       .json({
         success: true,
 
-        status: "OK",
+        status:
+          "OK",
 
         time:
           new Date(),
@@ -1576,7 +1690,8 @@ app.use(
         success: false,
 
         message:
-          statusCode === 500
+          statusCode ===
+          500
             ? "Internal server error"
             : err.message ||
               "Request failed",
@@ -1610,7 +1725,7 @@ const PORT =
   5000;
 
 /* =========================================================
-   START SERVER AFTER DATABASE CONNECTION
+   START SERVER
 ========================================================= */
 
 connectDB()
@@ -1620,16 +1735,19 @@ connectDB()
     );
 
     /* =====================================================
-       DAILY VERIFICATION PHOTO CLEANUP
+       VERIFICATION PHOTO CLEANUP
     ===================================================== */
 
     /*
-      Runs every day at 2:00 AM
-      server-local time.
+      Runs every day:
+
+      2:00 AM
+      Asia/Kolkata timezone
     */
 
     cron.schedule(
       "0 2 * * *",
+
       async () => {
         console.log(
           "🕑 Running scheduled verification photo cleanup..."
@@ -1647,11 +1765,16 @@ connectDB()
             error.message
           );
         }
+      },
+
+      {
+        timezone:
+          "Asia/Kolkata",
       }
     );
 
     console.log(
-      "⏰ Cron job scheduled: Daily at 2:00 AM"
+      "⏰ Verification photo cleanup scheduled: Daily at 2:00 AM IST"
     );
 
     /* =====================================================
@@ -1662,7 +1785,7 @@ connectDB()
       PORT,
       () => {
         console.log(
-          `🚀 Server running on ${PORT}`
+          `🚀 Server running on port ${PORT}`
         );
 
         console.log(
@@ -1672,14 +1795,26 @@ connectDB()
         console.log(
           "🔥 Parent Firebase Auth: /api/parent-auth"
         );
+
+        console.log(
+          "🚗 Driver Auth: /api/auth"
+        );
+
+        console.log(
+          "🛡️ Admin: /api/admin"
+        );
       }
     );
   })
-  .catch((error) => {
-    console.error(
-      "❌ DB CONNECTION FAILED:",
-      error
-    );
+  .catch(
+    (error) => {
+      console.error(
+        "❌ DATABASE CONNECTION FAILED:",
+        error
+      );
 
-    process.exit(1);
-  });
+      process.exit(
+        1
+      );
+    }
+  );
