@@ -1,5 +1,7 @@
 import express from "express";
 import axios from "axios";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 import Child from "../models/Child.js";
 import Parent from "../models/Parent.js";
@@ -9,11 +11,17 @@ import {
   sendNotification,
 } from "../utils/sendNotification.js";
 
+import verifyDriver from "../middleware/verifyDriver.js";
+import verifyAdmin from "../middleware/verifyAdmin.js";
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+
 const router = express.Router();
 
-/* =========================================================
-   HELPERS
-========================================================= */
+const ADMIN_ROLES =
+  new Set([
+    "superadmin",
+    "reviewer",
+  ]);
 
 /* =========================================================
    SAFE NOTIFICATION
@@ -24,80 +32,224 @@ const safeNotify = async (
   payload
 ) => {
   try {
-    const io =
-      req.app.get("io");
-
-    if (!io) {
-      console.warn(
-        "⚠️ Socket.IO not available for notification"
-      );
-
-      return;
-    }
-
     await sendNotification({
       ...payload,
-      io,
+
+      io:
+        req.app.get("io"),
     });
-
-    console.log(
-      "✅ Child notification sent"
-    );
   } catch (error) {
-    /*
-      Notification failure must NOT fail
-      pickup/drop/absence operations.
-    */
-
     console.error(
-      "⚠️ Notification failed:",
+      "CHILD NOTIFICATION ERROR:",
       error.message
     );
   }
 };
 
 /* =========================================================
-   OBJECT ID ERROR
-========================================================= */
-
-const handleCastError = (
-  error,
-  res
-) => {
-  if (
-    error?.name ===
-    "CastError"
-  ) {
-    res.status(400).json({
-      success: false,
-      message:
-        "Invalid ID",
-    });
-
-    return true;
-  }
-
-  return false;
-};
-
-/* =========================================================
-   NORMALIZE DRIVER ID
+   HELPERS
 ========================================================= */
 
 const normalizeDriverId = (
   driverId
-) => {
-  if (!driverId) {
-    return "";
-  }
-
-  return String(driverId)
+) =>
+  String(driverId || "")
     .trim()
     .toUpperCase();
-};
+
+const isValidObjectId = (
+  value
+) =>
+  mongoose.Types.ObjectId.isValid(
+    String(value || "")
+  );
 
 /* =========================================================
-   VALIDATE COORDINATES
+   LOAD AUTHENTICATED PARENT
+========================================================= */
+
+const requireParentAccount =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const firebaseUid =
+        req.firebaseUser?.uid;
+
+      if (!firebaseUid) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Parent authentication required",
+        });
+      }
+
+      const parent =
+        await Parent.findOne({
+          firebaseUid,
+        }).select(
+          "+firebaseUid"
+        );
+
+      if (!parent) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Parent account not found",
+        });
+      }
+
+      if (
+        parent.status ===
+        "inactive"
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Parent account is inactive",
+        });
+      }
+
+      req.parent = parent;
+
+      return next();
+    } catch (error) {
+      console.error(
+        "CHILD PARENT AUTH ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Parent authentication failed",
+      });
+    }
+  };
+
+/* =========================================================
+   PARENT PARAM OWNERSHIP
+========================================================= */
+
+const requireOwnParentParam =
+  (
+    req,
+    res,
+    next
+  ) => {
+    if (
+      String(
+        req.params.parentId
+      ) !==
+      String(
+        req.parent._id
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You cannot access another Parent's children",
+      });
+    }
+
+    return next();
+  };
+
+/* =========================================================
+   DRIVER PARAM OWNERSHIP
+========================================================= */
+
+const requireOwnDriverParam =
+  (
+    req,
+    res,
+    next
+  ) => {
+    if (
+      normalizeDriverId(
+        req.params.driverId
+      ) !==
+      normalizeDriverId(
+        req.driver?.driverId
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You cannot access another Driver's children",
+      });
+    }
+
+    return next();
+  };
+
+/* =========================================================
+   DRIVER CHILD OWNERSHIP
+========================================================= */
+
+const requireDriverChild =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const childId =
+        req.body?.childId;
+
+      if (
+        !isValidObjectId(
+          childId
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Child ID",
+        });
+      }
+
+      const child =
+        await Child.findOne({
+          _id:
+            childId,
+
+          driverId:
+            normalizeDriverId(
+              req.driver.driverId
+            ),
+        });
+
+      if (!child) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Child not found",
+        });
+      }
+
+      req.authorizedChild =
+        child;
+
+      return next();
+    } catch (error) {
+      console.error(
+        "DRIVER CHILD AUTH ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Child authorization failed",
+      });
+    }
+  };
+
+/* =========================================================
+   COORDINATES
 ========================================================= */
 
 const normalizeCoordinates = (
@@ -127,10 +279,6 @@ const normalizeCoordinates = (
   return number;
 };
 
-/* =========================================================
-   GET COORDINATE PAIR
-========================================================= */
-
 const getCoordinatePair = (
   source,
   label
@@ -154,14 +302,9 @@ const getCoordinatePair = (
       `${label} longitude`
     );
 
-  const hasLat =
-    lat !== null;
-
-  const hasLng =
-    lng !== null;
-
   if (
-    hasLat !== hasLng
+    (lat === null) !==
+    (lng === null)
   ) {
     throw new Error(
       `${label} latitude and longitude must be provided together`
@@ -170,8 +313,10 @@ const getCoordinatePair = (
 
   if (
     lat !== null &&
-    (lat < -90 ||
-      lat > 90)
+    (
+      lat < -90 ||
+      lat > 90
+    )
   ) {
     throw new Error(
       `${label} latitude must be between -90 and 90`
@@ -180,8 +325,10 @@ const getCoordinatePair = (
 
   if (
     lng !== null &&
-    (lng < -180 ||
-      lng > 180)
+    (
+      lng < -180 ||
+      lng > 180
+    )
   ) {
     throw new Error(
       `${label} longitude must be between -180 and 180`
@@ -195,7 +342,7 @@ const getCoordinatePair = (
 };
 
 /* =========================================================
-   CALCULATE ROUTE DETAILS
+   ROUTE DETAILS
 ========================================================= */
 
 const calculateRouteDetails =
@@ -203,12 +350,11 @@ const calculateRouteDetails =
     pickup,
     drop
   ) => {
-    let routeDistance = 0;
-    let estimatedDuration = 0;
+    let routeDistance =
+      0;
 
-    /*
-      Both locations must exist.
-    */
+    let estimatedDuration =
+      0;
 
     if (
       pickup.lat === null ||
@@ -222,17 +368,12 @@ const calculateRouteDetails =
       };
     }
 
-    /*
-      If Google Maps API is not configured,
-      Child creation/update should still work.
-    */
-
     if (
       !process.env
         .GOOGLE_MAPS_API_KEY
     ) {
       console.warn(
-        "⚠️ GOOGLE_MAPS_API_KEY missing. Route distance skipped."
+        "GOOGLE_MAPS_API_KEY missing. Route calculation skipped."
       );
 
       return {
@@ -245,6 +386,7 @@ const calculateRouteDetails =
       const response =
         await axios.get(
           "https://maps.googleapis.com/maps/api/distancematrix/json",
+
           {
             params: {
               origins:
@@ -258,7 +400,8 @@ const calculateRouteDetails =
                   .GOOGLE_MAPS_API_KEY,
             },
 
-            timeout: 8000,
+            timeout:
+              8000,
           }
         );
 
@@ -271,12 +414,6 @@ const calculateRouteDetails =
         element?.status !==
         "OK"
       ) {
-        console.warn(
-          "⚠️ Google Distance Matrix status:",
-          element?.status ||
-            response.data?.status
-        );
-
         return {
           routeDistance,
           estimatedDuration,
@@ -291,8 +428,7 @@ const calculateRouteDetails =
         routeDistance =
           Number(
             (
-              element.distance
-                .value /
+              element.distance.value /
               1000
             ).toFixed(2)
           );
@@ -305,9 +441,8 @@ const calculateRouteDetails =
       ) {
         estimatedDuration =
           Math.ceil(
-            element.duration
-              .value /
-              60
+            element.duration.value /
+            60
           );
       }
 
@@ -317,15 +452,10 @@ const calculateRouteDetails =
       };
     } catch (error) {
       console.error(
-        "❌ Google Distance API Error:",
+        "GOOGLE DISTANCE API ERROR:",
         error.response?.data ||
           error.message
       );
-
-      /*
-        Do not fail Child creation
-        because Google's API failed.
-      */
 
       return {
         routeDistance,
@@ -336,70 +466,64 @@ const calculateRouteDetails =
 
 /* =========================================================
    ADD CHILD
+   PARENT ONLY
 ========================================================= */
 
 router.post(
   "/add",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         name,
         age,
         school,
         grade,
-
         pickupTime,
         dropoffTime,
-
         eveningPickup,
         eveningDrop,
-
         pickupLocation,
         dropoffLocation,
-
         location,
         dropLocationCoords,
-
         parentId,
-        driverId,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* ===================================================
-         REQUIRED FIELDS
+         LEGACY PARENT ID CHECK
       =================================================== */
 
       if (
-        !name?.trim() ||
-        !parentId
+        parentId &&
+        String(parentId) !==
+          String(
+            req.parent._id
+          )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Name and parentId are required",
-          });
+        return res.status(403).json({
+          success: false,
+          message:
+            "You cannot add a Child to another Parent",
+        });
       }
 
-      /* ===================================================
-         VERIFY PARENT
-      =================================================== */
-
-      const parent =
-        await Parent.findById(
-          parentId
-        );
-
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent not found",
-          });
+      if (
+        !name ||
+        !String(name).trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Child name is required",
+        });
       }
 
       /* ===================================================
@@ -424,14 +548,11 @@ router.post(
           normalizedAge < 1 ||
           normalizedAge > 25
         ) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              message:
-                "Age must be between 1 and 25",
-            });
+          return res.status(400).json({
+            success: false,
+            message:
+              "Age must be between 1 and 25",
+          });
         }
       }
 
@@ -455,112 +576,80 @@ router.post(
             "Drop"
           );
       } catch (error) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      /* ===================================================
-         DRIVER
-      =================================================== */
-
-      /*
-        If frontend does not send driverId,
-        automatically inherit the Parent's
-        currently linked Driver.
-      */
-
-      const normalizedDriverId =
-        normalizeDriverId(
-          driverId ||
-            parent.driverId ||
-            ""
-        );
-
-      /* ===================================================
-         ROUTE DISTANCE
-      =================================================== */
-
-      const {
-        routeDistance,
-        estimatedDuration,
-      } =
+      const route =
         await calculateRouteDetails(
           pickup,
           drop
         );
 
-      /* ===================================================
-         CREATE CHILD
-      =================================================== */
+      /*
+        SECURITY:
+
+        driverId supplied by the frontend is ignored.
+
+        Child inherits only the Driver currently
+        linked to the authenticated Parent.
+      */
+
+      const driverId =
+        normalizeDriverId(
+          req.parent.driverId
+        );
 
       const child =
         await Child.create({
           name:
-            name.trim(),
+            String(name).trim(),
 
           age:
             normalizedAge,
 
           school:
-            school
-              ? String(
-                  school
-                ).trim()
-              : "",
+            String(
+              school || ""
+            ).trim(),
 
           grade:
-            grade
-              ? String(
-                  grade
-                ).trim()
-              : "",
+            String(
+              grade || ""
+            ).trim(),
 
           pickupTime:
-            pickupTime
-              ? String(
-                  pickupTime
-                ).trim()
-              : "",
+            String(
+              pickupTime || ""
+            ).trim(),
 
           dropoffTime:
-            dropoffTime
-              ? String(
-                  dropoffTime
-                ).trim()
-              : "",
+            String(
+              dropoffTime || ""
+            ).trim(),
 
           eveningPickup:
-            eveningPickup
-              ? String(
-                  eveningPickup
-                ).trim()
-              : "",
+            String(
+              eveningPickup || ""
+            ).trim(),
 
           eveningDrop:
-            eveningDrop
-              ? String(
-                  eveningDrop
-                ).trim()
-              : "",
+            String(
+              eveningDrop || ""
+            ).trim(),
 
           pickupLocation:
-            pickupLocation
-              ? String(
-                  pickupLocation
-                ).trim()
-              : "",
+            String(
+              pickupLocation || ""
+            ).trim(),
 
           dropoffLocation:
-            dropoffLocation
-              ? String(
-                  dropoffLocation
-                ).trim()
-              : "",
+            String(
+              dropoffLocation || ""
+            ).trim(),
 
           location: {
             lat:
@@ -570,270 +659,343 @@ router.post(
               pickup.lng,
           },
 
-          dropLocationCoords:
-            {
-              lat:
-                drop.lat,
+          dropLocationCoords: {
+            lat:
+              drop.lat,
 
-              lng:
-                drop.lng,
-            },
+            lng:
+              drop.lng,
+          },
 
-          parentId,
+          parentId:
+            req.parent._id,
 
-          driverId:
-            normalizedDriverId,
+          driverId,
 
-          routeDistance,
+          routeDistance:
+            route.routeDistance,
 
-          estimatedDuration,
+          estimatedDuration:
+            route.estimatedDuration,
 
           status:
             "waiting",
         });
 
-      return res
-        .status(201)
-        .json({
-          success: true,
-
-          message:
-            "Child added successfully",
-
-          data: child,
-        });
+      return res.status(201).json({
+        success: true,
+        message:
+          "Child added successfully",
+        data:
+          child,
+      });
     } catch (error) {
       console.error(
-        "🔥 ADD CHILD ERROR:",
+        "ADD CHILD ERROR:",
         error
       );
 
       if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      if (
-        error.name ===
+        error?.name ===
         "ValidationError"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to add child",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to add child",
+      });
     }
   }
 );
 
 /* =========================================================
-   GET CHILD BY ID
+   SINGLE CHILD
+   PARENT / ASSIGNED DRIVER / ADMIN
 ========================================================= */
 
 router.get(
   "/single/:id",
-  async (req, res) => {
+
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Child ID",
+        });
+      }
+
+      const authHeader =
+        req.headers.authorization;
+
+      if (
+        !authHeader?.startsWith(
+          "Bearer "
+        )
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authentication required",
+        });
+      }
+
+      const token =
+        authHeader
+          .slice(7)
+          .trim();
+
+      const hint =
+        jwt.decode(token);
+
+      /* ================= ADMIN ================= */
+
+      if (
+        hint &&
+        typeof hint ===
+          "object" &&
+        ADMIN_ROLES.has(
+          hint.role
+        )
+      ) {
+        return verifyAdmin(
+          req,
+          res,
+          next
+        );
+      }
+
+      /* ================= DRIVER ================= */
+
+      if (
+        hint &&
+        typeof hint ===
+          "object" &&
+        hint.tokenType ===
+          "driver"
+      ) {
+        return verifyDriver(
+          req,
+          res,
+
+          async () => {
+            const child =
+              await Child.findOne({
+                _id:
+                  req.params.id,
+
+                driverId:
+                  normalizeDriverId(
+                    req.driver.driverId
+                  ),
+              });
+
+            if (!child) {
+              return res.status(404).json({
+                success: false,
+                message:
+                  "Child not found",
+              });
+            }
+
+            req.authorizedChild =
+              child;
+
+            return next();
+          }
+        );
+      }
+
+      /* ================= PARENT ================= */
+
+      return verifyFirebaseToken(
+        req,
+        res,
+
+        () =>
+          requireParentAccount(
+            req,
+            res,
+
+            async () => {
+              const child =
+                await Child.findOne({
+                  _id:
+                    req.params.id,
+
+                  parentId:
+                    req.parent._id,
+                });
+
+              if (!child) {
+                return res.status(404).json({
+                  success: false,
+                  message:
+                    "Child not found",
+                });
+              }
+
+              req.authorizedChild =
+                child;
+
+              return next();
+            }
+          )
+      );
+    } catch (error) {
+      console.error(
+        "CHILD READ AUTH ERROR:",
+        error
+      );
+
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication failed",
+      });
+    }
+  },
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const child =
+        req.authorizedChild ||
         await Child.findById(
           req.params.id
         );
 
       if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: child,
-        });
-    } catch (error) {
-      console.error(
-        "❌ GET CHILD ERROR:",
-        error
-      );
-
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
+        return res.status(404).json({
           success: false,
-
           message:
-            "Failed to fetch child",
+            "Child not found",
         });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data:
+          child,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch child",
+      });
     }
   }
 );
 
 /* =========================================================
-   GET CHILDREN BY PARENT
+   PARENT CHILDREN
 ========================================================= */
 
 router.get(
   "/parent/:parentId",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+  requireOwnParentParam,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        parentId,
-      } = req.params;
-
-      /* ===================================================
-         VERIFY PARENT
-      =================================================== */
-
-      const parent =
-        await Parent.findById(
-          parentId
-        );
-
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent not found",
-          });
-      }
-
       const children =
         await Child.find({
-          parentId,
+          parentId:
+            req.parent._id,
         }).sort({
-          createdAt: 1,
+          createdAt:
+            1,
         });
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: children,
-        });
+      return res.status(200).json({
+        success: true,
+        data:
+          children,
+      });
     } catch (error) {
-      console.error(
-        "❌ PARENT CHILDREN FETCH ERROR:",
-        error
-      );
-
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch children",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch children",
+      });
     }
   }
 );
 
 /* =========================================================
-   GET CHILDREN BY DRIVER
+   DRIVER CHILDREN
 ========================================================= */
 
 router.get(
   "/driver/:driverId",
-  async (req, res) => {
+
+  verifyDriver,
+  requireOwnDriverParam,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const driverId =
         normalizeDriverId(
-          req.params.driverId
+          req.driver.driverId
         );
 
-      if (!driverId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+      const [
+        children,
+        trips,
+      ] =
+        await Promise.all([
+          Child.find({
+            driverId,
+          }).sort({
+            createdAt:
+              1,
+          }),
 
-            message:
-              "Driver ID is required",
-          });
-      }
+          Trips.find({
+            driverId,
 
-      /* ===================================================
-         CHILDREN
-      =================================================== */
-
-      const children =
-        await Child.find({
-          driverId,
-        }).sort({
-          createdAt: 1,
-        });
-
-      /* ===================================================
-         ACTIVE TRIPS
-      =================================================== */
-
-      /*
-        Existing Trip status kept unchanged:
-
-        in_transit
-      */
-
-      const trips =
-        await Trips.find({
-          driverId,
-          status:
-            "in_transit",
-        });
-
-      /* ===================================================
-         ATTACH ACTIVE TRIP ID
-      =================================================== */
+            status:
+              "in_transit",
+          }),
+        ]);
 
       const data =
         children.map(
-          (child) => {
+          (
+            child
+          ) => {
             const trip =
               trips.find(
-                (item) =>
+                (
+                  item
+                ) =>
                   String(
                     item.child
                   ) ===
@@ -852,166 +1014,77 @@ router.get(
           }
         );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data,
-        });
+      return res.status(200).json({
+        success: true,
+        data,
+      });
     } catch (error) {
-      console.error(
-        "❌ DRIVER CHILDREN FETCH ERROR:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch Driver children",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch Driver children",
+      });
     }
   }
 );
 
 /* =========================================================
    UPDATE CHILD
+   PARENT ONLY
 ========================================================= */
-
-/*
-  NEW ENDPOINT:
-
-  PUT /api/children/:id
-
-  Allows the Parent app to edit:
-
-  name
-  age
-  school
-  grade
-  timings
-  addresses
-  coordinates
-
-  parentId cannot be changed here.
-*/
 
 router.put(
   "/:id",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const child =
-        await Child.findById(
+      if (
+        !isValidObjectId(
           req.params.id
-        );
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Child ID",
+        });
+      }
+
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.id,
+
+          parentId:
+            req.parent._id,
+        });
 
       if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Child not found",
+        });
       }
-
-      /* ===================================================
-         PROTECTED FIELDS
-      =================================================== */
-
-      const {
-        parentId,
-        _id,
-        __v,
-        createdAt,
-        updatedAt,
-        status,
-        registrationFeePaid,
-        securityDeposit,
-        depositBalance,
-        routeDistance,
-        estimatedDuration,
-        ...updates
-      } = req.body;
 
       /*
-        parentId/status/billing/internal values
-        are intentionally ignored.
+        IMPORTANT:
+
+        driverId is NOT editable here.
+
+        Driver assignment is controlled by the
+        Driver-link/Admin assignment workflow.
       */
 
-      /* ===================================================
-         BASIC DETAILS
-      =================================================== */
-
-      if (
-        updates.name !==
-        undefined
-      ) {
-        const name =
-          String(
-            updates.name
-          ).trim();
-
-        if (!name) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              message:
-                "Child name cannot be empty",
-            });
-        }
-
-        child.name =
-          name;
-      }
-
-      if (
-        updates.age !==
-        undefined
-      ) {
-        if (
-          updates.age ===
-            null ||
-          updates.age ===
-            ""
-        ) {
-          child.age =
-            null;
-        } else {
-          const age =
-            Number(
-              updates.age
-            );
-
-          if (
-            !Number.isInteger(
-              age
-            ) ||
-            age < 1 ||
-            age > 25
-          ) {
-            return res
-              .status(400)
-              .json({
-                success:
-                  false,
-
-                message:
-                  "Age must be between 1 and 25",
-              });
-          }
-
-          child.age =
-            age;
-        }
-      }
-
-      const stringFields = [
+      const allowedFields = [
+        "name",
+        "age",
         "school",
         "grade",
         "pickupTime",
@@ -1024,51 +1097,88 @@ router.put(
 
       for (
         const field of
-        stringFields
+        allowedFields
       ) {
         if (
-          updates[field] !==
+          req.body?.[
+            field
+          ] ===
           undefined
         ) {
-          child[field] =
-            updates[field] ===
-            null
-              ? ""
-              : String(
-                  updates[
-                    field
-                  ]
-                ).trim();
+          continue;
         }
+
+        if (
+          field ===
+          "age"
+        ) {
+          if (
+            req.body.age ===
+              "" ||
+            req.body.age ===
+              null
+          ) {
+            child.age =
+              null;
+
+            continue;
+          }
+
+          const age =
+            Number(
+              req.body.age
+            );
+
+          if (
+            !Number.isInteger(
+              age
+            ) ||
+            age < 1 ||
+            age > 25
+          ) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Age must be between 1 and 25",
+            });
+          }
+
+          child.age =
+            age;
+
+          continue;
+        }
+
+        const value =
+          String(
+            req.body[
+              field
+            ] ?? ""
+          ).trim();
+
+        if (
+          field ===
+            "name" &&
+          !value
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Child name cannot be empty",
+          });
+        }
+
+        child[field] =
+          value;
       }
-
-      /* ===================================================
-         DRIVER
-      =================================================== */
-
-      if (
-        updates.driverId !==
-        undefined
-      ) {
-        child.driverId =
-          normalizeDriverId(
-            updates.driverId
-          );
-      }
-
-      /* ===================================================
-         LOCATION
-      =================================================== */
 
       let pickup = {
         lat:
-          child.location
-            ?.lat ??
+          child.location?.lat ??
           null,
 
         lng:
-          child.location
-            ?.lng ??
+          child.location?.lng ??
           null,
       };
 
@@ -1088,12 +1198,12 @@ router.put(
 
       try {
         if (
-          updates.location !==
+          req.body?.location !==
           undefined
         ) {
           pickup =
             getCoordinatePair(
-              updates.location,
+              req.body.location,
               "Pickup"
             );
 
@@ -1107,42 +1217,38 @@ router.put(
         }
 
         if (
-          updates.dropLocationCoords !==
+          req.body
+            ?.dropLocationCoords !==
           undefined
         ) {
           drop =
             getCoordinatePair(
-              updates.dropLocationCoords,
+              req.body
+                .dropLocationCoords,
               "Drop"
             );
 
-          child.dropLocationCoords =
-            {
-              lat:
-                drop.lat,
+          child.dropLocationCoords = {
+            lat:
+              drop.lat,
 
-              lng:
-                drop.lng,
-            };
+            lng:
+              drop.lng,
+          };
         }
       } catch (error) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      /* ===================================================
-         RECALCULATE ROUTE
-      =================================================== */
-
       if (
-        updates.location !==
+        req.body?.location !==
           undefined ||
-        updates.dropLocationCoords !==
+        req.body
+          ?.dropLocationCoords !==
           undefined
       ) {
         const route =
@@ -1158,197 +1264,144 @@ router.put(
           route.estimatedDuration;
       }
 
-      /* ===================================================
-         SAVE
-      =================================================== */
-
       await child.save();
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          message:
-            "Child updated successfully",
-
-          data: child,
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Child updated successfully",
+        data:
+          child,
+      });
     } catch (error) {
       console.error(
-        "❌ UPDATE CHILD ERROR:",
+        "UPDATE CHILD ERROR:",
         error
       );
 
       if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      if (
-        error.name ===
+        error?.name ===
         "ValidationError"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to update child",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to update child",
+      });
     }
   }
 );
 
 /* =========================================================
    DELETE CHILD
+   PARENT ONLY
 ========================================================= */
 
 router.delete(
   "/:id",
-  async (req, res) => {
+
+  verifyFirebaseToken,
+  requireParentAccount,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const child =
-        await Child.findById(
+      if (
+        !isValidObjectId(
           req.params.id
-        );
-
-      if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Child ID",
+        });
       }
 
-      /* ===================================================
-         DELETE CHILD TRIPS
-      =================================================== */
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.id,
 
-      /*
-        Prevent orphaned Trip records.
+          parentId:
+            req.parent._id,
+        });
 
-        Existing Trip model uses:
-
-        child: child._id
-      */
+      if (!child) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Child not found",
+        });
+      }
 
       await Trips.deleteMany({
         child:
           child._id,
       });
 
-      /* ===================================================
-         DELETE CHILD
-      =================================================== */
+      await Child.deleteOne({
+        _id:
+          child._id,
+      });
 
-      await Child.findByIdAndDelete(
-        child._id
-      );
-
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          message:
-            "Child deleted successfully",
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Child deleted successfully",
+      });
     } catch (error) {
       console.error(
-        "❌ DELETE CHILD ERROR:",
+        "DELETE CHILD ERROR:",
         error
       );
 
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to delete child",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to delete child",
+      });
     }
   }
 );
 
 /* =========================================================
    PICKUP
+   DRIVER ONLY
 ========================================================= */
 
 router.post(
   "/pickup",
-  async (req, res) => {
+
+  verifyDriver,
+  requireDriverChild,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        childId,
-      } = req.body;
-
-      if (!childId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Child ID is required",
-          });
-      }
-
       const child =
-        await Child.findById(
-          childId
-        );
-
-      if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
-      }
+        req.authorizedChild;
 
       if (
         child.status !==
         "waiting"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Child is not waiting for pickup",
-          });
+        return res.status(409).json({
+          success: false,
+          message:
+            "Child is not waiting for pickup",
+        });
       }
 
       child.status =
@@ -1356,125 +1409,74 @@ router.post(
 
       await child.save();
 
-      /* ===================================================
-         NOTIFICATION
-      =================================================== */
+      await safeNotify(
+        req,
+        {
+          driverId:
+            child.driverId,
 
-      if (
-        child.driverId
-      ) {
-        await safeNotify(
-          req,
-          {
-            driverId:
-              child.driverId,
+          childId:
+            child._id,
 
-            childId:
-              child._id,
-
-            title:
-              "Pickup Update",
-
-            message:
-              `${child.name} picked up`,
-
-            type:
-              "pickup",
-
-            priority:
-              "high",
-          }
-        );
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
+          title:
+            "Pickup Update",
 
           message:
-            "Child picked up successfully",
+            `${child.name} picked up`,
 
-          data: child,
-        });
-    } catch (error) {
-      console.error(
-        "❌ PICKUP ERROR:",
-        error
+          type:
+            "pickup",
+
+          priority:
+            "high",
+        }
       );
 
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Pickup update failed",
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Child picked up successfully",
+        data:
+          child,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Pickup update failed",
+      });
     }
   }
 );
 
 /* =========================================================
    DROP
+   DRIVER ONLY
 ========================================================= */
 
 router.post(
   "/drop",
-  async (req, res) => {
+
+  verifyDriver,
+  requireDriverChild,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        childId,
-      } = req.body;
-
-      if (!childId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Child ID is required",
-          });
-      }
-
       const child =
-        await Child.findById(
-          childId
-        );
-
-      if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
-      }
+        req.authorizedChild;
 
       if (
         child.status !==
         "onboard"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Child is not onboard",
-          });
+        return res.status(409).json({
+          success: false,
+          message:
+            "Child is not onboard",
+        });
       }
 
       child.status =
@@ -1482,125 +1484,74 @@ router.post(
 
       await child.save();
 
-      /* ===================================================
-         NOTIFICATION
-      =================================================== */
+      await safeNotify(
+        req,
+        {
+          driverId:
+            child.driverId,
 
-      if (
-        child.driverId
-      ) {
-        await safeNotify(
-          req,
-          {
-            driverId:
-              child.driverId,
+          childId:
+            child._id,
 
-            childId:
-              child._id,
-
-            title:
-              "Drop Update",
-
-            message:
-              `${child.name} dropped`,
-
-            type:
-              "drop",
-
-            priority:
-              "high",
-          }
-        );
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
+          title:
+            "Drop Update",
 
           message:
-            "Child dropped successfully",
+            `${child.name} dropped`,
 
-          data: child,
-        });
-    } catch (error) {
-      console.error(
-        "❌ DROP ERROR:",
-        error
+          type:
+            "drop",
+
+          priority:
+            "high",
+        }
       );
 
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Drop update failed",
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Child dropped successfully",
+        data:
+          child,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Drop update failed",
+      });
     }
   }
 );
 
 /* =========================================================
    ABSENT
+   DRIVER ONLY
 ========================================================= */
 
 router.post(
   "/absent",
-  async (req, res) => {
+
+  verifyDriver,
+  requireDriverChild,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const {
-        childId,
-      } = req.body;
-
-      if (!childId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Child ID is required",
-          });
-      }
-
       const child =
-        await Child.findById(
-          childId
-        );
-
-      if (!child) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Child not found",
-          });
-      }
+        req.authorizedChild;
 
       if (
         child.status !==
         "waiting"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Only waiting children can be marked absent",
-          });
+        return res.status(409).json({
+          success: false,
+          message:
+            "Only waiting children can be marked absent",
+        });
       }
 
       child.status =
@@ -1608,103 +1559,70 @@ router.post(
 
       await child.save();
 
-      /* ===================================================
-         NOTIFICATION
-      =================================================== */
+      await safeNotify(
+        req,
+        {
+          driverId:
+            child.driverId,
 
-      if (
-        child.driverId
-      ) {
-        await safeNotify(
-          req,
-          {
-            driverId:
-              child.driverId,
+          childId:
+            child._id,
 
-            childId:
-              child._id,
-
-            title:
-              "Absent Update",
-
-            message:
-              `${child.name} marked absent`,
-
-            type:
-              "absent",
-
-            priority:
-              "high",
-          }
-        );
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
+          title:
+            "Absent Update",
 
           message:
-            "Child marked as absent",
+            `${child.name} marked absent`,
 
-          data: child,
-        });
-    } catch (error) {
-      console.error(
-        "❌ ABSENT ERROR:",
-        error
+          type:
+            "absent",
+
+          priority:
+            "high",
+        }
       );
 
-      if (
-        handleCastError(
-          error,
-          res
-        )
-      ) {
-        return;
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Absent update failed",
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Child marked as absent",
+        data:
+          child,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Absent update failed",
+      });
     }
   }
 );
 
 /* =========================================================
-   RESET CHILD STATUS BY DRIVER
+   RESET DRIVER CHILD STATUS
 ========================================================= */
 
 router.post(
   "/reset/:driverId",
-  async (req, res) => {
+
+  verifyDriver,
+  requireOwnDriverParam,
+
+  async (
+    req,
+    res
+  ) => {
     try {
-      const driverId =
-        normalizeDriverId(
-          req.params.driverId
-        );
-
-      if (!driverId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is required",
-          });
-      }
-
       const result =
         await Child.updateMany(
           {
-            driverId,
+            driverId:
+              normalizeDriverId(
+                req.driver.driverId
+              ),
           },
+
           {
             $set: {
               status:
@@ -1713,37 +1631,23 @@ router.post(
           }
         );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Child statuses reset successfully",
+        message:
+          "Child statuses reset successfully",
 
-          modifiedCount:
-            result.modifiedCount,
-        });
+        modifiedCount:
+          result.modifiedCount,
+      });
     } catch (error) {
-      console.error(
-        "❌ RESET CHILD STATUS ERROR:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to reset child statuses",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to reset child statuses",
+      });
     }
   }
 );
-
-/* =========================================================
-   EXPORT
-========================================================= */
 
 export default router;
