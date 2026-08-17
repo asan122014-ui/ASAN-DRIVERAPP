@@ -3,14 +3,8 @@ import {
 } from "express-rate-limit";
 
 /* =========================================================
-   AUTH LOGIN LIMITER
+   DRIVER LOGIN LIMITER
 ========================================================= */
-
-/*
-  Protect password-based authentication endpoints.
-
-  10 attempts per 15 minutes per IP.
-*/
 
 export const loginLimiter =
   rateLimit({
@@ -26,9 +20,16 @@ export const loginLimiter =
     legacyHeaders:
       false,
 
+    /*
+      Successful logins should not consume
+      the failed-login allowance.
+    */
+
+    skipSuccessfulRequests:
+      true,
+
     message: {
-      success:
-        false,
+      success: false,
 
       message:
         "Too many login attempts. Please try again later.",
@@ -36,7 +37,7 @@ export const loginLimiter =
   });
 
 /* =========================================================
-   SIGNUP LIMITER
+   DRIVER SIGNUP LIMITER
 ========================================================= */
 
 export const signupLimiter =
@@ -54,24 +55,16 @@ export const signupLimiter =
       false,
 
     message: {
-      success:
-        false,
+      success: false,
 
       message:
-        "Too many account creation attempts. Please try again later.",
+        "Too many signup attempts. Please try again later.",
     },
   });
 
 /* =========================================================
    PARENT AUTH LIMITER
 ========================================================= */
-
-/*
-  Firebase handles OTP protection separately.
-
-  This protects our own login/register endpoints from
-  excessive backend requests.
-*/
 
 export const parentAuthLimiter =
   rateLimit({
@@ -88,37 +81,9 @@ export const parentAuthLimiter =
       false,
 
     message: {
-      success:
-        false,
+      success: false,
 
       message:
         "Too many authentication requests. Please try again later.",
-    },
-  });
-
-/* =========================================================
-   SENSITIVE WRITE LIMITER
-========================================================= */
-
-export const sensitiveActionLimiter =
-  rateLimit({
-    windowMs:
-      15 * 60 * 1000,
-
-    limit:
-      60,
-
-    standardHeaders:
-      "draft-8",
-
-    legacyHeaders:
-      false,
-
-    message: {
-      success:
-        false,
-
-      message:
-        "Too many requests. Please try again later.",
     },
   });
