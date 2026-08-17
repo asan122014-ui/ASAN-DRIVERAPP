@@ -1,4 +1,5 @@
 import express from "express";
+import jwt from "jsonwebtoken";
 
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
@@ -7,6 +8,8 @@ import {
   cloudinary,
   driverUpload,
 } from "../config/cloudinary.js";
+
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
 
 const router = express.Router();
 
@@ -27,14 +30,6 @@ const normalizeDriverId = (
 /* =========================================================
    CLEANUP UPLOADED CLOUDINARY FILES
 ========================================================= */
-
-/*
-  Multer uploads files to Cloudinary BEFORE the route
-  validation executes.
-
-  Therefore, if Driver signup fails after files were uploaded,
-  delete those newly uploaded files to prevent orphaned media.
-*/
 
 const cleanupUploadedFiles = async (
   files
@@ -81,7 +76,7 @@ const cleanupUploadedFiles = async (
       0
     ) {
       console.warn(
-        `⚠️ ${failed.length} Cloudinary file cleanup operation(s) failed`
+        `⚠️ ${failed.length} Cloudinary cleanup operation(s) failed`
       );
     }
   } catch (error) {
@@ -115,16 +110,73 @@ const getSafeDriver = (
 };
 
 /* =========================================================
-   DRIVER SIGNUP
+   LOAD FIREBASE PARENT
 ========================================================= */
 
-/*
-  DRIVER AUTHENTICATION:
+const requireParentAccount = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const firebaseUid =
+      req.firebaseUser?.uid;
 
-  Email + Password
+    if (!firebaseUid) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Parent authentication required",
+      });
+    }
 
-  Driver Firebase/OTP migration is NOT being performed now.
-*/
+    const parent =
+      await Parent.findOne({
+        firebaseUid,
+      }).select(
+        "+firebaseUid"
+      );
+
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Parent account not found",
+      });
+    }
+
+    if (
+      parent.status ===
+      "inactive"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Parent account is inactive",
+      });
+    }
+
+    req.parent =
+      parent;
+
+    return next();
+  } catch (error) {
+    console.error(
+      "PARENT AUTH LOAD ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Parent authentication failed",
+    });
+  }
+};
+
+/* =========================================================
+   DRIVER SIGNUP
+========================================================= */
 
 router.post(
   "/signup",
@@ -184,7 +236,7 @@ router.post(
         req.body || {};
 
       /* ===================================================
-         REQUIRED TEXT FIELDS
+         REQUIRED
       =================================================== */
 
       if (
@@ -205,27 +257,22 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "All Driver details are required",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "All Driver details are required",
+        });
       }
 
       /* ===================================================
-         NORMALIZE DATA
+         NORMALIZE
       =================================================== */
 
       const normalizedName =
-        String(name)
-          .trim();
+        String(name).trim();
 
       const normalizedPhone =
-        String(phone)
-          .trim();
+        String(phone).trim();
 
       const normalizedEmail =
         String(email)
@@ -236,8 +283,7 @@ router.post(
         String(password);
 
       const normalizedAddress =
-        String(address)
-          .trim();
+        String(address).trim();
 
       const normalizedVehicleNumber =
         String(vehicleNumber)
@@ -253,10 +299,6 @@ router.post(
           .trim()
           .toUpperCase();
 
-      /* ===================================================
-         NORMALIZED REQUIRED VALUES
-      =================================================== */
-
       if (
         !normalizedName ||
         !normalizedPhone ||
@@ -271,18 +313,15 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver details cannot contain empty values",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Driver details cannot contain empty values",
+        });
       }
 
       /* ===================================================
-         PASSWORD VALIDATION
+         PASSWORD
       =================================================== */
 
       if (
@@ -293,18 +332,15 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Password must contain at least 6 characters",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Password must contain at least 6 characters",
+        });
       }
 
       /* ===================================================
-         REQUIRED DRIVER DOCUMENTS
+         REQUIRED DOCUMENTS
       =================================================== */
 
       const requiredFiles = [
@@ -333,21 +369,19 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "All required Driver documents must be uploaded",
+          message:
+            "All required Driver documents must be uploaded",
 
-            missingDocuments:
-              missingFiles,
-          });
+          missingDocuments:
+            missingFiles,
+        });
       }
 
       /* ===================================================
-         EMAIL VALIDATION
+         EMAIL
       =================================================== */
 
       const emailRegex =
@@ -362,29 +396,22 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Enter a valid email address",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Enter a valid email address",
+        });
       }
 
       /* ===================================================
-         LOCATION VALIDATION
+         LOCATION
       =================================================== */
 
       const lat =
-        Number(
-          latitude
-        );
+        Number(latitude);
 
       const lng =
-        Number(
-          longitude
-        );
+        Number(longitude);
 
       if (
         !Number.isFinite(
@@ -398,14 +425,12 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Valid latitude and longitude are required",
-          });
+          message:
+            "Valid latitude and longitude are required",
+        });
       }
 
       if (
@@ -418,18 +443,15 @@ router.post(
           req.files
         );
 
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid location coordinates",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid location coordinates",
+        });
       }
 
       /* ===================================================
-         DUPLICATE DRIVER CHECK
+         DUPLICATE DRIVER
       =================================================== */
 
       const existingDriver =
@@ -445,7 +467,7 @@ router.post(
             },
           ],
         }).select(
-          "_id email phone"
+          "_id"
         );
 
       if (
@@ -455,14 +477,11 @@ router.post(
           req.files
         );
 
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Driver already exists",
-          });
+        return res.status(409).json({
+          success: false,
+          message:
+            "Driver already exists",
+        });
       }
 
       /* ===================================================
@@ -471,25 +490,19 @@ router.post(
 
       const getFilePath = (
         field
-      ) => {
-        return (
-          req.files?.[
-            field
-          ]?.[0]?.path ||
-          ""
-        );
-      };
+      ) =>
+        req.files?.[
+          field
+        ]?.[0]?.path ||
+        "";
 
       const getFilePublicId = (
         field
-      ) => {
-        return (
-          req.files?.[
-            field
-          ]?.[0]?.filename ||
-          ""
-        );
-      };
+      ) =>
+        req.files?.[
+          field
+        ]?.[0]?.filename ||
+        "";
 
       /* ===================================================
          CREATE DRIVER
@@ -497,8 +510,6 @@ router.post(
 
       const driver =
         new Driver({
-          /* ================= BASIC ================= */
-
           name:
             normalizedName,
 
@@ -513,8 +524,6 @@ router.post(
 
           address:
             normalizedAddress,
-
-          /* ================= LOCATION ================= */
 
           homeLocation: {
             type:
@@ -539,24 +548,13 @@ router.post(
           lastLocation: {
             lat,
             lng,
-
-            eta:
-              "--",
-
-            speed:
-              0,
-
-            heading:
-              0,
-
-            accuracy:
-              null,
-
+            eta: "--",
+            speed: 0,
+            heading: 0,
+            accuracy: null,
             updatedAt:
               new Date(),
           },
-
-          /* ================= VEHICLE ================= */
 
           vehicleNumber:
             normalizedVehicleNumber,
@@ -566,8 +564,6 @@ router.post(
 
           licenseNumber:
             normalizedLicenseNumber,
-
-          /* ================= DOCUMENTS ================= */
 
           licenseFront:
             getFilePath(
@@ -604,8 +600,6 @@ router.post(
               "idBack"
             ),
 
-          /* ================= PROFILE ================= */
-
           profilePhoto:
             getFilePath(
               "profilePhoto"
@@ -615,8 +609,6 @@ router.post(
             getFilePublicId(
               "profilePhoto"
             ),
-
-          /* ================= INITIAL STATE ================= */
 
           status:
             "pending",
@@ -628,51 +620,29 @@ router.post(
             "offline",
         });
 
-      /* ===================================================
-         CUSTOM DRIVER ID
-      =================================================== */
-
       driver.driverId =
         `ASAN-${driver._id
           .toString()
           .slice(-6)
           .toUpperCase()}`;
 
-      /* ===================================================
-         SAVE DRIVER
-      =================================================== */
-
       await driver.save();
 
       driverSaved =
         true;
 
-      /* ===================================================
-         SAFE RESPONSE
-      =================================================== */
+      return res.status(201).json({
+        success: true,
 
-      const data =
-        getSafeDriver(
-          driver
-        );
+        message:
+          "Signup successful. Driver account is pending approval.",
 
-      return res
-        .status(201)
-        .json({
-          success: true,
-
-          message:
-            "Signup successful. Driver account is pending approval.",
-
-          driver:
-            data,
-        });
+        driver:
+          getSafeDriver(
+            driver
+          ),
+      });
     } catch (error) {
-      /*
-        Delete uploaded Cloudinary files only if
-        Driver creation did NOT complete successfully.
-      */
-
       if (
         !driverSaved
       ) {
@@ -686,54 +656,33 @@ router.post(
         error
       );
 
-      /* ===================================================
-         DUPLICATE KEY
-      =================================================== */
-
       if (
         error?.code ===
         11000
       ) {
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Driver already exists",
-          });
+        return res.status(409).json({
+          success: false,
+          message:
+            "Driver already exists",
+        });
       }
-
-      /* ===================================================
-         MONGOOSE VALIDATION
-      =================================================== */
 
       if (
         error?.name ===
         "ValidationError"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      /* ===================================================
-         GENERIC ERROR
-      =================================================== */
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Signup failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Signup failed",
+      });
     }
   }
 );
@@ -741,16 +690,6 @@ router.post(
 /* =========================================================
    DRIVER LOGIN
 ========================================================= */
-
-/*
-  Current Driver authentication:
-
-  Email
-    +
-  Password
-
-  Driver must also be approved by Admin.
-*/
 
 router.post(
   "/login",
@@ -763,22 +702,15 @@ router.post(
       } =
         req.body || {};
 
-      /* ===================================================
-         REQUIRED
-      =================================================== */
-
       if (
         !email ||
         !password
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Email and password are required",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email and password are required",
+        });
       }
 
       const normalizedEmail =
@@ -789,10 +721,6 @@ router.post(
       const normalizedPassword =
         String(password);
 
-      /* ===================================================
-         EMAIL FORMAT
-      =================================================== */
-
       const emailRegex =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -801,14 +729,11 @@ router.post(
           normalizedEmail
         )
       ) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-
-            message:
-              "Invalid credentials",
-          });
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid credentials",
+        });
       }
 
       /* ===================================================
@@ -824,18 +749,15 @@ router.post(
         );
 
       if (!driver) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-
-            message:
-              "Invalid credentials",
-          });
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid credentials",
+        });
       }
 
       /* ===================================================
-         PASSWORD CHECK
+         VERIFY PASSWORD
       =================================================== */
 
       const isMatch =
@@ -844,117 +766,141 @@ router.post(
         );
 
       if (!isMatch) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-
-            message:
-              "Invalid credentials",
-          });
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid credentials",
+        });
       }
 
       /* ===================================================
-         DRIVER APPROVAL STATE
+         APPROVAL
       =================================================== */
 
       if (
         driver.status ===
         "pending"
       ) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-
-            message:
-              "Driver account is pending approval",
-          });
+        return res.status(403).json({
+          success: false,
+          message:
+            "Driver account is pending approval",
+        });
       }
 
       if (
         driver.status ===
         "rejected"
       ) {
-        return res
-          .status(403)
-          .json({
-            success: false,
+        return res.status(403).json({
+          success: false,
 
-            message:
-              driver.rejectionReason
-                ? `Driver account rejected: ${driver.rejectionReason}`
-                : "Driver account has been rejected",
-          });
+          message:
+            driver.rejectionReason
+              ? `Driver account rejected: ${driver.rejectionReason}`
+              : "Driver account has been rejected",
+        });
       }
 
       if (
         driver.status !==
         "approved"
       ) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-
-            message:
-              "Driver account is not approved",
-          });
+        return res.status(403).json({
+          success: false,
+          message:
+            "Driver account is not approved",
+        });
       }
 
       /* ===================================================
-         SAFE DRIVER RESPONSE
+         JWT CONFIG
       =================================================== */
 
-      const data =
-        getSafeDriver(
-          driver
+      if (!process.env.JWT_SECRET) {
+        console.error(
+          "JWT_SECRET is not configured"
         );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+        return res.status(500).json({
+          success: false,
 
-          driver:
-            data,
+          message:
+            "Server authentication configuration error",
         });
+      }
+
+      /* ===================================================
+         GENERATE DRIVER JWT
+      =================================================== */
+
+      const token =
+        jwt.sign(
+          {
+            id:
+              String(
+                driver._id
+              ),
+
+            driverId:
+              driver.driverId,
+
+            tokenType:
+              "driver",
+          },
+
+          process.env.JWT_SECRET,
+
+          {
+            expiresIn:
+              "7d",
+
+            algorithm:
+              "HS256",
+          }
+        );
+
+      /* ===================================================
+         SAFE RESPONSE
+      =================================================== */
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Driver login successful",
+
+        token,
+
+        driver:
+          getSafeDriver(
+            driver
+          ),
+      });
     } catch (error) {
       console.error(
         "DRIVER LOGIN ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Login failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Login failed",
+      });
     }
   }
 );
 
 /* =========================================================
    SAVE PARENT FCM TOKEN
-   LEGACY COMPATIBILITY
 ========================================================= */
-
-/*
-  Existing Parent frontend may still call:
-
-  POST /api/auth/save-token
-
-  Keep this endpoint temporarily.
-
-  Authentication/ownership protection will be added
-  during the final security phase.
-*/
 
 router.post(
   "/save-token",
+
+  verifyFirebaseToken,
+  requireParentAccount,
 
   async (req, res) => {
     try {
@@ -964,117 +910,86 @@ router.post(
       } =
         req.body || {};
 
+      /* ===================================================
+         OWNERSHIP
+      =================================================== */
+
+      if (
+        parentId &&
+        String(
+          parentId
+        ) !==
+          String(
+            req.parent._id
+          )
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "You cannot modify another Parent account",
+        });
+      }
+
       const normalizedToken =
         typeof fcmToken ===
         "string"
           ? fcmToken.trim()
           : "";
 
-      /* ===================================================
-         VALIDATION
-      =================================================== */
-
-      if (
-        !parentId ||
-        !normalizedToken
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Missing parentId or token",
-          });
-      }
-
-      /* ===================================================
-         UPDATE PARENT
-      =================================================== */
-
-      const parent =
-        await Parent.findByIdAndUpdate(
-          parentId,
-
-          {
-            $addToSet: {
-              fcmTokens:
-                normalizedToken,
-            },
-          },
-
-          {
-            new: true,
-
-            runValidators:
-              true,
-          }
-        );
-
-      if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent not found",
-          });
-      }
-
-      return res
-        .status(200)
-        .json({
-          success: true,
-
+      if (!normalizedToken) {
+        return res.status(400).json({
+          success: false,
           message:
-            "Token saved",
+            "FCM token is required",
         });
+      }
+
+      await Parent.findByIdAndUpdate(
+        req.parent._id,
+
+        {
+          $addToSet: {
+            fcmTokens:
+              normalizedToken,
+          },
+        },
+
+        {
+          runValidators:
+            true,
+        }
+      );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Token saved",
+      });
     } catch (error) {
       console.error(
         "SAVE PARENT FCM TOKEN ERROR:",
         error
       );
 
-      if (
-        error?.name ===
-        "CastError"
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Parent ID",
-          });
-      }
-
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to save token",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to save token",
+      });
     }
   }
 );
 
 /* =========================================================
    GET DRIVER BY CUSTOM DRIVER ID
+   AUTHENTICATED PARENT
 ========================================================= */
-
-/*
-  Used by Parent-side Driver linking/search flow.
-
-  Fine-grained authorization and response-field restriction
-  can be added during the final security phase.
-*/
 
 router.get(
   "/by-id/:driverId",
+
+  verifyFirebaseToken,
+  requireParentAccount,
 
   async (req, res) => {
     try {
@@ -1083,72 +998,46 @@ router.get(
           req.params.driverId
         );
 
-      /* ===================================================
-         VALIDATION
-      =================================================== */
-
       if (!driverId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Driver ID is required",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Driver ID is required",
+        });
       }
-
-      /* ===================================================
-         FIND DRIVER
-      =================================================== */
 
       const driver =
         await Driver.findOne({
           driverId,
-        });
-
-      if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
-      }
-
-      /* ===================================================
-         SAFE RESPONSE
-      =================================================== */
-
-      const data =
-        getSafeDriver(
-          driver
+          status:
+            "approved",
+        }).select(
+          "driverId name vehicleNumber vehicleType vehicleModel profilePhoto status"
         );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          driver:
-            data,
+      if (!driver) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Approved Driver not found",
         });
+      }
+
+      return res.status(200).json({
+        success: true,
+        driver,
+      });
     } catch (error) {
       console.error(
         "GET DRIVER BY ID ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch Driver",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch Driver",
+      });
     }
   }
 );
