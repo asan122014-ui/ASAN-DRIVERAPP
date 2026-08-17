@@ -83,7 +83,16 @@ const ADMIN_ROLES =
 
 const app =
   express();
+const trustProxyHops =
+  Number(
+    process.env.TRUST_PROXY_HOPS ||
+      1
+  );
 
+app.set(
+  "trust proxy",
+  trustProxyHops
+);
 /* =========================================================
    HTTP SERVER
 ========================================================= */
