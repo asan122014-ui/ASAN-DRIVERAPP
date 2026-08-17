@@ -24,11 +24,9 @@ const INVALID_FCM_TOKEN_CODES =
 const normalizeDriverId = (
   driverId
 ) => {
-  if (!driverId) {
-    return "";
-  }
-
-  return String(driverId)
+  return String(
+    driverId || ""
+  )
     .trim()
     .toUpperCase();
 };
@@ -41,28 +39,30 @@ const isValidObjectId = (
   value
 ) => {
   return mongoose.Types.ObjectId.isValid(
-    String(value)
+    String(
+      value || ""
+    )
   );
 };
 
 /* =========================================================
-   BUILD NOTIFICATION FILTER
+   ADMIN FILTER BUILDER
 ========================================================= */
 
 /*
-  Supported combinations:
+  Used only by the Admin notification-history endpoint.
 
-  driverId
-  parentId
-  childId
+  Admin can optionally filter by:
 
-  childId can also be combined with
-  driverId or parentId.
+  - driverId
+  - parentId
+  - childId
 
-  driverId + parentId together is not allowed.
+  Empty recipient filters are allowed so Admin can
+  retrieve all notifications.
 */
 
-const buildNotificationFilter = ({
+const buildAdminNotificationFilter = ({
   driverId,
   parentId,
   childId,
@@ -71,48 +71,53 @@ const buildNotificationFilter = ({
     driverId &&
     parentId
   ) {
-    const error = new Error(
-      "Provide either driverId or parentId, not both"
-    );
+    const error =
+      new Error(
+        "Provide either driverId or parentId, not both"
+      );
 
-    error.statusCode = 400;
-
-    throw error;
-  }
-
-  if (
-    !driverId &&
-    !parentId &&
-    !childId
-  ) {
-    const error = new Error(
-      "driverId, parentId or childId is required"
-    );
-
-    error.statusCode = 400;
+    error.statusCode =
+      400;
 
     throw error;
   }
 
   const filter = {};
 
-  /* =====================================================
+  /* =======================================================
      DRIVER
-  ===================================================== */
+  ======================================================= */
 
   if (driverId) {
-    filter.driver =
+    const normalizedDriverId =
       normalizeDriverId(
         driverId
       );
+
+    if (
+      !normalizedDriverId
+    ) {
+      const error =
+        new Error(
+          "Invalid Driver ID"
+        );
+
+      error.statusCode =
+        400;
+
+      throw error;
+    }
+
+    filter.driver =
+      normalizedDriverId;
 
     filter.recipientType =
       "driver";
   }
 
-  /* =====================================================
+  /* =======================================================
      PARENT
-  ===================================================== */
+  ======================================================= */
 
   if (parentId) {
     if (
@@ -125,7 +130,8 @@ const buildNotificationFilter = ({
           "Invalid Parent ID"
         );
 
-      error.statusCode = 400;
+      error.statusCode =
+        400;
 
       throw error;
     }
@@ -137,9 +143,9 @@ const buildNotificationFilter = ({
       "parent";
   }
 
-  /* =====================================================
+  /* =======================================================
      CHILD
-  ===================================================== */
+  ======================================================= */
 
   if (childId) {
     if (
@@ -152,7 +158,8 @@ const buildNotificationFilter = ({
           "Invalid Child ID"
         );
 
-      error.statusCode = 400;
+      error.statusCode =
+        400;
 
       throw error;
     }
@@ -162,6 +169,38 @@ const buildNotificationFilter = ({
   }
 
   return filter;
+};
+
+/* =========================================================
+   OPTIONAL CHILD FILTER
+========================================================= */
+
+const addChildFilter = (
+  filter,
+  childId
+) => {
+  if (!childId) {
+    return;
+  }
+
+  if (
+    !isValidObjectId(
+      childId
+    )
+  ) {
+    const error =
+      new Error(
+        "Invalid Child ID"
+      );
+
+    error.statusCode =
+      400;
+
+    throw error;
+  }
+
+  filter.child =
+    childId;
 };
 
 /* =========================================================
@@ -187,6 +226,7 @@ const handleControllerError = (
       )
       .json({
         success: false,
+
         message:
           error.message,
       });
@@ -196,28 +236,22 @@ const handleControllerError = (
     .status(500)
     .json({
       success: false,
+
       message:
         fallbackMessage,
     });
 };
 
 /* =========================================================
-   GET UNREAD NOTIFICATIONS
+   GET DRIVER UNREAD NOTIFICATIONS
 ========================================================= */
 
 /*
-  Used for:
+  SECURITY:
 
-  notification badge
-  unread notification list
+  Driver identity comes from verifyDriver.
 
-  Examples:
-
-  GET /api/notifications?driverId=ASAN-XXXXXX
-
-  GET /api/notifications?parentId=<MongoId>
-
-  GET /api/notifications?childId=<MongoId>
+  req.query.driverId is ignored.
 */
 
 export const getNotifications =
@@ -226,47 +260,66 @@ export const getNotifications =
     res
   ) => {
     try {
-      const {
-        driverId,
-        parentId,
-        childId,
-      } = req.query;
-
-      const filter =
-        buildNotificationFilter(
-          {
-            driverId,
-            parentId,
-            childId,
-          }
+      const driverId =
+        normalizeDriverId(
+          req.driver?.driverId
         );
 
-      filter.read =
-        false;
+      if (!driverId) {
+        return res.status(401).json({
+          success: false,
+
+          message:
+            "Driver authentication required",
+        });
+      }
+
+      const filter = {
+        driver:
+          driverId,
+
+        recipientType:
+          "driver",
+
+        read:
+          false,
+      };
+
+      /* ===================================================
+         OPTIONAL CHILD FILTER
+      =================================================== */
+
+      addChildFilter(
+        filter,
+        req.query?.childId
+      );
+
+      /* ===================================================
+         FETCH
+      =================================================== */
 
       const notifications =
         await Notification.find(
           filter
         )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           })
           .lean();
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          count:
-            notifications.length,
+        count:
+          notifications.length,
 
-          unreadCount:
-            notifications.length,
+        unreadCount:
+          notifications.length,
 
-          data:
-            notifications,
-        });
+        data:
+          notifications,
+      });
     } catch (error) {
       return handleControllerError(
         error,
@@ -277,8 +330,21 @@ export const getNotifications =
   };
 
 /* =========================================================
-   GET ALL NOTIFICATIONS / HISTORY
+   GET ALL NOTIFICATIONS
+   ADMIN ONLY
 ========================================================= */
+
+/*
+  Route protection is handled by verifyAdmin.
+
+  Admin may retrieve everything or filter by:
+
+  driverId
+  parentId
+  childId
+  type
+  priority
+*/
 
 export const getAllNotifications =
   async (
@@ -292,19 +358,18 @@ export const getAllNotifications =
         childId,
         type,
         priority,
-      } = req.query;
+      } =
+        req.query || {};
 
       const filter =
-        buildNotificationFilter(
-          {
-            driverId,
-            parentId,
-            childId,
-          }
-        );
+        buildAdminNotificationFilter({
+          driverId,
+          parentId,
+          childId,
+        });
 
       /* ===================================================
-         OPTIONAL TYPE FILTER
+         TYPE
       =================================================== */
 
       if (type) {
@@ -315,16 +380,12 @@ export const getAllNotifications =
       }
 
       /* ===================================================
-         OPTIONAL PRIORITY FILTER
+         PRIORITY
       =================================================== */
 
-      if (
-        priority
-      ) {
+      if (priority) {
         const normalizedPriority =
-          String(
-            priority
-          )
+          String(priority)
             .trim()
             .toLowerCase();
 
@@ -337,51 +398,56 @@ export const getAllNotifications =
             normalizedPriority
           )
         ) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
+          return res.status(400).json({
+            success: false,
 
-              message:
-                "Priority must be low, medium or high",
-            });
+            message:
+              "Priority must be low, medium or high",
+          });
         }
 
         filter.priority =
           normalizedPriority;
       }
 
+      /* ===================================================
+         FETCH
+      =================================================== */
+
       const notifications =
         await Notification.find(
           filter
         )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           })
           .lean();
 
       const unreadCount =
-        notifications.filter(
+        notifications.reduce(
           (
+            count,
             notification
           ) =>
-            !notification.read
-        ).length;
+            notification.read
+              ? count
+              : count + 1,
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+          0
+        );
 
-          count:
-            notifications.length,
+      return res.status(200).json({
+        success: true,
 
-          unreadCount,
+        count:
+          notifications.length,
 
-          data:
-            notifications,
-        });
+        unreadCount,
+
+        data:
+          notifications,
+      });
     } catch (error) {
       return handleControllerError(
         error,
@@ -395,111 +461,183 @@ export const getAllNotifications =
    GET PARENT NOTIFICATIONS
 ========================================================= */
 
+/*
+  SECURITY:
+
+  Parent identity comes from:
+
+  Firebase token
+       ↓
+  req.parent
+
+  parentId from the URL has already been ownership checked
+  by notificationRoutes.js.
+*/
+
 export const getParentNotifications =
   async (
     req,
     res
   ) => {
     try {
-      const {
-        parentId,
-      } = req.params;
+      const parent =
+        req.parent;
 
-      if (!parentId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+      if (!parent) {
+        return res.status(401).json({
+          success: false,
 
-            message:
-              "Parent ID is required",
-          });
-      }
-
-      if (
-        !isValidObjectId(
-          parentId
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Parent ID",
-          });
-      }
-
-      /* ===================================================
-         VERIFY PARENT EXISTS
-      =================================================== */
-
-      const parentExists =
-        await Parent.exists({
-          _id:
-            parentId,
+          message:
+            "Parent authentication required",
         });
-
-      if (
-        !parentExists
-      ) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Parent not found",
-          });
       }
-
-      /* ===================================================
-         FETCH
-      =================================================== */
 
       const notifications =
         await Notification.find({
           parent:
-            parentId,
+            parent._id,
 
           recipientType:
             "parent",
         })
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           })
           .lean();
 
       const unreadCount =
-        notifications.filter(
+        notifications.reduce(
           (
+            count,
             notification
           ) =>
-            !notification.read
-        ).length;
+            notification.read
+              ? count
+              : count + 1,
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+          0
+        );
 
-          count:
-            notifications.length,
+      return res.status(200).json({
+        success: true,
 
-          unreadCount,
+        count:
+          notifications.length,
 
-          data:
-            notifications,
-        });
+        unreadCount,
+
+        data:
+          notifications,
+      });
     } catch (error) {
       return handleControllerError(
         error,
         res,
-        "Failed to fetch parent notifications"
+        "Failed to fetch Parent notifications"
       );
     }
   };
+
+/* =========================================================
+   BUILD AUTHENTICATED RECIPIENT FILTER
+========================================================= */
+
+const getAuthenticatedRecipientFilter = (
+  req
+) => {
+  const recipient =
+    req.notificationRecipient;
+
+  if (!recipient) {
+    const error =
+      new Error(
+        "Notification authentication required"
+      );
+
+    error.statusCode =
+      401;
+
+    throw error;
+  }
+
+  /* =======================================================
+     DRIVER
+  ======================================================= */
+
+  if (
+    recipient.type ===
+    "driver"
+  ) {
+    const driverId =
+      normalizeDriverId(
+        recipient.driverId
+      );
+
+    if (!driverId) {
+      const error =
+        new Error(
+          "Invalid Driver notification recipient"
+        );
+
+      error.statusCode =
+        401;
+
+      throw error;
+    }
+
+    return {
+      driver:
+        driverId,
+
+      recipientType:
+        "driver",
+    };
+  }
+
+  /* =======================================================
+     PARENT
+  ======================================================= */
+
+  if (
+    recipient.type ===
+    "parent"
+  ) {
+    if (
+      !isValidObjectId(
+        recipient.parentId
+      )
+    ) {
+      const error =
+        new Error(
+          "Invalid Parent notification recipient"
+        );
+
+      error.statusCode =
+        401;
+
+      throw error;
+    }
+
+    return {
+      parent:
+        recipient.parentId,
+
+      recipientType:
+        "parent",
+    };
+  }
+
+  const error =
+    new Error(
+      "Invalid notification recipient"
+    );
+
+  error.statusCode =
+    403;
+
+  throw error;
+};
 
 /* =========================================================
    MARK SINGLE NOTIFICATION AS READ
@@ -513,58 +651,89 @@ export const markAsRead =
     try {
       const {
         id,
-      } = req.params;
+      } =
+        req.params;
 
       if (
         !isValidObjectId(
           id
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Invalid Notification ID",
-          });
-      }
-
-      const notification =
-        await Notification.findById(
-          id
-        );
-
-      if (
-        !notification
-      ) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Notification not found",
-          });
+          message:
+            "Invalid Notification ID",
+        });
       }
 
       /* ===================================================
-         USE MODEL METHOD
+         AUTHENTICATED OWNER FILTER
       =================================================== */
 
-      await notification.markAsRead();
+      const ownerFilter =
+        getAuthenticatedRecipientFilter(
+          req
+        );
 
-      return res
-        .status(200)
-        .json({
+      /*
+        Defense in depth:
+
+        Even though notificationRoutes.js has already
+        authorized the notification, query it again with
+        recipient ownership included.
+      */
+
+      const notification =
+        await Notification.findOne({
+          _id:
+            id,
+
+          ...ownerFilter,
+        });
+
+      if (!notification) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "Notification not found",
+        });
+      }
+
+      /* ===================================================
+         ALREADY READ
+      =================================================== */
+
+      if (
+        notification.read
+      ) {
+        return res.status(200).json({
           success: true,
 
           message:
-            "Notification marked as read",
+            "Notification already read",
 
           data:
             notification,
         });
+      }
+
+      /* ===================================================
+         MARK READ
+      =================================================== */
+
+      await notification.markAsRead();
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Notification marked as read",
+
+        data:
+          notification,
+      });
     } catch (error) {
       return handleControllerError(
         error,
@@ -584,20 +753,23 @@ export const markAllAsRead =
     res
   ) => {
     try {
-      const {
-        driverId,
-        parentId,
-        childId,
-      } = req.query;
+      /* ===================================================
+         AUTHENTICATED RECIPIENT
+      =================================================== */
 
       const filter =
-        buildNotificationFilter(
-          {
-            driverId,
-            parentId,
-            childId,
-          }
+        getAuthenticatedRecipientFilter(
+          req
         );
+
+      /* ===================================================
+         OPTIONAL CHILD FILTER
+      =================================================== */
+
+      addChildFilter(
+        filter,
+        req.query?.childId
+      );
 
       filter.read =
         false;
@@ -605,30 +777,33 @@ export const markAllAsRead =
       const readAt =
         new Date();
 
+      /* ===================================================
+         UPDATE
+      =================================================== */
+
       const result =
         await Notification.updateMany(
           filter,
 
           {
             $set: {
-              read: true,
+              read:
+                true,
 
               readAt,
             },
           }
         );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "All notifications marked as read",
+        message:
+          "All notifications marked as read",
 
-          modifiedCount:
-            result.modifiedCount,
-        });
+        modifiedCount:
+          result.modifiedCount,
+      });
     } catch (error) {
       return handleControllerError(
         error,
@@ -640,19 +815,20 @@ export const markAllAsRead =
 
 /* =========================================================
    TEST PARENT FCM
+   ADMIN ONLY
 ========================================================= */
 
 /*
-  Development/testing endpoint.
+  Route:
 
   POST /api/notifications/test
 
-  {
-    "parentId": "..."
-  }
+  Protected by verifyAdmin.
 
-  This sends FCM only.
-  It does NOT create a real Notification DB entry.
+  This is a testing utility only.
+
+  It sends FCM but does NOT create a real
+  Notification database record.
 */
 
 export const sendTestNotification =
@@ -663,17 +839,20 @@ export const sendTestNotification =
     try {
       const {
         parentId,
-      } = req.body;
+      } =
+        req.body || {};
+
+      /* ===================================================
+         PARENT ID
+      =================================================== */
 
       if (!parentId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "parentId is required",
-          });
+          message:
+            "parentId is required",
+        });
       }
 
       if (
@@ -681,31 +860,27 @@ export const sendTestNotification =
           parentId
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Invalid Parent ID",
-          });
+          message:
+            "Invalid Parent ID",
+        });
       }
 
       /* ===================================================
-         FIREBASE CONFIGURATION
+         FIREBASE
       =================================================== */
 
       if (
         !parentMessaging
       ) {
-        return res
-          .status(503)
-          .json({
-            success: false,
+        return res.status(503).json({
+          success: false,
 
-            message:
-              "Parent Firebase Messaging is unavailable",
-          });
+          message:
+            "Parent Firebase Messaging is unavailable",
+        });
       }
 
       /* ===================================================
@@ -718,18 +893,16 @@ export const sendTestNotification =
         );
 
       if (!parent) {
-        return res
-          .status(404)
-          .json({
-            success: false,
+        return res.status(404).json({
+          success: false,
 
-            message:
-              "Parent not found",
-          });
+          message:
+            "Parent not found",
+        });
       }
 
       /* ===================================================
-         DEDUPLICATE TOKENS
+         DEDUPLICATE FCM TOKENS
       =================================================== */
 
       const tokens = [
@@ -746,20 +919,19 @@ export const sendTestNotification =
       );
 
       if (
-        !tokens.length
+        tokens.length ===
+        0
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "FCM tokens not found",
-          });
+          message:
+            "FCM tokens not found",
+        });
       }
 
       /* ===================================================
-         FIREBASE MAX MULTICAST SIZE
+         FIREBASE MULTICAST CHUNKS
       =================================================== */
 
       const chunks =
@@ -769,7 +941,8 @@ export const sendTestNotification =
         let index = 0;
         index <
         tokens.length;
-        index += 500
+        index +=
+        500
       ) {
         chunks.push(
           tokens.slice(
@@ -798,40 +971,36 @@ export const sendTestNotification =
       ) {
         const response =
           await parentMessaging
-            .sendEachForMulticast(
-              {
-                tokens:
-                  chunk,
+            .sendEachForMulticast({
+              tokens:
+                chunk,
 
-                notification:
-                  {
-                    title:
-                      "Test Notification",
+              notification: {
+                title:
+                  "Test Notification",
 
-                    body:
-                      "FCM is working properly",
-                  },
+                body:
+                  "FCM is working properly",
+              },
 
-                android: {
-                  priority:
-                    "high",
+              android: {
+                priority:
+                  "high",
 
-                  notification:
-                    {
-                      sound:
-                        "default",
-                    },
+                notification: {
+                  sound:
+                    "default",
                 },
+              },
 
-                data: {
-                  type:
-                    "general",
+              data: {
+                type:
+                  "general",
 
-                  test:
-                    "true",
-                },
-              }
-            );
+                test:
+                  "true",
+              },
+            });
 
         successCount +=
           response.successCount;
@@ -851,8 +1020,7 @@ export const sendTestNotification =
             }
 
             const code =
-              item.error
-                ?.code;
+              item.error?.code;
 
             if (
               INVALID_FCM_TOKEN_CODES.has(
@@ -871,8 +1039,15 @@ export const sendTestNotification =
          REMOVE INVALID TOKENS
       =================================================== */
 
+      const uniqueInvalidTokens = [
+        ...new Set(
+          invalidTokens
+        ),
+      ];
+
       if (
-        invalidTokens.length
+        uniqueInvalidTokens.length >
+        0
       ) {
         await Parent.updateOne(
           {
@@ -884,7 +1059,7 @@ export const sendTestNotification =
             $pull: {
               fcmTokens: {
                 $in:
-                  invalidTokens,
+                  uniqueInvalidTokens,
               },
             },
           }
@@ -895,23 +1070,21 @@ export const sendTestNotification =
         `Test Parent FCM: ${successCount} delivered, ${failureCount} failed`
       );
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Test notification processed",
+        message:
+          "Test notification processed",
 
-          data: {
-            successCount,
+        data: {
+          successCount,
 
-            failureCount,
+          failureCount,
 
-            removedInvalidTokens:
-              invalidTokens.length,
-          },
-        });
+          removedInvalidTokens:
+            uniqueInvalidTokens.length,
+        },
+      });
     } catch (error) {
       return handleControllerError(
         error,
