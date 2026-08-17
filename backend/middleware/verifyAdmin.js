@@ -31,11 +31,14 @@ const verifyAdmin = async (
         "JWT_SECRET is not configured"
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Server authentication configuration error",
-      });
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Server authentication configuration error",
+        });
     }
 
     /* =====================================================
@@ -55,6 +58,7 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
+
           message:
             "Access denied. Token missing",
         });
@@ -74,6 +78,7 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
+
           message:
             "Access denied. Token missing",
         });
@@ -83,10 +88,21 @@ const verifyAdmin = async (
        VERIFY TOKEN
     ===================================================== */
 
+    /*
+      Admin tokens are created using HS256.
+
+      Explicitly allow only HS256 here as well.
+    */
+
     const decoded =
       jwt.verify(
         token,
-        process.env.JWT_SECRET
+        process.env.JWT_SECRET,
+        {
+          algorithms: [
+            "HS256",
+          ],
+        }
       );
 
     /* =====================================================
@@ -94,27 +110,38 @@ const verifyAdmin = async (
     ===================================================== */
 
     if (
-      !decoded?.id ||
-      !decoded?.role
+      !decoded ||
+      typeof decoded !==
+        "object" ||
+      !decoded.id ||
+      !decoded.role
     ) {
       return res
         .status(401)
         .json({
           success: false,
+
           message:
             "Invalid token",
         });
     }
 
+    /* =====================================================
+       ADMIN ID VALIDATION
+    ===================================================== */
+
     if (
       !mongoose.Types.ObjectId.isValid(
-        String(decoded.id)
+        String(
+          decoded.id
+        )
       )
     ) {
       return res
         .status(401)
         .json({
           success: false,
+
           message:
             "Invalid token",
         });
@@ -133,6 +160,7 @@ const verifyAdmin = async (
         .status(403)
         .json({
           success: false,
+
           message:
             "Admin access denied",
         });
@@ -141,6 +169,13 @@ const verifyAdmin = async (
     /* =====================================================
        VERIFY ADMIN STILL EXISTS
     ===================================================== */
+
+    /*
+      Do not trust only the JWT payload.
+
+      Read the current Admin record so deleted Admins
+      immediately lose API access.
+    */
 
     const admin =
       await Admin.findById(
@@ -154,6 +189,7 @@ const verifyAdmin = async (
         .status(401)
         .json({
           success: false,
+
           message:
             "Admin account not found",
         });
@@ -162,6 +198,13 @@ const verifyAdmin = async (
     /* =====================================================
        CURRENT DATABASE ROLE CHECK
     ===================================================== */
+
+    /*
+      The role currently stored in MongoDB is authoritative.
+
+      This means role changes take effect without having
+      to wait for an old JWT to expire.
+    */
 
     if (
       !ALLOWED_ADMIN_ROLES.has(
@@ -172,6 +215,7 @@ const verifyAdmin = async (
         .status(403)
         .json({
           success: false,
+
           message:
             "Admin access denied",
         });
@@ -183,7 +227,9 @@ const verifyAdmin = async (
 
     req.admin = {
       id:
-        String(admin._id),
+        String(
+          admin._id
+        ),
 
       email:
         admin.email,
@@ -192,43 +238,49 @@ const verifyAdmin = async (
         admin.role,
     };
 
-    next();
+    return next();
   } catch (error) {
     /* =====================================================
        EXPIRED TOKEN
     ===================================================== */
 
     if (
-      error.name ===
+      error?.name ===
       "TokenExpiredError"
     ) {
       return res
         .status(401)
         .json({
           success: false,
+
           message:
             "Token expired",
         });
     }
 
     /* =====================================================
-       INVALID TOKEN
+       INVALID / MALFORMED TOKEN
     ===================================================== */
 
     if (
-      error.name ===
+      error?.name ===
         "JsonWebTokenError" ||
-      error.name ===
+      error?.name ===
         "NotBeforeError"
     ) {
       return res
         .status(401)
         .json({
           success: false,
+
           message:
             "Invalid token",
         });
     }
+
+    /* =====================================================
+       SERVER / DATABASE ERROR
+    ===================================================== */
 
     console.error(
       "ADMIN AUTH ERROR:",
@@ -239,6 +291,7 @@ const verifyAdmin = async (
       .status(500)
       .json({
         success: false,
+
         message:
           "Admin authentication failed",
       });
