@@ -1,9 +1,9 @@
 import express from "express";
+
+import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
 import {
   parentAuthLimiter,
 } from "../middleware/rateLimiters.js";
-
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
 
 import {
   loginParentWithFirebase,
