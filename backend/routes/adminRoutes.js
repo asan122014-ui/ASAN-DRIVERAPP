@@ -14,11 +14,9 @@ const router = express.Router();
    HELPERS
 ========================================================= */
 
-const isValidObjectId = (
-  value
-) => {
+const isValidObjectId = (value) => {
   return mongoose.Types.ObjectId.isValid(
-    String(value)
+    String(value || "")
   );
 };
 
@@ -42,12 +40,13 @@ const isValidObjectId = (
 
 router.post(
   "/login",
+
   async (req, res) => {
     try {
       const {
         email,
         password,
-      } = req.body;
+      } = req.body || {};
 
       /* ===================================================
          NORMALIZE EMAIL
@@ -55,9 +54,7 @@ router.post(
 
       const normalizedEmail =
         typeof email === "string"
-          ? email
-              .trim()
-              .toLowerCase()
+          ? email.trim().toLowerCase()
           : "";
 
       /* ===================================================
@@ -68,14 +65,11 @@ router.post(
         !normalizedEmail ||
         !password
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Email and password are required",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email and password are required",
+        });
       }
 
       /* ===================================================
@@ -90,35 +84,27 @@ router.post(
           normalizedEmail
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Enter a valid email address",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Enter a valid email address",
+        });
       }
 
       /* ===================================================
          JWT CONFIGURATION
       =================================================== */
 
-      if (
-        !process.env.JWT_SECRET
-      ) {
+      if (!process.env.JWT_SECRET) {
         console.error(
           "JWT_SECRET is not configured"
         );
 
-        return res
-          .status(500)
-          .json({
-            success: false,
-
-            message:
-              "Server authentication configuration error",
-          });
+        return res.status(500).json({
+          success: false,
+          message:
+            "Server authentication configuration error",
+        });
       }
 
       /* ===================================================
@@ -134,19 +120,16 @@ router.post(
         );
 
       /*
-        Do not reveal whether the email
-        exists in the Admin database.
+        Do not reveal whether the Admin
+        email exists.
       */
 
       if (!admin) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-
-            message:
-              "Invalid email or password",
-          });
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid email or password",
+        });
       }
 
       /* ===================================================
@@ -159,14 +142,30 @@ router.post(
         );
 
       if (!isMatch) {
-        return res
-          .status(401)
-          .json({
-            success: false,
+        return res.status(401).json({
+          success: false,
+          message:
+            "Invalid email or password",
+        });
+      }
 
-            message:
-              "Invalid email or password",
-          });
+      /* ===================================================
+         VALID ROLE
+      =================================================== */
+
+      if (
+        ![
+          "superadmin",
+          "reviewer",
+        ].includes(
+          admin.role
+        )
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Admin access denied",
+        });
       }
 
       /* ===================================================
@@ -188,7 +187,11 @@ router.post(
           process.env.JWT_SECRET,
 
           {
-            expiresIn: "7d",
+            expiresIn:
+              "7d",
+
+            algorithm:
+              "HS256",
           }
         );
 
@@ -196,41 +199,36 @@ router.post(
          RESPONSE
       =================================================== */
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Admin login successful",
+        message:
+          "Admin login successful",
 
-          token,
+        token,
 
-          admin: {
-            id:
-              admin._id,
+        admin: {
+          id:
+            admin._id,
 
-            email:
-              admin.email,
+          email:
+            admin.email,
 
-            role:
-              admin.role,
-          },
-        });
+          role:
+            admin.role,
+        },
+      });
     } catch (error) {
       console.error(
         "ADMIN LOGIN ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Login failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Login failed",
+      });
     }
   }
 );
@@ -241,7 +239,9 @@ router.post(
 
 router.get(
   "/analytics",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const [
@@ -254,46 +254,44 @@ router.get(
           Driver.countDocuments(),
 
           Driver.countDocuments({
-            status: "pending",
+            status:
+              "pending",
           }),
 
           Driver.countDocuments({
-            status: "approved",
+            status:
+              "approved",
           }),
 
           Driver.countDocuments({
-            status: "rejected",
+            status:
+              "rejected",
           }),
         ]);
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          data: {
-            summary: {
-              total,
-              pending,
-              approved,
-              rejected,
-            },
+        data: {
+          summary: {
+            total,
+            pending,
+            approved,
+            rejected,
           },
-        });
+        },
+      });
     } catch (error) {
       console.error(
         "ADMIN ANALYTICS ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Analytics failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Analytics failed",
+      });
     }
   }
 );
@@ -304,7 +302,9 @@ router.get(
 
 router.get(
   "/drivers",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const drivers =
@@ -313,34 +313,30 @@ router.get(
             "-password"
           )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           });
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          count:
-            drivers.length,
+        count:
+          drivers.length,
 
-          data:
-            drivers,
-        });
+        data:
+          drivers,
+      });
     } catch (error) {
       console.error(
         "ADMIN DRIVERS FETCH ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch drivers",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch drivers",
+      });
     }
   }
 );
@@ -351,7 +347,9 @@ router.get(
 
 router.get(
   "/drivers/:id",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const {
@@ -367,18 +365,15 @@ router.get(
           id
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Driver ID",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Driver ID",
+        });
       }
 
       /* ===================================================
-         DRIVER
+         FIND DRIVER
       =================================================== */
 
       const driver =
@@ -389,38 +384,29 @@ router.get(
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          data:
-            driver,
-        });
+      return res.status(200).json({
+        success: true,
+        data:
+          driver,
+      });
     } catch (error) {
       console.error(
         "ADMIN DRIVER FETCH ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Failed to fetch driver",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to fetch driver",
+      });
     }
   }
 );
@@ -431,7 +417,9 @@ router.get(
 
 router.put(
   "/drivers/:id/approve",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const {
@@ -447,14 +435,11 @@ router.put(
           id
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Driver ID",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Driver ID",
+        });
       }
 
       /* ===================================================
@@ -467,14 +452,11 @@ router.put(
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
       /* ===================================================
@@ -485,25 +467,62 @@ router.put(
         driver.status ===
         "approved"
       ) {
-        return res
-          .status(200)
-          .json({
-            success: true,
+        return res.status(200).json({
+          success: true,
 
-            message:
-              "Driver is already approved",
+          message:
+            "Driver is already approved",
 
-            data: {
-              _id:
-                driver._id,
+          data: {
+            _id:
+              driver._id,
 
-              driverId:
-                driver.driverId,
+            driverId:
+              driver.driverId,
 
-              status:
-                driver.status,
-            },
-          });
+            status:
+              driver.status,
+          },
+        });
+      }
+
+      /* ===================================================
+         REJECTED APPLICATION
+      =================================================== */
+
+      /*
+        Rejected → Approved should not happen through
+        the normal onboarding review endpoint.
+
+        A future resubmission/review flow can handle it.
+      */
+
+      if (
+        driver.status ===
+        "rejected"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Rejected Driver application cannot be approved directly",
+        });
+      }
+
+      /* ===================================================
+         EXPECT PENDING APPLICATION
+      =================================================== */
+
+      if (
+        driver.status !==
+        "pending"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Driver is not awaiting approval",
+        });
       }
 
       /* ===================================================
@@ -539,6 +558,12 @@ router.put(
           metadata: {
             driverId:
               driver.driverId,
+
+            previousStatus:
+              "pending",
+
+            newStatus:
+              "approved",
           },
         });
       } catch (logError) {
@@ -549,14 +574,20 @@ router.put(
       }
 
       /* ===================================================
-         SOCKET
+         SOCKET — DRIVER ROOM ONLY
       =================================================== */
 
       const io =
-        req.app.get("io");
+        req.app.get(
+          "io"
+        );
 
       if (io) {
-        io.emit(
+        io.to(
+          String(
+            driver.driverId
+          )
+        ).emit(
           "driver_approved",
           {
             driverId:
@@ -573,30 +604,30 @@ router.put(
             date:
               new Date()
                 .toISOString()
-                .split("T")[0],
+                .split(
+                  "T"
+                )[0],
           }
         );
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Driver approved successfully",
+        message:
+          "Driver approved successfully",
 
-          data: {
-            _id:
-              driver._id,
+        data: {
+          _id:
+            driver._id,
 
-            driverId:
-              driver.driverId,
+          driverId:
+            driver.driverId,
 
-            status:
-              driver.status,
-          },
-        });
+          status:
+            driver.status,
+        },
+      });
     } catch (error) {
       console.error(
         "APPROVE DRIVER ERROR:",
@@ -604,27 +635,21 @@ router.put(
       );
 
       if (
-        error.name ===
+        error?.name ===
         "ValidationError"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Approval failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Approval failed",
+      });
     }
   }
 );
@@ -635,7 +660,9 @@ router.put(
 
 router.put(
   "/drivers/:id/reject",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const {
@@ -644,7 +671,8 @@ router.put(
 
       const {
         reason,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* ===================================================
          VALIDATE ID
@@ -655,14 +683,11 @@ router.put(
           id
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              "Invalid Driver ID",
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid Driver ID",
+        });
       }
 
       /* ===================================================
@@ -671,21 +696,31 @@ router.put(
 
       const rejectionReason =
         typeof reason ===
-          "string"
+        "string"
           ? reason.trim()
           : "";
 
       if (
         !rejectionReason
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
+        return res.status(400).json({
+          success: false,
 
-            message:
-              "Rejection reason is required",
-          });
+          message:
+            "Rejection reason is required",
+        });
+      }
+
+      if (
+        rejectionReason.length >
+        500
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Rejection reason must not exceed 500 characters",
+        });
       }
 
       /* ===================================================
@@ -698,14 +733,11 @@ router.put(
         );
 
       if (!driver) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-
-            message:
-              "Driver not found",
-          });
+        return res.status(404).json({
+          success: false,
+          message:
+            "Driver not found",
+        });
       }
 
       /* ===================================================
@@ -714,32 +746,68 @@ router.put(
 
       if (
         driver.status ===
-          "rejected" &&
-        driver.rejectionReason ===
-          rejectionReason
+        "rejected"
       ) {
-        return res
-          .status(200)
-          .json({
-            success: true,
+        return res.status(200).json({
+          success: true,
 
-            message:
-              "Driver is already rejected",
+          message:
+            "Driver is already rejected",
 
-            data: {
-              _id:
-                driver._id,
+          data: {
+            _id:
+              driver._id,
 
-              driverId:
-                driver.driverId,
+            driverId:
+              driver.driverId,
 
-              status:
-                driver.status,
+            status:
+              driver.status,
 
-              rejectionReason:
-                driver.rejectionReason,
-            },
-          });
+            rejectionReason:
+              driver.rejectionReason,
+          },
+        });
+      }
+
+      /* ===================================================
+         APPROVED DRIVER
+      =================================================== */
+
+      /*
+        Approval review and account suspension are
+        different operations.
+
+        Do not use application rejection to disable an
+        already-approved Driver.
+      */
+
+      if (
+        driver.status ===
+        "approved"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Approved Driver cannot be rejected through the application review endpoint",
+        });
+      }
+
+      /* ===================================================
+         EXPECT PENDING APPLICATION
+      =================================================== */
+
+      if (
+        driver.status !==
+        "pending"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Driver is not awaiting review",
+        });
       }
 
       /* ===================================================
@@ -783,6 +851,12 @@ router.put(
               driver.driverId,
 
             rejectionReason,
+
+            previousStatus:
+              "pending",
+
+            newStatus:
+              "rejected",
           },
         });
       } catch (logError) {
@@ -793,14 +867,20 @@ router.put(
       }
 
       /* ===================================================
-         SOCKET
+         SOCKET — DRIVER ROOM ONLY
       =================================================== */
 
       const io =
-        req.app.get("io");
+        req.app.get(
+          "io"
+        );
 
       if (io) {
-        io.emit(
+        io.to(
+          String(
+            driver.driverId
+          )
+        ).emit(
           "driver_rejected",
           {
             driverId:
@@ -820,28 +900,26 @@ router.put(
         );
       }
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Driver rejected successfully",
+        message:
+          "Driver rejected successfully",
 
-          data: {
-            _id:
-              driver._id,
+        data: {
+          _id:
+            driver._id,
 
-            driverId:
-              driver.driverId,
+          driverId:
+            driver.driverId,
 
-            status:
-              driver.status,
+          status:
+            driver.status,
 
-            rejectionReason:
-              driver.rejectionReason,
-          },
-        });
+          rejectionReason:
+            driver.rejectionReason,
+        },
+      });
     } catch (error) {
       console.error(
         "REJECT DRIVER ERROR:",
@@ -849,27 +927,21 @@ router.put(
       );
 
       if (
-        error.name ===
+        error?.name ===
         "ValidationError"
       ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            message:
-              error.message,
-          });
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message,
+        });
       }
 
-      return res
-        .status(500)
-        .json({
-          success: false,
-
-          message:
-            "Rejection failed",
-        });
+      return res.status(500).json({
+        success: false,
+        message:
+          "Rejection failed",
+      });
     }
   }
 );
@@ -880,7 +952,9 @@ router.put(
 
 router.get(
   "/logs",
+
   verifyAdmin,
+
   async (req, res) => {
     try {
       const logs =
@@ -894,36 +968,37 @@ router.get(
             "name driverId"
           )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           });
 
-      return res
-        .status(200)
-        .json({
-          success: true,
+      return res.status(200).json({
+        success: true,
 
-          count:
-            logs.length,
+        count:
+          logs.length,
 
-          data:
-            logs,
-        });
+        data:
+          logs,
+      });
     } catch (error) {
       console.error(
         "ADMIN LOGS ERROR:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          success: false,
+      return res.status(500).json({
+        success: false,
 
-          message:
-            "Failed to fetch logs",
-        });
+        message:
+          "Failed to fetch logs",
+      });
     }
   }
 );
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 export default router;
