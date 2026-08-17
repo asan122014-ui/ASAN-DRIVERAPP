@@ -46,8 +46,6 @@ import authRoutes from "./routes/authRoutes.js";
 import otpRoutes from "./routes/otp.js";
 
 /*
-  NEW:
-
   Firebase Phone Authentication routes
   for the Parent application.
 */
@@ -60,7 +58,6 @@ import tripRoutes from "./routes/trip.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import studentRoutes from "./routes/student.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import locationRoutes from "./routes/locationRoutes.js";
 import childRoutes from "./routes/child.js";
 import billingRoutes from "./routes/billingRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
@@ -83,17 +80,16 @@ const server = http.createServer(app);
 ========================================================= */
 
 /*
-  CORS is currently open to all origins.
+  CORS is currently open during development.
 
-  This is okay during development.
-
-  Before production deployment we will restrict this
-  to your actual Parent App / Admin / Driver origins.
+  Before production deployment, restrict this
+  to the required web/admin origins.
 */
 
 app.use(
   cors({
     origin: "*",
+
     methods: [
       "GET",
       "POST",
@@ -102,6 +98,7 @@ app.use(
       "DELETE",
       "OPTIONS",
     ],
+
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -109,9 +106,9 @@ app.use(
   })
 );
 
-/*
-  Parse JSON requests.
-*/
+/* =========================================================
+   JSON BODY
+========================================================= */
 
 app.use(
   express.json({
@@ -119,9 +116,9 @@ app.use(
   })
 );
 
-/*
-  Parse URL encoded forms.
-*/
+/* =========================================================
+   URL ENCODED BODY
+========================================================= */
 
 app.use(
   express.urlencoded({
@@ -130,9 +127,9 @@ app.use(
   })
 );
 
-/*
-  Serve uploaded files.
-*/
+/* =========================================================
+   STATIC FILES
+========================================================= */
 
 app.use(
   "/uploads",
@@ -140,16 +137,14 @@ app.use(
 );
 
 /* =========================================================
-   API ROUTES
+   AUTH ROUTES
 ========================================================= */
 
 /*
-  OLD / SHARED AUTH ROUTES
+  Existing shared / Driver authentication routes.
 
-  Keep for now because Driver authentication
-  and other existing functionality may depend on them.
-
-  We will clean them later.
+  Keep these until Driver authentication migration
+  is handled separately.
 */
 
 app.use(
@@ -157,11 +152,9 @@ app.use(
   authRoutes
 );
 
-/*
-  Existing Driver OTP routes.
-
-  DO NOT remove yet.
-*/
+/* =========================================================
+   DRIVER OTP ROUTES
+========================================================= */
 
 app.use(
   "/api/otp",
@@ -169,21 +162,12 @@ app.use(
 );
 
 /* =========================================================
-   NEW PARENT FIREBASE AUTHENTICATION
+   PARENT FIREBASE AUTH
 ========================================================= */
 
 /*
-  These are the new Parent OTP authentication routes.
-
   POST /api/parent-auth/login
-
   POST /api/parent-auth/register
-
-  Firebase itself handles:
-  - Send OTP
-  - Verify OTP
-
-  These backend endpoints verify the Firebase ID token.
 */
 
 app.use(
@@ -194,19 +178,6 @@ app.use(
 /* =========================================================
    PARENT ROUTES
 ========================================================= */
-
-/*
-  Existing Parent routes stay active.
-
-  Later we will remove only the OLD:
-
-  POST /register
-  POST /login
-  POST /check-email
-  POST /reset-password
-
-  Other Parent operations will remain.
-*/
 
 app.use(
   "/api/parent",
@@ -247,15 +218,6 @@ app.use(
 app.use(
   "/api/students",
   studentRoutes
-);
-
-/* =========================================================
-   LOCATION ROUTES
-========================================================= */
-
-app.use(
-  "/api/location",
-  locationRoutes
 );
 
 /* =========================================================
@@ -322,7 +284,7 @@ const io = new Server(
 );
 
 /*
-  Allow controllers/services to access Socket.IO using:
+  Controllers/services can access Socket.IO using:
 
   req.app.get("io")
 */
@@ -346,7 +308,7 @@ const parentSockets =
   new Map();
 
 /*
-  Driver ID
+  Driver custom ID
        ↓
   Socket ID
 */
@@ -395,7 +357,7 @@ io.on(
           })
         */
 
-        const driverId =
+        const rawDriverId =
           typeof data === "string"
             ? data
             : data?.driverId;
@@ -405,12 +367,21 @@ io.on(
             ? data?.parentId
             : null;
 
+        if (!rawDriverId) {
+          return;
+        }
+
+        const driverId =
+          String(rawDriverId)
+            .trim()
+            .toUpperCase();
+
         if (!driverId) {
           return;
         }
 
         const room =
-          String(driverId);
+          driverId;
 
         socket.join(room);
 
@@ -443,15 +414,13 @@ io.on(
         =============================================== */
 
         if (parentId) {
+          const normalizedParentId =
+            String(parentId);
+
           parentSockets.set(
-            parentId,
+            normalizedParentId,
             socket.id
           );
-
-          /*
-            Track which Parents are connected
-            to this Driver.
-          */
 
           if (
             !driverParentsMap.has(
@@ -466,11 +435,13 @@ io.on(
 
           driverParentsMap
             .get(driverId)
-            .add(parentId);
+            .add(
+              normalizedParentId
+            );
 
           console.log(
             "👨‍👩‍👧 Parent stored, waiting for camera request:",
-            parentId
+            normalizedParentId
           );
         }
       }
@@ -481,48 +452,42 @@ io.on(
     ===================================================== */
 
     /*
-      Supporting both event names:
+      Both aliases are supported:
 
       join_parent_room
       join_parent
-
-      This avoids breaking existing Parent frontend
-      screens that may use either event.
     */
 
     const joinParentRoom = (
-      parentId
+      parentData
     ) => {
+      if (!parentData) {
+        return;
+      }
+
+      const parentId =
+        typeof parentData ===
+        "object"
+          ? parentData?.parentId
+          : parentData;
+
       if (!parentId) {
         return;
       }
 
       const id =
-        typeof parentId === "object"
-          ? parentId?.parentId
-          : parentId;
+        String(parentId);
 
-      if (!id) {
-        return;
-      }
-
-      const room =
-        String(id);
-
-      socket.join(room);
-
-      /*
-        Save socket mapping as well.
-      */
+      socket.join(id);
 
       parentSockets.set(
-        String(id),
+        id,
         socket.id
       );
 
       console.log(
         "👨‍👩‍👧 Joined parent room:",
-        room
+        id
       );
     };
 
@@ -530,10 +495,6 @@ io.on(
       "join_parent_room",
       joinParentRoom
     );
-
-    /*
-      New / currently-used Parent event alias.
-    */
 
     socket.on(
       "join_parent",
@@ -547,22 +508,30 @@ io.on(
     socket.on(
       "start_camera",
       ({
-        driverId,
+        driverId: rawDriverId,
         parentId,
       }) => {
         if (
-          !driverId ||
+          !rawDriverId ||
           !parentId
         ) {
           return;
         }
 
+        const driverId =
+          String(rawDriverId)
+            .trim()
+            .toUpperCase();
+
+        const normalizedParentId =
+          String(parentId);
+
         const room =
-          String(driverId);
+          driverId;
 
         console.log(
           "📷 Parent requested camera:",
-          parentId,
+          normalizedParentId,
           "for driver:",
           driverId
         );
@@ -572,7 +541,7 @@ io.on(
         =============================================== */
 
         parentSockets.set(
-          parentId,
+          normalizedParentId,
           socket.id
         );
 
@@ -593,7 +562,9 @@ io.on(
 
         driverParentsMap
           .get(driverId)
-          .add(parentId);
+          .add(
+            normalizedParentId
+          );
 
         /* ===============================================
            NOTIFY DRIVER
@@ -602,13 +573,14 @@ io.on(
         io.to(room).emit(
           "parent_joined",
           {
-            parentId,
+            parentId:
+              normalizedParentId,
           }
         );
 
         console.log(
           "👨‍👩‍👧 Emitted parent_joined to driver for parent:",
-          parentId
+          normalizedParentId
         );
       }
     );
@@ -621,17 +593,33 @@ io.on(
       "offer",
       ({
         offer,
-        driverId,
+        driverId: rawDriverId,
         parentId,
       }) => {
+        const driverId =
+          rawDriverId
+            ? String(
+                rawDriverId
+              )
+                .trim()
+                .toUpperCase()
+            : "";
+
+        const normalizedParentId =
+          parentId
+            ? String(parentId)
+            : "";
+
         console.log(
           "📤 Offer from driver:",
           driverId,
           "for parent:",
-          parentId
+          normalizedParentId
         );
 
-        if (!parentId) {
+        if (
+          !normalizedParentId
+        ) {
           console.log(
             "⚠️ No parentId provided in offer, ignoring"
           );
@@ -641,13 +629,13 @@ io.on(
 
         const parentSocketId =
           parentSockets.get(
-            parentId
+            normalizedParentId
           );
 
         if (!parentSocketId) {
           console.log(
             "⚠️ Parent socket not found for parent:",
-            parentId
+            normalizedParentId
           );
 
           return;
@@ -659,7 +647,10 @@ io.on(
           "offer",
           {
             offer,
-            parentId,
+
+            parentId:
+              normalizedParentId,
+
             driverId,
           }
         );
@@ -679,12 +670,26 @@ io.on(
       "answer",
       ({
         answer,
-        driverId,
+        driverId: rawDriverId,
         parentId,
       }) => {
+        const driverId =
+          rawDriverId
+            ? String(
+                rawDriverId
+              )
+                .trim()
+                .toUpperCase()
+            : "";
+
+        const normalizedParentId =
+          parentId
+            ? String(parentId)
+            : "";
+
         console.log(
           "📩 Answer from parent:",
-          parentId,
+          normalizedParentId,
           "for driver:",
           driverId
         );
@@ -713,7 +718,10 @@ io.on(
           "answer",
           {
             answer,
-            parentId,
+
+            parentId:
+              normalizedParentId,
+
             driverId,
           }
         );
@@ -733,17 +741,31 @@ io.on(
       "ice-candidate",
       ({
         candidate,
-        driverId,
+        driverId: rawDriverId,
         parentId,
         sender,
       }) => {
+        const driverId =
+          rawDriverId
+            ? String(
+                rawDriverId
+              )
+                .trim()
+                .toUpperCase()
+            : "";
+
+        const normalizedParentId =
+          parentId
+            ? String(parentId)
+            : "";
+
         console.log(
           "📡 ICE candidate from:",
           sender,
           "driver:",
           driverId,
           "parent:",
-          parentId
+          normalizedParentId
         );
 
         /* ===============================================
@@ -755,7 +777,7 @@ io.on(
         ) {
           const parentSocketId =
             parentSockets.get(
-              parentId
+              normalizedParentId
             );
 
           if (
@@ -763,7 +785,7 @@ io.on(
           ) {
             console.log(
               "⚠️ Parent socket not found for parent:",
-              parentId
+              normalizedParentId
             );
 
             return;
@@ -775,14 +797,12 @@ io.on(
             "ice-candidate",
             {
               candidate,
-              parentId,
+
+              parentId:
+                normalizedParentId,
+
               driverId,
             }
-          );
-
-          console.log(
-            "📡 ICE candidate sent to parent socket:",
-            parentSocketId
           );
 
           return;
@@ -817,14 +837,12 @@ io.on(
             "ice-candidate",
             {
               candidate,
-              parentId,
+
+              parentId:
+                normalizedParentId,
+
               driverId,
             }
-          );
-
-          console.log(
-            "📡 ICE candidate sent to driver socket:",
-            driverSocketId
           );
 
           return;
@@ -843,19 +861,22 @@ io.on(
     socket.on(
       "driver_camera_ready",
       ({
-        driverId,
+        driverId:
+          rawDriverId,
       }) => {
-        if (!driverId) {
+        if (!rawDriverId) {
           return;
         }
+
+        const driverId =
+          String(rawDriverId)
+            .trim()
+            .toUpperCase();
 
         console.log(
           "📷 Driver camera ready:",
           driverId
         );
-
-        const room =
-          String(driverId);
 
         const parentIds =
           driverParentsMap.get(
@@ -872,12 +893,9 @@ io.on(
           parentIdList.length >
           0
         ) {
-          console.log(
-            "👨‍👩‍👧 Sending existing parents to driver:",
-            parentIdList
-          );
-
-          io.to(room).emit(
+          io.to(
+            driverId
+          ).emit(
             "existing_parents",
             {
               parentIds:
@@ -902,16 +920,29 @@ io.on(
     socket.on(
       "parent_left",
       ({
-        driverId,
+        driverId:
+          rawDriverId,
         parentId,
       }) => {
         if (!parentId) {
           return;
         }
 
+        const normalizedParentId =
+          String(parentId);
+
+        const driverId =
+          rawDriverId
+            ? String(
+                rawDriverId
+              )
+                .trim()
+                .toUpperCase()
+            : "";
+
         console.log(
           "👋 Parent left:",
-          parentId,
+          normalizedParentId,
           "from driver:",
           driverId
         );
@@ -921,7 +952,7 @@ io.on(
         =============================================== */
 
         parentSockets.delete(
-          parentId
+          normalizedParentId
         );
 
         /* ===============================================
@@ -940,11 +971,12 @@ io.on(
             );
 
           parentSet.delete(
-            parentId
+            normalizedParentId
           );
 
           if (
-            parentSet.size === 0
+            parentSet.size ===
+            0
           ) {
             driverParentsMap.delete(
               driverId
@@ -973,13 +1005,9 @@ io.on(
           ).emit(
             "parent_left",
             {
-              parentId,
+              parentId:
+                normalizedParentId,
             }
-          );
-
-          console.log(
-            "📤 Emitted parent_left to driver socket:",
-            driverSocketId
           );
 
           return;
@@ -987,15 +1015,16 @@ io.on(
 
         /*
           Fallback:
-          broadcast to Driver room.
+          Driver room.
         */
 
         io.to(
-          String(driverId)
+          driverId
         ).emit(
           "parent_left",
           {
-            parentId,
+            parentId:
+              normalizedParentId,
           }
         );
       }
@@ -1005,25 +1034,70 @@ io.on(
        LIVE DRIVER LOCATION
     ===================================================== */
 
+    /*
+      Driver emits:
+
+      socket.emit("send_location", {
+        driverId,
+        lat,
+        lng,
+        eta,
+        speed,
+        heading,
+        accuracy
+      });
+
+      Parent receives:
+
+      socket.on("live_location", ...)
+    */
+
     socket.on(
       "send_location",
       async (data) => {
         try {
           const {
-            driverId,
+            driverId:
+              rawDriverId,
+
             lat,
             lng,
             eta,
-          } =
-            data || {};
+            speed,
+            heading,
+            accuracy,
+          } = data || {};
+
+          /* =============================================
+             REQUIRED VALUES
+          ============================================= */
 
           if (
-            !driverId ||
+            !rawDriverId ||
             lat === undefined ||
             lng === undefined
           ) {
             return;
           }
+
+          /* =============================================
+             NORMALIZE DRIVER ID
+          ============================================= */
+
+          const driverId =
+            String(
+              rawDriverId
+            )
+              .trim()
+              .toUpperCase();
+
+          if (!driverId) {
+            return;
+          }
+
+          /* =============================================
+             COORDINATES
+          ============================================= */
 
           const latitude =
             Number(lat);
@@ -1039,72 +1113,196 @@ io.on(
               longitude
             )
           ) {
-            console.log(
-              "⚠️ Invalid location received:",
-              {
-                lat,
-                lng,
-              }
+            console.warn(
+              "⚠️ Invalid Driver location received"
             );
 
             return;
           }
 
-          const room =
-            String(driverId);
-
           /* =============================================
-             STORE LAST LOCATION
+             COORDINATE RANGE
           ============================================= */
 
-          await Driver.findOneAndUpdate(
-            {
-              driverId,
-            },
-            {
-              lastLocation: {
-                lat:
-                  latitude,
+          if (
+            latitude < -90 ||
+            latitude > 90 ||
+            longitude < -180 ||
+            longitude > 180
+          ) {
+            console.warn(
+              "⚠️ Driver location outside valid coordinate range"
+            );
 
-                lng:
-                  longitude,
+            return;
+          }
 
-                eta:
-                  eta ||
-                  "--",
+          /* =============================================
+             SPEED
+          ============================================= */
 
-                updatedAt:
-                  new Date(),
+          const speedNumber =
+            Number(speed);
+
+          const safeSpeed =
+            Number.isFinite(
+              speedNumber
+            ) &&
+            speedNumber >= 0
+              ? speedNumber
+              : 0;
+
+          /* =============================================
+             HEADING
+          ============================================= */
+
+          const headingNumber =
+            Number(heading);
+
+          const safeHeading =
+            Number.isFinite(
+              headingNumber
+            ) &&
+            headingNumber >= 0 &&
+            headingNumber <= 360
+              ? headingNumber
+              : 0;
+
+          /* =============================================
+             GPS ACCURACY
+          ============================================= */
+
+          const accuracyNumber =
+            Number(accuracy);
+
+          const safeAccuracy =
+            Number.isFinite(
+              accuracyNumber
+            ) &&
+            accuracyNumber >= 0
+              ? accuracyNumber
+              : null;
+
+          /* =============================================
+             ETA
+          ============================================= */
+
+          const safeEta =
+            typeof eta ===
+              "string" &&
+            eta.trim()
+              ? eta.trim()
+              : "--";
+
+          const updatedAt =
+            new Date();
+
+          /* =============================================
+             UPDATE DRIVER LAST LOCATION
+          ============================================= */
+
+          const driver =
+            await Driver.findOneAndUpdate(
+              {
+                driverId,
               },
-            }
-          );
+
+              {
+                $set: {
+                  lastLocation: {
+                    lat:
+                      latitude,
+
+                    lng:
+                      longitude,
+
+                    eta:
+                      safeEta,
+
+                    speed:
+                      safeSpeed,
+
+                    heading:
+                      safeHeading,
+
+                    accuracy:
+                      safeAccuracy,
+
+                    updatedAt,
+                  },
+                },
+              },
+
+              {
+                new: true,
+                runValidators: true,
+              }
+            );
 
           /* =============================================
-             SEND LOCATION TO CONNECTED PARENTS
+             UNKNOWN DRIVER
           ============================================= */
 
-          io.to(room).emit(
+          if (!driver) {
+            console.warn(
+              "⚠️ Location received for unknown Driver:",
+              driverId
+            );
+
+            return;
+          }
+
+          /* =============================================
+             LOCATION PAYLOAD
+          ============================================= */
+
+          const locationPayload = {
+            driverId,
+
+            lat:
+              latitude,
+
+            lng:
+              longitude,
+
+            eta:
+              safeEta,
+
+            speed:
+              safeSpeed,
+
+            heading:
+              safeHeading,
+
+            accuracy:
+              safeAccuracy,
+
+            updatedAt:
+              updatedAt.toISOString(),
+          };
+
+          /* =============================================
+             BROADCAST TO DRIVER ROOM
+          ============================================= */
+
+          io.to(
+            driverId
+          ).emit(
             "live_location",
-            {
-              lat:
-                latitude,
-
-              lng:
-                longitude,
-
-              eta:
-                eta ||
-                "--",
-            }
+            locationPayload
           );
 
-          console.log(
-            "📍 Location sent:",
-            room
-          );
+          /*
+            IMPORTANT:
+
+            Do not console.log every GPS ping.
+
+            If location updates happen every few seconds,
+            logging every update will flood Render logs.
+          */
         } catch (error) {
           console.error(
-            "❌ Location error:",
+            "❌ LIVE LOCATION ERROR:",
             error.message
           );
         }
@@ -1119,39 +1317,41 @@ io.on(
       Keep temporarily for compatibility.
 
       WebRTC should eventually replace
-      frame-by-frame socket broadcasting.
+      frame-by-frame Socket.IO broadcasting.
     */
 
     socket.on(
       "camera_frame",
       (data) => {
         const {
-          driverId,
+          driverId:
+            rawDriverId,
+
           frame,
-        } =
-          data || {};
+        } = data || {};
 
         if (
-          !driverId ||
+          !rawDriverId ||
           !frame
         ) {
           return;
         }
 
-        const room =
-          String(driverId);
+        const driverId =
+          String(
+            rawDriverId
+          )
+            .trim()
+            .toUpperCase();
 
-        io.to(room).emit(
+        io.to(
+          driverId
+        ).emit(
           "camera_update",
           {
             driverId,
             frame,
           }
-        );
-
-        console.log(
-          "🎥 Frame broadcast:",
-          room
         );
       }
     );
@@ -1304,22 +1504,16 @@ io.on(
               }
             );
 
-            console.log(
-              "📤 Emitted parent_left to driver socket:",
-              driverSocketId
-            );
-
             return;
           }
 
           /*
-            Fallback.
+            Fallback:
+            Driver room.
           */
 
           io.to(
-            String(
-              foundDriverId
-            )
+            foundDriverId
           ).emit(
             "parent_left",
             {
@@ -1340,11 +1534,16 @@ io.on(
 app.get(
   "/api/health",
   (req, res) => {
-    res.status(200).json({
-      success: true,
-      status: "OK",
-      time: new Date(),
-    });
+    return res
+      .status(200)
+      .json({
+        success: true,
+
+        status: "OK",
+
+        time:
+          new Date(),
+      });
   }
 );
 
@@ -1364,18 +1563,15 @@ app.use(
       err
     );
 
-    /*
-      Avoid sending stack traces
-      or internal details to frontend.
-    */
-
     const statusCode =
       err.statusCode ||
       err.status ||
       500;
 
     return res
-      .status(statusCode)
+      .status(
+        statusCode
+      )
       .json({
         success: false,
 
@@ -1445,9 +1641,7 @@ connectDB()
           console.log(
             "✅ Verification photo cleanup completed successfully"
           );
-        } catch (
-          error
-        ) {
+        } catch (error) {
           console.error(
             "❌ Verification photo cleanup failed:",
             error.message
@@ -1472,22 +1666,20 @@ connectDB()
         );
 
         console.log(
-          `❤️ Health: /api/health`
+          "❤️ Health: /api/health"
         );
 
         console.log(
-          `🔥 Parent Firebase Auth: /api/parent-auth`
+          "🔥 Parent Firebase Auth: /api/parent-auth"
         );
       }
     );
   })
-  .catch(
-    (error) => {
-      console.error(
-        "❌ DB CONNECTION FAILED:",
-        error
-      );
+  .catch((error) => {
+    console.error(
+      "❌ DB CONNECTION FAILED:",
+      error
+    );
 
-      process.exit(1);
-    }
-  );
+    process.exit(1);
+  });
