@@ -1,6 +1,5 @@
 import express from "express";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 import Admin from "../models/Admin.js";
@@ -15,7 +14,9 @@ const router = express.Router();
    HELPERS
 ========================================================= */
 
-const isValidObjectId = (value) => {
+const isValidObjectId = (
+  value
+) => {
   return mongoose.Types.ObjectId.isValid(
     String(value)
   );
@@ -25,26 +26,46 @@ const isValidObjectId = (value) => {
    ADMIN LOGIN
 ========================================================= */
 
+/*
+  ADMIN AUTHENTICATION:
+
+  Email + Password
+        ↓
+  bcrypt verification
+        ↓
+  JWT
+
+  No OTP.
+  No Firebase.
+  No Twilio.
+*/
+
 router.post(
   "/login",
   async (req, res) => {
     try {
       const {
-        username,
+        email,
         password,
       } = req.body;
 
       /* ===================================================
-         VALIDATION
+         NORMALIZE EMAIL
       =================================================== */
 
-      const normalizedUsername =
-        typeof username === "string"
-          ? username.trim()
+      const normalizedEmail =
+        typeof email === "string"
+          ? email
+              .trim()
+              .toLowerCase()
           : "";
 
+      /* ===================================================
+         REQUIRED FIELDS
+      =================================================== */
+
       if (
-        !normalizedUsername ||
+        !normalizedEmail ||
         !password
       ) {
         return res
@@ -53,12 +74,34 @@ router.post(
             success: false,
 
             message:
-              "Username and password are required",
+              "Email and password are required",
           });
       }
 
       /* ===================================================
-         JWT SECRET
+         EMAIL VALIDATION
+      =================================================== */
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (
+        !emailRegex.test(
+          normalizedEmail
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Enter a valid email address",
+          });
+      }
+
+      /* ===================================================
+         JWT CONFIGURATION
       =================================================== */
 
       if (
@@ -84,18 +127,15 @@ router.post(
 
       const admin =
         await Admin.findOne({
-          username:
-            normalizedUsername,
+          email:
+            normalizedEmail,
         }).select(
           "+password"
         );
 
       /*
-        Use the same message whether username
-        or password is incorrect.
-
-        This avoids exposing which Admin usernames
-        exist in the system.
+        Do not reveal whether the email
+        exists in the Admin database.
       */
 
       if (!admin) {
@@ -105,18 +145,17 @@ router.post(
             success: false,
 
             message:
-              "Invalid username or password",
+              "Invalid email or password",
           });
       }
 
       /* ===================================================
-         PASSWORD
+         VERIFY PASSWORD
       =================================================== */
 
       const isMatch =
-        await bcrypt.compare(
-          String(password),
-          admin.password
+        await admin.comparePassword(
+          String(password)
         );
 
       if (!isMatch) {
@@ -126,12 +165,12 @@ router.post(
             success: false,
 
             message:
-              "Invalid username or password",
+              "Invalid email or password",
           });
       }
 
       /* ===================================================
-         TOKEN
+         GENERATE JWT
       =================================================== */
 
       const token =
@@ -153,15 +192,30 @@ router.post(
           }
         );
 
+      /* ===================================================
+         RESPONSE
+      =================================================== */
+
       return res
         .status(200)
         .json({
           success: true,
 
+          message:
+            "Admin login successful",
+
           token,
 
-          role:
-            admin.role,
+          admin: {
+            id:
+              admin._id,
+
+            email:
+              admin.email,
+
+            role:
+              admin.role,
+          },
         });
     } catch (error) {
       console.error(
@@ -200,18 +254,15 @@ router.get(
           Driver.countDocuments(),
 
           Driver.countDocuments({
-            status:
-              "pending",
+            status: "pending",
           }),
 
           Driver.countDocuments({
-            status:
-              "approved",
+            status: "approved",
           }),
 
           Driver.countDocuments({
-            status:
-              "rejected",
+            status: "rejected",
           }),
         ]);
 
@@ -307,8 +358,14 @@ router.get(
         id,
       } = req.params;
 
+      /* ===================================================
+         VALIDATE DRIVER ID
+      =================================================== */
+
       if (
-        !isValidObjectId(id)
+        !isValidObjectId(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -319,6 +376,10 @@ router.get(
               "Invalid Driver ID",
           });
       }
+
+      /* ===================================================
+         DRIVER
+      =================================================== */
 
       const driver =
         await Driver.findById(
@@ -382,7 +443,9 @@ router.put(
       =================================================== */
 
       if (
-        !isValidObjectId(id)
+        !isValidObjectId(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -415,7 +478,7 @@ router.put(
       }
 
       /* ===================================================
-         IDEMPOTENT APPROVAL
+         ALREADY APPROVED
       =================================================== */
 
       if (
@@ -444,7 +507,7 @@ router.put(
       }
 
       /* ===================================================
-         APPROVE
+         APPROVE DRIVER
       =================================================== */
 
       driver.status =
@@ -456,11 +519,14 @@ router.put(
       await driver.save();
 
       /* ===================================================
-         ADMIN LOG
+         ADMIN AUDIT LOG
       =================================================== */
 
       try {
         await AdminLog.create({
+          adminId:
+            req.admin.id,
+
           action:
             "DRIVER_APPROVED",
 
@@ -469,13 +535,13 @@ router.put(
 
           message:
             `Driver ${driver.name} approved`,
+
+          metadata: {
+            driverId:
+              driver.driverId,
+          },
         });
       } catch (logError) {
-        /*
-          Driver approval should not fail merely
-          because audit logging failed.
-        */
-
         console.error(
           "ADMIN APPROVAL LOG ERROR:",
           logError.message
@@ -483,7 +549,7 @@ router.put(
       }
 
       /* ===================================================
-         SOCKET EVENT
+         SOCKET
       =================================================== */
 
       const io =
@@ -585,7 +651,9 @@ router.put(
       =================================================== */
 
       if (
-        !isValidObjectId(id)
+        !isValidObjectId(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -675,7 +743,7 @@ router.put(
       }
 
       /* ===================================================
-         REJECT
+         REJECT DRIVER
       =================================================== */
 
       driver.status =
@@ -683,11 +751,6 @@ router.put(
 
       driver.rejectionReason =
         rejectionReason;
-
-      /*
-        A rejected Driver should not remain
-        operationally online.
-      */
 
       driver.isOnline =
         false;
@@ -698,11 +761,14 @@ router.put(
       await driver.save();
 
       /* ===================================================
-         ADMIN LOG
+         ADMIN AUDIT LOG
       =================================================== */
 
       try {
         await AdminLog.create({
+          adminId:
+            req.admin.id,
+
           action:
             "DRIVER_REJECTED",
 
@@ -711,6 +777,13 @@ router.put(
 
           message:
             `Driver ${driver.name} rejected: ${rejectionReason}`,
+
+          metadata: {
+            driverId:
+              driver.driverId,
+
+            rejectionReason,
+          },
         });
       } catch (logError) {
         console.error(
@@ -720,7 +793,7 @@ router.put(
       }
 
       /* ===================================================
-         SOCKET EVENT
+         SOCKET
       =================================================== */
 
       const io =
@@ -814,7 +887,7 @@ router.get(
         await AdminLog.find()
           .populate(
             "adminId",
-            "username role"
+            "email role"
           )
           .populate(
             "driverId",
