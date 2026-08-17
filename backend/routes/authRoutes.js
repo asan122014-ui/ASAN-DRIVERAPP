@@ -4,6 +4,7 @@ import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
 
 import {
+  cloudinary,
   driverUpload,
 } from "../config/cloudinary.js";
 
@@ -24,16 +25,105 @@ const normalizeDriverId = (
 };
 
 /* =========================================================
+   CLEANUP UPLOADED CLOUDINARY FILES
+========================================================= */
+
+/*
+  Multer uploads files to Cloudinary BEFORE the route
+  validation executes.
+
+  Therefore, if Driver signup fails after files were uploaded,
+  delete those newly uploaded files to prevent orphaned media.
+*/
+
+const cleanupUploadedFiles = async (
+  files
+) => {
+  try {
+    if (!files) {
+      return;
+    }
+
+    const uploadedFiles =
+      Object.values(files)
+        .flat()
+        .filter(
+          (file) =>
+            file?.filename
+        );
+
+    if (
+      uploadedFiles.length ===
+      0
+    ) {
+      return;
+    }
+
+    const results =
+      await Promise.allSettled(
+        uploadedFiles.map(
+          (file) =>
+            cloudinary.uploader.destroy(
+              file.filename
+            )
+        )
+      );
+
+    const failed =
+      results.filter(
+        (result) =>
+          result.status ===
+          "rejected"
+      );
+
+    if (
+      failed.length >
+      0
+    ) {
+      console.warn(
+        `⚠️ ${failed.length} Cloudinary file cleanup operation(s) failed`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "CLOUDINARY CLEANUP ERROR:",
+      error.message
+    );
+  }
+};
+
+/* =========================================================
+   SAFE DRIVER RESPONSE
+========================================================= */
+
+const getSafeDriver = (
+  driver
+) => {
+  if (!driver) {
+    return null;
+  }
+
+  const data =
+    typeof driver.toObject ===
+    "function"
+      ? driver.toObject()
+      : { ...driver };
+
+  delete data.password;
+
+  return data;
+};
+
+/* =========================================================
    DRIVER SIGNUP
 ========================================================= */
 
 /*
-  IMPORTANT:
+  DRIVER AUTHENTICATION:
 
-  Driver authentication is intentionally NOT being
-  migrated in this backend cleanup phase.
+  Email + Password
 
-  Existing password signup/login remains active.
+  Driver Firebase/OTP migration is NOT being performed now.
 */
 
 router.post(
@@ -75,6 +165,9 @@ router.post(
   ]),
 
   async (req, res) => {
+    let driverSaved =
+      false;
+
     try {
       const {
         name,
@@ -87,7 +180,8 @@ router.post(
         vehicleNumber,
         vehicleType,
         licenseNumber,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* ===================================================
          REQUIRED TEXT FIELDS
@@ -99,12 +193,18 @@ router.post(
         !email ||
         !password ||
         !address ||
-        latitude === undefined ||
-        longitude === undefined ||
+        latitude ===
+          undefined ||
+        longitude ===
+          undefined ||
         !vehicleNumber ||
         !vehicleType ||
         !licenseNumber
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -116,13 +216,83 @@ router.post(
       }
 
       /* ===================================================
-         PASSWORD LENGTH
+         NORMALIZE DATA
+      =================================================== */
+
+      const normalizedName =
+        String(name)
+          .trim();
+
+      const normalizedPhone =
+        String(phone)
+          .trim();
+
+      const normalizedEmail =
+        String(email)
+          .trim()
+          .toLowerCase();
+
+      const normalizedPassword =
+        String(password);
+
+      const normalizedAddress =
+        String(address)
+          .trim();
+
+      const normalizedVehicleNumber =
+        String(vehicleNumber)
+          .trim()
+          .toUpperCase();
+
+      const normalizedVehicleType =
+        String(vehicleType)
+          .trim();
+
+      const normalizedLicenseNumber =
+        String(licenseNumber)
+          .trim()
+          .toUpperCase();
+
+      /* ===================================================
+         NORMALIZED REQUIRED VALUES
       =================================================== */
 
       if (
-        String(password).length <
+        !normalizedName ||
+        !normalizedPhone ||
+        !normalizedEmail ||
+        !normalizedPassword ||
+        !normalizedAddress ||
+        !normalizedVehicleNumber ||
+        !normalizedVehicleType ||
+        !normalizedLicenseNumber
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Driver details cannot contain empty values",
+          });
+      }
+
+      /* ===================================================
+         PASSWORD VALIDATION
+      =================================================== */
+
+      if (
+        normalizedPassword.length <
         6
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -134,7 +304,7 @@ router.post(
       }
 
       /* ===================================================
-         REQUIRED DOCUMENTS
+         REQUIRED DRIVER DOCUMENTS
       =================================================== */
 
       const requiredFiles = [
@@ -156,8 +326,13 @@ router.post(
         );
 
       if (
-        missingFiles.length
+        missingFiles.length >
+        0
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -172,36 +347,7 @@ router.post(
       }
 
       /* ===================================================
-         NORMALIZE DATA
-      =================================================== */
-
-      const normalizedEmail =
-        String(email)
-          .trim()
-          .toLowerCase();
-
-      const normalizedPhone =
-        String(phone).trim();
-
-      const normalizedName =
-        String(name).trim();
-
-      const normalizedAddress =
-        String(address).trim();
-
-      const normalizedVehicleNumber =
-        String(vehicleNumber)
-          .trim()
-          .toUpperCase();
-
-      const normalizedVehicleType =
-        String(vehicleType).trim();
-
-      const normalizedLicenseNumber =
-        String(licenseNumber).trim();
-
-      /* ===================================================
-         BASIC EMAIL VALIDATION
+         EMAIL VALIDATION
       =================================================== */
 
       const emailRegex =
@@ -212,6 +358,10 @@ router.post(
           normalizedEmail
         )
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -223,19 +373,31 @@ router.post(
       }
 
       /* ===================================================
-         LOCATION
+         LOCATION VALIDATION
       =================================================== */
 
       const lat =
-        Number(latitude);
+        Number(
+          latitude
+        );
 
       const lng =
-        Number(longitude);
+        Number(
+          longitude
+        );
 
       if (
-        !Number.isFinite(lat) ||
-        !Number.isFinite(lng)
+        !Number.isFinite(
+          lat
+        ) ||
+        !Number.isFinite(
+          lng
+        )
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -252,6 +414,10 @@ router.post(
         lng < -180 ||
         lng > 180
       ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(400)
           .json({
@@ -263,10 +429,10 @@ router.post(
       }
 
       /* ===================================================
-         DUPLICATE DRIVER
+         DUPLICATE DRIVER CHECK
       =================================================== */
 
-      const existing =
+      const existingDriver =
         await Driver.findOne({
           $or: [
             {
@@ -278,9 +444,17 @@ router.post(
                 normalizedPhone,
             },
           ],
-        });
+        }).select(
+          "_id email phone"
+        );
 
-      if (existing) {
+      if (
+        existingDriver
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
         return res
           .status(409)
           .json({
@@ -297,19 +471,25 @@ router.post(
 
       const getFilePath = (
         field
-      ) =>
-        req.files?.[
-          field
-        ]?.[0]?.path ||
-        "";
+      ) => {
+        return (
+          req.files?.[
+            field
+          ]?.[0]?.path ||
+          ""
+        );
+      };
 
       const getFilePublicId = (
         field
-      ) =>
-        req.files?.[
-          field
-        ]?.[0]?.filename ||
-        "";
+      ) => {
+        return (
+          req.files?.[
+            field
+          ]?.[0]?.filename ||
+          ""
+        );
+      };
 
       /* ===================================================
          CREATE DRIVER
@@ -317,6 +497,8 @@ router.post(
 
       const driver =
         new Driver({
+          /* ================= BASIC ================= */
+
           name:
             normalizedName,
 
@@ -326,13 +508,17 @@ router.post(
           email:
             normalizedEmail,
 
-          password,
+          password:
+            normalizedPassword,
 
           address:
             normalizedAddress,
 
+          /* ================= LOCATION ================= */
+
           homeLocation: {
-            type: "Point",
+            type:
+              "Point",
 
             coordinates: [
               lng,
@@ -341,7 +527,8 @@ router.post(
           },
 
           location: {
-            type: "Point",
+            type:
+              "Point",
 
             coordinates: [
               lng,
@@ -353,11 +540,14 @@ router.post(
             lat,
             lng,
 
-            eta: "--",
+            eta:
+              "--",
 
-            speed: 0,
+            speed:
+              0,
 
-            heading: 0,
+            heading:
+              0,
 
             accuracy:
               null,
@@ -365,6 +555,8 @@ router.post(
             updatedAt:
               new Date(),
           },
+
+          /* ================= VEHICLE ================= */
 
           vehicleNumber:
             normalizedVehicleNumber,
@@ -375,9 +567,7 @@ router.post(
           licenseNumber:
             normalizedLicenseNumber,
 
-          /* =================================================
-             DRIVER DOCUMENTS
-          ================================================= */
+          /* ================= DOCUMENTS ================= */
 
           licenseFront:
             getFilePath(
@@ -414,9 +604,7 @@ router.post(
               "idBack"
             ),
 
-          /* =================================================
-             PROFILE PHOTO
-          ================================================= */
+          /* ================= PROFILE ================= */
 
           profilePhoto:
             getFilePath(
@@ -428,9 +616,7 @@ router.post(
               "profilePhoto"
             ),
 
-          /* =================================================
-             INITIAL SYSTEM STATE
-          ================================================= */
+          /* ================= INITIAL STATE ================= */
 
           status:
             "pending",
@@ -443,7 +629,7 @@ router.post(
         });
 
       /* ===================================================
-         GENERATE DRIVER ID
+         CUSTOM DRIVER ID
       =================================================== */
 
       driver.driverId =
@@ -453,17 +639,22 @@ router.post(
           .toUpperCase()}`;
 
       /* ===================================================
-         SAVE
+         SAVE DRIVER
       =================================================== */
 
       await driver.save();
+
+      driverSaved =
+        true;
 
       /* ===================================================
          SAFE RESPONSE
       =================================================== */
 
       const data =
-        driver.toObject();
+        getSafeDriver(
+          driver
+        );
 
       return res
         .status(201)
@@ -477,10 +668,27 @@ router.post(
             data,
         });
     } catch (error) {
+      /*
+        Delete uploaded Cloudinary files only if
+        Driver creation did NOT complete successfully.
+      */
+
+      if (
+        !driverSaved
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+      }
+
       console.error(
         "DRIVER SIGNUP ERROR:",
         error
       );
+
+      /* ===================================================
+         DUPLICATE KEY
+      =================================================== */
 
       if (
         error?.code ===
@@ -496,8 +704,12 @@ router.post(
           });
       }
 
+      /* ===================================================
+         MONGOOSE VALIDATION
+      =================================================== */
+
       if (
-        error.name ===
+        error?.name ===
         "ValidationError"
       ) {
         return res
@@ -509,6 +721,10 @@ router.post(
               error.message,
           });
       }
+
+      /* ===================================================
+         GENERIC ERROR
+      =================================================== */
 
       return res
         .status(500)
@@ -527,20 +743,29 @@ router.post(
 ========================================================= */
 
 /*
-  EXISTING DRIVER PASSWORD LOGIN.
+  Current Driver authentication:
 
-  Keep until we separately migrate the Driver app
-  to its final authentication flow.
+  Email
+    +
+  Password
+
+  Driver must also be approved by Admin.
 */
 
 router.post(
   "/login",
+
   async (req, res) => {
     try {
       const {
         email,
         password,
-      } = req.body;
+      } =
+        req.body || {};
+
+      /* ===================================================
+         REQUIRED
+      =================================================== */
 
       if (
         !email ||
@@ -560,6 +785,31 @@ router.post(
         String(email)
           .trim()
           .toLowerCase();
+
+      const normalizedPassword =
+        String(password);
+
+      /* ===================================================
+         EMAIL FORMAT
+      =================================================== */
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (
+        !emailRegex.test(
+          normalizedEmail
+        )
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+
+            message:
+              "Invalid credentials",
+          });
+      }
 
       /* ===================================================
          FIND DRIVER
@@ -590,7 +840,7 @@ router.post(
 
       const isMatch =
         await driver.comparePassword(
-          String(password)
+          normalizedPassword
         );
 
       if (!isMatch) {
@@ -605,7 +855,7 @@ router.post(
       }
 
       /* ===================================================
-         APPROVAL STATE
+         DRIVER APPROVAL STATE
       =================================================== */
 
       if (
@@ -657,7 +907,9 @@ router.post(
       =================================================== */
 
       const data =
-        driver.toObject();
+        getSafeDriver(
+          driver
+        );
 
       return res
         .status(200)
@@ -686,33 +938,41 @@ router.post(
 );
 
 /* =========================================================
-   SAVE PARENT FCM TOKEN — LEGACY COMPATIBILITY
+   SAVE PARENT FCM TOKEN
+   LEGACY COMPATIBILITY
 ========================================================= */
 
 /*
-  Keep temporarily because the existing Parent frontend
-  may still call:
+  Existing Parent frontend may still call:
 
   POST /api/auth/save-token
 
-  New notification/device handling also exists under the
-  notification module.
+  Keep this endpoint temporarily.
+
+  Authentication/ownership protection will be added
+  during the final security phase.
 */
 
 router.post(
   "/save-token",
+
   async (req, res) => {
     try {
       const {
         parentId,
         fcmToken,
-      } = req.body;
+      } =
+        req.body || {};
 
       const normalizedToken =
         typeof fcmToken ===
-          "string"
+        "string"
           ? fcmToken.trim()
           : "";
+
+      /* ===================================================
+         VALIDATION
+      =================================================== */
 
       if (
         !parentId ||
@@ -745,6 +1005,9 @@ router.post(
 
           {
             new: true,
+
+            runValidators:
+              true,
           }
         );
 
@@ -774,7 +1037,7 @@ router.post(
       );
 
       if (
-        error.name ===
+        error?.name ===
         "CastError"
       ) {
         return res
@@ -803,14 +1066,26 @@ router.post(
    GET DRIVER BY CUSTOM DRIVER ID
 ========================================================= */
 
+/*
+  Used by Parent-side Driver linking/search flow.
+
+  Fine-grained authorization and response-field restriction
+  can be added during the final security phase.
+*/
+
 router.get(
   "/by-id/:driverId",
+
   async (req, res) => {
     try {
       const driverId =
         normalizeDriverId(
           req.params.driverId
         );
+
+      /* ===================================================
+         VALIDATION
+      =================================================== */
 
       if (!driverId) {
         return res
@@ -822,6 +1097,10 @@ router.get(
               "Driver ID is required",
           });
       }
+
+      /* ===================================================
+         FIND DRIVER
+      =================================================== */
 
       const driver =
         await Driver.findOne({
@@ -839,12 +1118,22 @@ router.get(
           });
       }
 
+      /* ===================================================
+         SAFE RESPONSE
+      =================================================== */
+
+      const data =
+        getSafeDriver(
+          driver
+        );
+
       return res
         .status(200)
         .json({
           success: true,
 
-          driver,
+          driver:
+            data,
         });
     } catch (error) {
       console.error(
