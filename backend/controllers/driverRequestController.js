@@ -1,247 +1,1281 @@
+import mongoose from "mongoose";
+
 import DriverRequest from "../models/DriverRequest.js";
 import Parent from "../models/Parent.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
-import { sendNotification } from "../utils/sendNotification.js";
+import Notification from "../models/Notification.js";
 
-/* ==================================================
-   DISTANCE CALCULATOR (HAVERSINE)
-================================================== */
-const getDistance = (lat1, lon1, lat2, lon2) => {
+import {
+  sendNotification,
+} from "../utils/sendNotification.js";
+
+import {
+  PARENT_NOTIFICATIONS,
+} from "../utils/notificationMessages.js";
+
+import {
+  parentMessaging,
+} from "../config/firebaseAdmin.js";
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const INVALID_FCM_TOKEN_CODES =
+  new Set([
+    "messaging/registration-token-not-registered",
+    "messaging/invalid-registration-token",
+  ]);
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const isValidObjectId = (value) =>
+  mongoose.Types.ObjectId.isValid(
+    String(value)
+  );
+
+const normalizeDriverId = (
+  driverId
+) =>
+  String(driverId || "")
+    .trim()
+    .toUpperCase();
+
+/* =========================================================
+   DISTANCE CALCULATOR — HAVERSINE
+========================================================= */
+
+const getDistance = (
+  lat1,
+  lon1,
+  lat2,
+  lon2
+) => {
+  const values = [
+    lat1,
+    lon1,
+    lat2,
+    lon2,
+  ].map(Number);
+
+  if (
+    values.some(
+      (value) =>
+        !Number.isFinite(value)
+    )
+  ) {
+    return null;
+  }
+
+  const [
+    startLat,
+    startLon,
+    endLat,
+    endLon,
+  ] = values;
+
   const R = 6371;
 
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const dLat =
+    ((endLat - startLat) *
+      Math.PI) /
+    180;
+
+  const dLon =
+    ((endLon - startLon) *
+      Math.PI) /
+    180;
 
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLat / 2) *
+      Math.sin(dLat / 2) +
+    Math.cos(
+      (startLat * Math.PI) /
+        180
+    ) *
+      Math.cos(
+        (endLat * Math.PI) /
+          180
+      ) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
 
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  return (
+    R *
+    (2 *
+      Math.atan2(
+        Math.sqrt(a),
+        Math.sqrt(1 - a)
+      ))
+  );
 };
 
-/* ==================================================
-   CREATE DRIVER REQUEST
-================================================== */
-export const createRequest = async (req, res) => {
-  try {
-    const { parentId, childId } = req.body;
+/* =========================================================
+   TEMPLATE REPLACEMENT
+========================================================= */
 
-    if (!parentId) {
-      return res.status(400).json({
-        success: false,
-        message: "Parent ID is required",
-      });
-    }
+const replaceTemplateValues = (
+  text,
+  values = {}
+) => {
+  let result =
+    String(text || "");
 
-    const existingRequest = await DriverRequest.findOne({
-      parentId,
-      status: "Pending",
-    });
-
-    if (existingRequest) {
-      return res.status(400).json({
-        success: false,
-        message: "A pending request already exists.",
-      });
-    }
-
-    const request = await DriverRequest.create({
-      parentId,
-      childId,
-      status: "Pending",
-    });
-
-    // ✅ Send DRIVER_REQUEST_SUBMITTED notification
-    await sendNotification({
-      parentId,
-      childId,
-      notificationKey: "DRIVER_REQUEST_SUBMITTED",
-    });
-
-    const io = req.app.get("io");
-
-    if (io) {
-      io.emit("driver_request_created");
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: "Driver request submitted successfully.",
-      data: request,
-    });
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+  for (
+    const [
+      key,
+      value,
+    ] of Object.entries(values)
+  ) {
+    result = result.replaceAll(
+      `{${key}}`,
+      String(value ?? "")
+    );
   }
+
+  return result;
 };
 
-/* ==================================================
-   GET ALL REQUESTS WITH NEAREST DRIVERS
-================================================== */
-export const getAllRequests = async (req, res) => {
-  try {
-    const requests = await DriverRequest.find()
-      .populate("parentId")
-      .populate("childId", "name")
-      .sort({ createdAt: -1 });
+/* =========================================================
+   PARENT-ONLY REQUEST NOTIFICATION
+========================================================= */
 
-    const approvedDrivers = await Driver.find({
-      status: "approved",
-    });
+/*
+  DRIVER_REQUEST_SUBMITTED is special:
 
-    const data = [];
+  At this stage no Driver has been assigned yet.
 
-    for (const request of requests) {
-      // Parent deleted -> remove orphan request
-      if (!request.parentId) {
-        await DriverRequest.findByIdAndDelete(request._id);
-        continue;
+  Therefore we cannot use the normal sendNotification()
+  helper because that helper is Driver-linked.
+
+  This helper sends the Parent confirmation directly.
+*/
+
+const sendRequestSubmittedNotification =
+  async ({
+    parent,
+    child,
+    io,
+  }) => {
+    try {
+      const template =
+        PARENT_NOTIFICATIONS
+          .DRIVER_REQUEST_SUBMITTED;
+
+      if (!template) {
+        console.warn(
+          "DRIVER_REQUEST_SUBMITTED Parent notification template missing"
+        );
+
+        return;
       }
 
-      const parent = request.parentId;
+      const values = {
+        childName:
+          child?.name || "",
 
-      let nearestDrivers = [];
+        driverName: "",
+
+        schoolName:
+          child?.school || "",
+      };
+
+      const title =
+        replaceTemplateValues(
+          template.title,
+          values
+        );
+
+      const message =
+        replaceTemplateValues(
+          template.message,
+          values
+        );
+
+      /* ===================================================
+         SAVE IN DATABASE
+      =================================================== */
+
+      const notification =
+        await Notification.create({
+          parent:
+            parent._id,
+
+          child:
+            child?._id ||
+            null,
+
+          recipientType:
+            "parent",
+
+          notificationKey:
+            "DRIVER_REQUEST_SUBMITTED",
+
+          title,
+
+          message,
+
+          type:
+            "driver_request_submitted",
+
+          priority:
+            "medium",
+
+          meta: {
+            parentId:
+              String(
+                parent._id
+              ),
+
+            childId:
+              child
+                ? String(
+                    child._id
+                  )
+                : "",
+          },
+        });
+
+      /* ===================================================
+         SOCKET
+      =================================================== */
+
+      if (io) {
+        io.to(
+          String(parent._id)
+        ).emit(
+          "notification",
+          notification
+        );
+      }
+
+      /* ===================================================
+         FCM
+      =================================================== */
 
       if (
-        parent.homeLocation?.coordinates?.length === 2
+        !parentMessaging
       ) {
-        const parentLng = parent.homeLocation.coordinates[0];
-        const parentLat = parent.homeLocation.coordinates[1];
+        return;
+      }
 
-        nearestDrivers = approvedDrivers
-          .filter(
-            (driver) =>
-              driver.homeLocation?.coordinates?.length === 2
+      const tokens = [
+        ...new Set(
+          (
+            parent.fcmTokens ||
+            []
           )
-          .map((driver) => {
-            const driverLng =
-              driver.homeLocation.coordinates[0];
-            const driverLat =
-              driver.homeLocation.coordinates[1];
+            .filter(
+              (token) =>
+                typeof token ===
+                  "string" &&
+                token.trim()
+            )
+            .map(
+              (token) =>
+                token.trim()
+            )
+        ),
+      ];
 
-            const distance = getDistance(
-              parentLat,
-              parentLng,
-              driverLat,
-              driverLng
+      if (!tokens.length) {
+        return;
+      }
+
+      const invalidTokens =
+        [];
+
+      for (
+        let index = 0;
+        index <
+        tokens.length;
+        index += 500
+      ) {
+        const chunk =
+          tokens.slice(
+            index,
+            index + 500
+          );
+
+        const response =
+          await parentMessaging.sendEachForMulticast(
+            {
+              tokens:
+                chunk,
+
+              notification: {
+                title,
+                body:
+                  message,
+              },
+
+              android: {
+                priority:
+                  "high",
+
+                notification: {
+                  sound:
+                    "default",
+                },
+              },
+
+              data: {
+                type:
+                  "driver_request_submitted",
+
+                notificationKey:
+                  "DRIVER_REQUEST_SUBMITTED",
+
+                parentId:
+                  String(
+                    parent._id
+                  ),
+
+                childId:
+                  child
+                    ? String(
+                        child._id
+                      )
+                    : "",
+              },
+            }
+          );
+
+        response.responses.forEach(
+          (
+            item,
+            itemIndex
+          ) => {
+            if (
+              item.success
+            ) {
+              return;
+            }
+
+            const code =
+              item.error?.code;
+
+            if (
+              INVALID_FCM_TOKEN_CODES.has(
+                code
+              )
+            ) {
+              invalidTokens.push(
+                chunk[
+                  itemIndex
+                ]
+              );
+            }
+          }
+        );
+      }
+
+      /* ===================================================
+         REMOVE INVALID TOKENS
+      =================================================== */
+
+      if (
+        invalidTokens.length
+      ) {
+        await Parent.updateOne(
+          {
+            _id:
+              parent._id,
+          },
+          {
+            $pull: {
+              fcmTokens: {
+                $in:
+                  invalidTokens,
+              },
+            },
+          }
+        );
+      }
+    } catch (error) {
+      /*
+        Notification failure must NOT fail
+        Driver Request creation.
+      */
+
+      console.error(
+        "REQUEST SUBMITTED NOTIFICATION ERROR:",
+        error.message
+      );
+    }
+  };
+
+/* =========================================================
+   CREATE DRIVER REQUEST
+========================================================= */
+
+export const createRequest =
+  async (req, res) => {
+    try {
+      const {
+        parentId,
+        childId,
+        notes,
+      } = req.body;
+
+      /* ===================================================
+         PARENT ID
+      =================================================== */
+
+      if (!parentId) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Parent ID is required",
+          });
+      }
+
+      if (
+        !isValidObjectId(
+          parentId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Parent ID",
+          });
+      }
+
+      /* ===================================================
+         PARENT
+      =================================================== */
+
+      const parent =
+        await Parent.findById(
+          parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Parent not found",
+          });
+      }
+
+      /* ===================================================
+         CHILD — OPTIONAL
+      =================================================== */
+
+      let child = null;
+
+      if (childId) {
+        if (
+          !isValidObjectId(
+            childId
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "Invalid Child ID",
+            });
+        }
+
+        child =
+          await Child.findOne({
+            _id:
+              childId,
+
+            parentId:
+              parent._id,
+          });
+
+        if (!child) {
+          return res
+            .status(404)
+            .json({
+              success: false,
+
+              message:
+                "Child not found for this Parent",
+            });
+        }
+      }
+
+      /* ===================================================
+         EXISTING DRIVER
+      =================================================== */
+
+      /*
+        If the Parent already has a Driver,
+        there is normally no reason to create another
+        Pending assignment request through this flow.
+
+        Driver-change workflow can be added separately.
+      */
+
+      if (
+        parent.driverId
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "A Driver is already linked to this Parent",
+          });
+      }
+
+      /* ===================================================
+         DUPLICATE PENDING REQUEST
+      =================================================== */
+
+      const existingRequest =
+        await DriverRequest.findOne({
+          parentId:
+            parent._id,
+
+          status:
+            "Pending",
+        });
+
+      if (
+        existingRequest
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "A pending Driver request already exists",
+
+            data:
+              existingRequest,
+          });
+      }
+
+      /* ===================================================
+         CREATE REQUEST
+      =================================================== */
+
+      const request =
+        await DriverRequest.create({
+          parentId:
+            parent._id,
+
+          childId:
+            child?._id ||
+            null,
+
+          status:
+            "Pending",
+
+          notes:
+            typeof notes ===
+              "string"
+              ? notes.trim()
+              : "",
+        });
+
+      /* ===================================================
+         NOTIFICATION
+      =================================================== */
+
+      const io =
+        req.app.get("io");
+
+      await sendRequestSubmittedNotification(
+        {
+          parent,
+          child,
+          io,
+        }
+      );
+
+      /* ===================================================
+         ADMIN SOCKET EVENT
+      =================================================== */
+
+      if (io) {
+        io.emit(
+          "driver_request_created",
+          {
+            requestId:
+              String(
+                request._id
+              ),
+
+            parentId:
+              String(
+                parent._id
+              ),
+          }
+        );
+      }
+
+      return res
+        .status(201)
+        .json({
+          success: true,
+
+          message:
+            "Driver request submitted successfully",
+
+          data:
+            request,
+        });
+    } catch (error) {
+      console.error(
+        "CREATE DRIVER REQUEST ERROR:",
+        error
+      );
+
+      if (
+        error.name ===
+        "ValidationError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              error.message,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to submit Driver request",
+        });
+    }
+  };
+
+/* =========================================================
+   GET ALL REQUESTS WITH NEAREST DRIVERS
+========================================================= */
+
+export const getAllRequests =
+  async (req, res) => {
+    try {
+      const requests =
+        await DriverRequest.find()
+          .populate(
+            "parentId",
+            "name email phone address homeLocation driverId"
+          )
+          .populate(
+            "childId",
+            "name school grade"
+          )
+          .sort({
+            createdAt: -1,
+          });
+
+      /* ===================================================
+         APPROVED DRIVERS
+      =================================================== */
+
+      const approvedDrivers =
+        await Driver.find({
+          status:
+            "approved",
+        }).select(
+          "name driverId phone vehicleNumber address homeLocation status"
+        );
+
+      const data =
+        [];
+
+      for (
+        const request of
+        requests
+      ) {
+        /*
+          Do NOT delete orphan records during a GET.
+
+          GET endpoints should not silently mutate
+          database state.
+        */
+
+        if (
+          !request.parentId
+        ) {
+          data.push({
+            ...request.toObject(),
+
+            orphaned:
+              true,
+
+            nearestDrivers:
+              [],
+          });
+
+          continue;
+        }
+
+        const parent =
+          request.parentId;
+
+        let nearestDrivers =
+          [];
+
+        const parentCoordinates =
+          parent
+            .homeLocation
+            ?.coordinates;
+
+        if (
+          Array.isArray(
+            parentCoordinates
+          ) &&
+          parentCoordinates.length ===
+            2
+        ) {
+          const parentLng =
+            Number(
+              parentCoordinates[
+                0
+              ]
             );
 
-            return {
-              _id: driver._id,
-              name: driver.name,
-              driverId: driver.driverId,
-              phone: driver.phone,
-              vehicleNumber: driver.vehicleNumber,
-              address: driver.address,
-              distance: Number(distance.toFixed(2)),
-            };
-          })
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 5);
+          const parentLat =
+            Number(
+              parentCoordinates[
+                1
+              ]
+            );
+
+          if (
+            Number.isFinite(
+              parentLng
+            ) &&
+            Number.isFinite(
+              parentLat
+            )
+          ) {
+            nearestDrivers =
+              approvedDrivers
+                .map(
+                  (
+                    driver
+                  ) => {
+                    const coordinates =
+                      driver
+                        .homeLocation
+                        ?.coordinates;
+
+                    if (
+                      !Array.isArray(
+                        coordinates
+                      ) ||
+                      coordinates.length !==
+                        2
+                    ) {
+                      return null;
+                    }
+
+                    const driverLng =
+                      Number(
+                        coordinates[
+                          0
+                        ]
+                      );
+
+                    const driverLat =
+                      Number(
+                        coordinates[
+                          1
+                        ]
+                      );
+
+                    const distance =
+                      getDistance(
+                        parentLat,
+                        parentLng,
+                        driverLat,
+                        driverLng
+                      );
+
+                    if (
+                      distance ===
+                      null
+                    ) {
+                      return null;
+                    }
+
+                    return {
+                      _id:
+                        driver._id,
+
+                      name:
+                        driver.name,
+
+                      driverId:
+                        driver.driverId,
+
+                      phone:
+                        driver.phone,
+
+                      vehicleNumber:
+                        driver.vehicleNumber,
+
+                      address:
+                        driver.address,
+
+                      distance:
+                        Number(
+                          distance.toFixed(
+                            2
+                          )
+                        ),
+                    };
+                  }
+                )
+                .filter(Boolean)
+                .sort(
+                  (a, b) =>
+                    a.distance -
+                    b.distance
+                )
+                .slice(
+                  0,
+                  5
+                );
+          }
+        }
+
+        data.push({
+          ...request.toObject(),
+
+          orphaned:
+            false,
+
+          nearestDrivers,
+        });
       }
 
-      data.push({
-        ...request.toObject(),
-        nearestDrivers,
-      });
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          count:
+            data.length,
+
+          data,
+        });
+    } catch (error) {
+      console.error(
+        "GET DRIVER REQUESTS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to fetch Driver requests",
+        });
     }
+  };
 
-    return res.status(200).json({
-      success: true,
-      data,
-    });
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-/* ==================================================
+/* =========================================================
    ASSIGN DRIVER
-================================================== */
-export const assignDriver = async (req, res) => {
-  try {
-    const { driverId } = req.body;
+========================================================= */
 
-    if (!driverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Driver ID is required",
-      });
-    }
-
-    const request = await DriverRequest.findById(req.params.id);
-
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: "Driver request not found",
-      });
-    }
-
-    if (request.status === "Assigned") {
-      return res.status(400).json({
-        success: false,
-        message: "Driver already assigned",
-      });
-    }
-
-    request.status = "Assigned";
-    request.assignedDriverId = driverId;
-    request.assignedAt = new Date();
-
-    await request.save();
-
-    await Parent.findByIdAndUpdate(request.parentId, {
-      driverId,
-    });
-
-    await Child.updateMany(
-      {
-        parentId: request.parentId,
-      },
-      {
+export const assignDriver =
+  async (req, res) => {
+    try {
+      const {
         driverId,
+      } = req.body;
+
+      const {
+        id,
+      } = req.params;
+
+      /* ===================================================
+         REQUEST ID
+      =================================================== */
+
+      if (
+        !isValidObjectId(id)
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid Driver Request ID",
+          });
       }
-    );
 
-    // ✅ Send DRIVER_REQUEST_ACCEPTED notification
-    await sendNotification({
-      parentId: request.parentId,
-      childId: request.childId,
-      driverId,
-      notificationKey: "DRIVER_REQUEST_ACCEPTED",
-    });
+      /* ===================================================
+         DRIVER ID
+      =================================================== */
 
-    const io = req.app.get("io");
+      const normalizedDriverId =
+        normalizeDriverId(
+          driverId
+        );
 
-    if (io) {
-      io.emit("driver_request_assigned");
+      if (
+        !normalizedDriverId
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Driver ID is required",
+          });
+      }
+
+      /* ===================================================
+         REQUEST
+      =================================================== */
+
+      const request =
+        await DriverRequest.findById(
+          id
+        );
+
+      if (!request) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver request not found",
+          });
+      }
+
+      /* ===================================================
+         REQUEST STATE
+      =================================================== */
+
+      if (
+        request.status ===
+        "Assigned"
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Driver already assigned",
+
+            data:
+              request,
+          });
+      }
+
+      if (
+        request.status ===
+        "Rejected"
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Rejected request cannot be assigned",
+          });
+      }
+
+      /* ===================================================
+         DRIVER
+      =================================================== */
+
+      const driver =
+        await Driver.findOne({
+          driverId:
+            normalizedDriverId,
+        });
+
+      if (!driver) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Driver not found",
+          });
+      }
+
+      /* ===================================================
+         DRIVER APPROVAL
+      =================================================== */
+
+      if (
+        String(
+          driver.status ||
+            ""
+        ).toLowerCase() !==
+        "approved"
+      ) {
+        return res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Only an approved Driver can be assigned",
+          });
+      }
+
+      /* ===================================================
+         PARENT
+      =================================================== */
+
+      const parent =
+        await Parent.findById(
+          request.parentId
+        );
+
+      if (!parent) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            message:
+              "Parent linked to this request no longer exists",
+          });
+      }
+
+      /* ===================================================
+         CHILD VALIDATION
+      =================================================== */
+
+      let child = null;
+
+      if (
+        request.childId
+      ) {
+        child =
+          await Child.findOne({
+            _id:
+              request.childId,
+
+            parentId:
+              parent._id,
+          });
+
+        if (!child) {
+          return res
+            .status(409)
+            .json({
+              success: false,
+
+              message:
+                "Child linked to this request is invalid",
+            });
+        }
+      }
+
+      /* ===================================================
+         UPDATE REQUEST
+      =================================================== */
+
+      request.status =
+        "Assigned";
+
+      request.assignedDriverId =
+        driver.driverId;
+
+      request.assignedAt =
+        new Date();
+
+      request.rejectionReason =
+        "";
+
+      await request.save();
+
+      /* ===================================================
+         UPDATE PARENT
+      =================================================== */
+
+      parent.driverId =
+        driver.driverId;
+
+      await parent.save();
+
+      /* ===================================================
+         UPDATE ALL CHILDREN
+      =================================================== */
+
+      /*
+        Driver assignment is currently Parent-level.
+
+        Therefore all children under this Parent
+        receive the same Driver.
+      */
+
+      await Child.updateMany(
+        {
+          parentId:
+            parent._id,
+        },
+        {
+          $set: {
+            driverId:
+              driver.driverId,
+          },
+        }
+      );
+
+      /* ===================================================
+         NOTIFICATION
+      =================================================== */
+
+      /*
+        A Driver exists now, therefore the shared
+        sendNotification() helper can be safely used.
+      */
+
+      try {
+        await sendNotification({
+          driverId:
+            driver.driverId,
+
+          childId:
+            child?._id ||
+            null,
+
+          notificationKey:
+            "DRIVER_REQUEST_ACCEPTED",
+
+          io:
+            req.app.get(
+              "io"
+            ),
+        });
+      } catch (
+        notificationError
+      ) {
+        /*
+          Assignment is already committed.
+
+          Notification failure must not turn a successful
+          assignment into a failed API response.
+        */
+
+        console.error(
+          "DRIVER ASSIGNMENT NOTIFICATION ERROR:",
+          notificationError.message
+        );
+      }
+
+      /* ===================================================
+         SOCKET EVENT
+      =================================================== */
+
+      const io =
+        req.app.get("io");
+
+      if (io) {
+        io.emit(
+          "driver_request_assigned",
+          {
+            requestId:
+              String(
+                request._id
+              ),
+
+            parentId:
+              String(
+                parent._id
+              ),
+
+            driverId:
+              driver.driverId,
+          }
+        );
+      }
+
+      /* ===================================================
+         POPULATED RESPONSE
+      =================================================== */
+
+      const updatedRequest =
+        await DriverRequest.findById(
+          request._id
+        )
+          .populate(
+            "parentId",
+            "name email phone address driverId"
+          )
+          .populate(
+            "childId",
+            "name school grade driverId"
+          );
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Driver assigned successfully",
+
+          data:
+            updatedRequest,
+        });
+    } catch (error) {
+      console.error(
+        "ASSIGN DRIVER ERROR:",
+        error
+      );
+
+      if (
+        error.name ===
+        "ValidationError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              error.message,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Failed to assign Driver",
+        });
     }
-
-    return res.status(200).json({
-      success: true,
-      message: "Driver assigned successfully.",
-      data: request,
-    });
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+  };
