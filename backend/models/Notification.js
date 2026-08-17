@@ -50,11 +50,13 @@ const NOTIFICATION_TYPES = [
 
   "driver_request_submitted",
   "driver_request_accepted",
+   "driver_request_rejected",
 
   /* ================= DRIVER ASSIGNMENT ================= */
 
   "driver_assigned",
   "driver_changed",
+   
 
   /* ================= LEGACY ================= */
 
