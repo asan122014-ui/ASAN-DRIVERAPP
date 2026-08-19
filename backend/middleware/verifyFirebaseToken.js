@@ -9,6 +9,8 @@ const verifyFirebaseToken = async (
   res,
   next
 ) => {
+   console.log(
+      "🔥 NEW PARENT FIREBASE MIDDLEWARE V2");
   try {
     /* =====================================================
        FIREBASE CONFIGURATION
