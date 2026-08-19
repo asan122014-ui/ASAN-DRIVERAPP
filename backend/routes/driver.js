@@ -860,17 +860,81 @@ router.get(
 ========================================================= */
 
 router.get(
-  "/tracking/:driverId",
+  "/tracking",
+
+  /* =======================================================
+     TEMPORARY DEBUG
+  ======================================================= */
+
+  (
+    req,
+    res,
+    next
+  ) => {
+    console.log(
+      "🚗 PARENT TRACKING ROUTE V2 REACHED"
+    );
+
+    console.log(
+      "🔐 Authorization header:",
+      req.headers.authorization
+        ? "PRESENT"
+        : "MISSING"
+    );
+
+    console.log(
+      "🔎 Requested Driver ID:",
+      req.query?.driverId ||
+        "MISSING"
+    );
+
+    next();
+  },
+
+  /* =======================================================
+     PARENT FIREBASE AUTH
+  ======================================================= */
 
   verifyFirebaseToken,
+
+  /* =======================================================
+     LOAD PARENT
+  ======================================================= */
+
   requireParentAccount,
+
+  /* =======================================================
+     VERIFY DRIVER BELONGS TO PARENT
+  ======================================================= */
+
   requireLinkedDriver,
+
+  /* =======================================================
+     FETCH SAFE DRIVER TRACKING DATA
+  ======================================================= */
 
   async (
     req,
     res
   ) => {
     try {
+      console.log(
+        "✅ PARENT AUTHENTICATION PASSED"
+      );
+
+      console.log(
+        "👤 Parent:",
+        String(
+          req.parent?._id ||
+            ""
+        )
+      );
+
+      console.log(
+        "🚗 Linked Driver:",
+        req.linkedDriverId
+      );
+
       const driver =
         await Driver.findOne({
           driverId:
@@ -883,63 +947,80 @@ router.get(
         );
 
       if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Driver not found",
-        });
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver not found",
+          });
       }
 
-      return res.status(200).json({
-        success: true,
+      console.log(
+        "✅ DRIVER TRACKING DATA RETURNED:",
+        driver.driverId
+      );
 
-        data: {
-          driverId:
-            driver.driverId,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-          name:
-            driver.name,
+          data: {
+            driverId:
+              driver.driverId,
 
-          phone:
-            driver.phone,
+            name:
+              driver.name,
 
-          profilePhoto:
-            driver.profilePhoto,
+            phone:
+              driver.phone,
 
-          vehicleNumber:
-            driver.vehicleNumber,
+            profilePhoto:
+              driver.profilePhoto,
 
-          vehicleType:
-            driver.vehicleType,
+            vehicleNumber:
+              driver.vehicleNumber,
 
-          isOnline:
-            driver.isOnline,
+            vehicleType:
+              driver.vehicleType,
 
-          currentStatus:
-            driver.currentStatus,
+            isOnline:
+              driver.isOnline,
 
-          location:
-            driver.location,
+            currentStatus:
+              driver.currentStatus,
 
-          lastLocation:
-            driver.lastLocation,
-        },
-      });
-    } catch (error) {
+            location:
+              driver.location,
+
+            lastLocation:
+              driver.lastLocation,
+          },
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "DRIVER TRACKING ERROR:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Tracking failed",
-      });
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Tracking failed",
+        });
     }
   }
 );
-
 /* =========================================================
    UPDATE DRIVER PROFILE
    DRIVER OWN ACCOUNT ONLY
