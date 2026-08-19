@@ -4,110 +4,152 @@ import admin from "firebase-admin";
    DRIVER FIREBASE SERVICE ACCOUNT
 ========================================================= */
 
-const driverServiceAccount = {
-  projectId: process.env.FIREBASE_PROJECT_ID,
+const driverServiceAccount =
+  {
+    projectId:
+      process.env
+        .FIREBASE_PROJECT_ID,
 
-  clientEmail:
-    process.env.FIREBASE_CLIENT_EMAIL,
+    clientEmail:
+      process.env
+        .FIREBASE_CLIENT_EMAIL,
 
-  privateKey:
-    process.env.FIREBASE_PRIVATE_KEY
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(
-          /\\n/g,
-          "\n"
-        )
-      : undefined,
-};
+    privateKey:
+      process.env
+        .FIREBASE_PRIVATE_KEY
+        ? process.env
+            .FIREBASE_PRIVATE_KEY
+            .replace(
+              /\\n/g,
+              "\n"
+            )
+        : undefined,
+  };
 
 /* =========================================================
    PARENT FIREBASE SERVICE ACCOUNT
 ========================================================= */
 
-const parentServiceAccount = {
-  projectId:
-    process.env.PARENT_FIREBASE_PROJECT_ID,
+const parentServiceAccount =
+  {
+    projectId:
+      process.env
+        .PARENT_FIREBASE_PROJECT_ID,
 
-  clientEmail:
-    process.env.PARENT_FIREBASE_CLIENT_EMAIL,
+    clientEmail:
+      process.env
+        .PARENT_FIREBASE_CLIENT_EMAIL,
 
-  privateKey:
-    process.env.PARENT_FIREBASE_PRIVATE_KEY
-      ? process.env.PARENT_FIREBASE_PRIVATE_KEY.replace(
-          /\\n/g,
-          "\n"
-        )
-      : undefined,
-};
+    privateKey:
+      process.env
+        .PARENT_FIREBASE_PRIVATE_KEY
+        ? process.env
+            .PARENT_FIREBASE_PRIVATE_KEY
+            .replace(
+              /\\n/g,
+              "\n"
+            )
+        : undefined,
+  };
 
 /* =========================================================
-   VALIDATE FIREBASE ENV VARIABLES
+   VALIDATE FIREBASE SERVICE ACCOUNT
 ========================================================= */
 
-const validateServiceAccount = (
-  serviceAccount,
-  name
-) => {
-  const missing = [];
+const validateServiceAccount =
+  (
+    serviceAccount,
+    name
+  ) => {
+    const missing =
+      [];
 
-  if (!serviceAccount.projectId) {
-    missing.push("projectId");
-  }
+    if (
+      !serviceAccount
+        .projectId
+    ) {
+      missing.push(
+        "projectId"
+      );
+    }
 
-  if (!serviceAccount.clientEmail) {
-    missing.push("clientEmail");
-  }
+    if (
+      !serviceAccount
+        .clientEmail
+    ) {
+      missing.push(
+        "clientEmail"
+      );
+    }
 
-  if (!serviceAccount.privateKey) {
-    missing.push("privateKey");
-  }
+    if (
+      !serviceAccount
+        .privateKey
+    ) {
+      missing.push(
+        "privateKey"
+      );
+    }
 
-  if (missing.length > 0) {
-    throw new Error(
-      `${name} Firebase configuration missing: ${missing.join(
-        ", "
-      )}`
-    );
-  }
-};
+    if (
+      missing.length >
+      0
+    ) {
+      throw new Error(
+        `${name} Firebase configuration missing: ${missing.join(
+          ", "
+        )}`
+      );
+    }
+  };
 
 /* =========================================================
    GET OR CREATE FIREBASE APP
 ========================================================= */
 
-const getOrCreateFirebaseApp = (
-  name,
-  serviceAccount
-) => {
-  const existingApp =
-    admin.apps.find(
-      (app) => app.name === name
+const getOrCreateFirebaseApp =
+  (
+    name,
+    serviceAccount
+  ) => {
+    const existingApp =
+      admin.apps.find(
+        (
+          app
+        ) =>
+          app.name ===
+          name
+      );
+
+    if (
+      existingApp
+    ) {
+      return existingApp;
+    }
+
+    validateServiceAccount(
+      serviceAccount,
+      name
     );
 
-  if (existingApp) {
-    return existingApp;
-  }
+    return admin.initializeApp(
+      {
+        credential:
+          admin.credential.cert(
+            serviceAccount
+          ),
+      },
 
-  validateServiceAccount(
-    serviceAccount,
-    name
-  );
-
-  return admin.initializeApp(
-    {
-      credential:
-        admin.credential.cert(
-          serviceAccount
-        ),
-    },
-    name
-  );
-};
+      name
+    );
+  };
 
 /* =========================================================
-   INITIALIZE DRIVER FIREBASE
+   DRIVER FIREBASE
 ========================================================= */
 
-let driverApp = null;
+let driverApp =
+  null;
 
 try {
   driverApp =
@@ -119,7 +161,15 @@ try {
   console.log(
     "🔥 Driver Firebase Initialized"
   );
-} catch (error) {
+
+  console.log(
+    "🔥 Driver Firebase Project:",
+    driverServiceAccount
+      .projectId
+  );
+} catch (
+  error
+) {
   console.error(
     "❌ Driver Firebase Init Error:",
     error.message
@@ -127,10 +177,11 @@ try {
 }
 
 /* =========================================================
-   INITIALIZE PARENT FIREBASE
+   PARENT FIREBASE
 ========================================================= */
 
-let parentApp = null;
+let parentApp =
+  null;
 
 try {
   parentApp =
@@ -142,7 +193,20 @@ try {
   console.log(
     "🔥 Parent Firebase Initialized"
   );
-} catch (error) {
+
+  /*
+    Safe debugging information.
+    This DOES NOT expose secrets.
+  */
+
+  console.log(
+    "🔥 Parent Firebase Project:",
+    parentServiceAccount
+      .projectId
+  );
+} catch (
+  error
+) {
   console.error(
     "❌ Parent Firebase Init Error:",
     error.message
@@ -150,24 +214,21 @@ try {
 }
 
 /* =========================================================
-   FIREBASE SERVICES
+   FIREBASE MESSAGING
 ========================================================= */
-
-/*
-  Existing notification services.
-
-  These are kept because your application
-  already uses Firebase Cloud Messaging.
-*/
 
 export const driverMessaging =
   driverApp
-    ? admin.messaging(driverApp)
+    ? admin.messaging(
+        driverApp
+      )
     : null;
 
 export const parentMessaging =
   parentApp
-    ? admin.messaging(parentApp)
+    ? admin.messaging(
+        parentApp
+      )
     : null;
 
 /* =========================================================
@@ -175,29 +236,34 @@ export const parentMessaging =
 ========================================================= */
 
 /*
-  Parent Auth is the important new export.
+  Parent Firebase authentication.
 
-  We will use:
+  Used by:
 
-  parentAuth.verifyIdToken(firebaseIdToken)
+  verifyFirebaseToken.js
 
-  inside verifyFirebaseToken.js.
+  parentAuth.verifyIdToken(...)
 */
 
 export const parentAuth =
   parentApp
-    ? admin.auth(parentApp)
+    ? admin.auth(
+        parentApp
+      )
     : null;
 
 /*
-  Keeping Driver Auth available for later.
+  Driver Firebase Auth.
 
-  We are NOT changing Driver authentication now.
+  This does NOT replace your existing
+  Driver JWT authentication.
 */
 
 export const driverAuth =
   driverApp
-    ? admin.auth(driverApp)
+    ? admin.auth(
+        driverApp
+      )
     : null;
 
 /* =========================================================
