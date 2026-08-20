@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import Driver from "../models/Driver.js";
 import Parent from "../models/Parent.js";
+
 import {
   loginLimiter,
   signupLimiter,
@@ -13,12 +14,16 @@ import {
   driverUpload,
 } from "../config/cloudinary.js";
 
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+import verifyParent from "../middleware/verifyParent.js";
 
 const router = express.Router();
 
 /* =========================================================
    HELPERS
+========================================================= */
+
+/* =========================================================
+   NORMALIZE DRIVER ID
 ========================================================= */
 
 const normalizeDriverId = (
@@ -114,76 +119,13 @@ const getSafeDriver = (
 };
 
 /* =========================================================
-   LOAD FIREBASE PARENT
-========================================================= */
-
-const requireParentAccount = async (
-  req,
-  res,
-  next
-) => {
-  try {
-    const firebaseUid =
-      req.firebaseUser?.uid;
-
-    if (!firebaseUid) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent authentication required",
-      });
-    }
-
-    const parent =
-      await Parent.findOne({
-        firebaseUid,
-      }).select(
-        "+firebaseUid"
-      );
-
-    if (!parent) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Parent account not found",
-      });
-    }
-
-    if (
-      parent.status ===
-      "inactive"
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Parent account is inactive",
-      });
-    }
-
-    req.parent =
-      parent;
-
-    return next();
-  } catch (error) {
-    console.error(
-      "PARENT AUTH LOAD ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Parent authentication failed",
-    });
-  }
-};
-
-/* =========================================================
    DRIVER SIGNUP
 ========================================================= */
 
 router.post(
   "/signup",
+
+  signupLimiter,
 
   driverUpload.fields([
     {
@@ -220,7 +162,10 @@ router.post(
     },
   ]),
 
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     let driverSaved =
       false;
 
@@ -261,11 +206,15 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
-          message:
-            "All Driver details are required",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "All Driver details are required",
+          });
       }
 
       /* ===================================================
@@ -273,10 +222,12 @@ router.post(
       =================================================== */
 
       const normalizedName =
-        String(name).trim();
+        String(name)
+          .trim();
 
       const normalizedPhone =
-        String(phone).trim();
+        String(phone)
+          .trim();
 
       const normalizedEmail =
         String(email)
@@ -287,7 +238,8 @@ router.post(
         String(password);
 
       const normalizedAddress =
-        String(address).trim();
+        String(address)
+          .trim();
 
       const normalizedVehicleNumber =
         String(vehicleNumber)
@@ -317,11 +269,15 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
-          message:
-            "Driver details cannot contain empty values",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver details cannot contain empty values",
+          });
       }
 
       /* ===================================================
@@ -336,26 +292,31 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
-          message:
-            "Password must contain at least 6 characters",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Password must contain at least 6 characters",
+          });
       }
 
       /* ===================================================
          REQUIRED DOCUMENTS
       =================================================== */
 
-      const requiredFiles = [
-        "licenseFront",
-        "licenseBack",
-        "rcFront",
-        "rcBack",
-        "insurance",
-        "idFront",
-        "idBack",
-      ];
+      const requiredFiles =
+        [
+          "licenseFront",
+          "licenseBack",
+          "rcFront",
+          "rcBack",
+          "insurance",
+          "idFront",
+          "idBack",
+        ];
 
       const missingFiles =
         requiredFiles.filter(
@@ -373,15 +334,18 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "All required Driver documents must be uploaded",
+            message:
+              "All required Driver documents must be uploaded",
 
-          missingDocuments:
-            missingFiles,
-        });
+            missingDocuments:
+              missingFiles,
+          });
       }
 
       /* ===================================================
@@ -400,11 +364,15 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
-          message:
-            "Enter a valid email address",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid email address",
+          });
       }
 
       /* ===================================================
@@ -412,10 +380,14 @@ router.post(
       =================================================== */
 
       const lat =
-        Number(latitude);
+        Number(
+          latitude
+        );
 
       const lng =
-        Number(longitude);
+        Number(
+          longitude
+        );
 
       if (
         !Number.isFinite(
@@ -429,12 +401,15 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Valid latitude and longitude are required",
-        });
+            message:
+              "Valid latitude and longitude are required",
+          });
       }
 
       if (
@@ -447,11 +422,15 @@ router.post(
           req.files
         );
 
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid location coordinates",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid location coordinates",
+          });
       }
 
       /* ===================================================
@@ -481,11 +460,15 @@ router.post(
           req.files
         );
 
-        return res.status(409).json({
-          success: false,
-          message:
-            "Driver already exists",
-        });
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver already exists",
+          });
       }
 
       /* ===================================================
@@ -552,10 +535,19 @@ router.post(
           lastLocation: {
             lat,
             lng,
-            eta: "--",
-            speed: 0,
-            heading: 0,
-            accuracy: null,
+
+            eta:
+              "--",
+
+            speed:
+              0,
+
+            heading:
+              0,
+
+            accuracy:
+              null,
+
             updatedAt:
               new Date(),
           },
@@ -635,17 +627,20 @@ router.post(
       driverSaved =
         true;
 
-      return res.status(201).json({
-        success: true,
+      return res
+        .status(201)
+        .json({
+          success:
+            true,
 
-        message:
-          "Signup successful. Driver account is pending approval.",
+          message:
+            "Signup successful. Driver account is pending approval.",
 
-        driver:
-          getSafeDriver(
-            driver
-          ),
-      });
+          driver:
+            getSafeDriver(
+              driver
+            ),
+        });
     } catch (error) {
       if (
         !driverSaved
@@ -664,29 +659,41 @@ router.post(
         error?.code ===
         11000
       ) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "Driver already exists",
-        });
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver already exists",
+          });
       }
 
       if (
         error?.name ===
         "ValidationError"
       ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            error.message,
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              error.message,
+          });
       }
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Signup failed",
-      });
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Signup failed",
+        });
     }
   }
 );
@@ -698,7 +705,12 @@ router.post(
 router.post(
   "/login",
 
-  async (req, res) => {
+  loginLimiter,
+
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         email,
@@ -710,20 +722,28 @@ router.post(
         !email ||
         !password
       ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Email and password are required",
-        });
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Email and password are required",
+          });
       }
 
       const normalizedEmail =
-        String(email)
+        String(
+          email
+        )
           .trim()
           .toLowerCase();
 
       const normalizedPassword =
-        String(password);
+        String(
+          password
+        );
 
       const emailRegex =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -733,11 +753,15 @@ router.post(
           normalizedEmail
         )
       ) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Invalid credentials",
-        });
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid credentials",
+          });
       }
 
       /* ===================================================
@@ -753,15 +777,19 @@ router.post(
         );
 
       if (!driver) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Invalid credentials",
-        });
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid credentials",
+          });
       }
 
       /* ===================================================
-         VERIFY PASSWORD
+         PASSWORD
       =================================================== */
 
       const isMatch =
@@ -769,12 +797,18 @@ router.post(
           normalizedPassword
         );
 
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Invalid credentials",
-        });
+      if (
+        !isMatch
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid credentials",
+          });
       }
 
       /* ===================================================
@@ -785,57 +819,73 @@ router.post(
         driver.status ===
         "pending"
       ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "Driver account is pending approval",
-        });
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver account is pending approval",
+          });
       }
 
       if (
         driver.status ===
         "rejected"
       ) {
-        return res.status(403).json({
-          success: false,
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
 
-          message:
-            driver.rejectionReason
-              ? `Driver account rejected: ${driver.rejectionReason}`
-              : "Driver account has been rejected",
-        });
+            message:
+              driver.rejectionReason
+                ? `Driver account rejected: ${driver.rejectionReason}`
+                : "Driver account has been rejected",
+          });
       }
 
       if (
         driver.status !==
         "approved"
       ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "Driver account is not approved",
-        });
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver account is not approved",
+          });
       }
 
       /* ===================================================
          JWT CONFIG
       =================================================== */
 
-      if (!process.env.JWT_SECRET) {
+      if (
+        !process.env.JWT_SECRET
+      ) {
         console.error(
           "JWT_SECRET is not configured"
         );
 
-        return res.status(500).json({
-          success: false,
+        return res
+          .status(500)
+          .json({
+            success:
+              false,
 
-          message:
-            "Server authentication configuration error",
-        });
+            message:
+              "Server authentication configuration error",
+          });
       }
 
       /* ===================================================
-         GENERATE DRIVER JWT
+         DRIVER JWT
       =================================================== */
 
       const token =
@@ -865,33 +915,40 @@ router.post(
         );
 
       /* ===================================================
-         SAFE RESPONSE
+         RESPONSE
       =================================================== */
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-        message:
-          "Driver login successful",
+          message:
+            "Driver login successful",
 
-        token,
+          token,
 
-        driver:
-          getSafeDriver(
-            driver
-          ),
-      });
+          driver:
+            getSafeDriver(
+              driver
+            ),
+        });
     } catch (error) {
       console.error(
         "DRIVER LOGIN ERROR:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Login failed",
-      });
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Login failed",
+        });
     }
   }
 );
@@ -900,13 +957,25 @@ router.post(
    SAVE PARENT FCM TOKEN
 ========================================================= */
 
+/*
+  Parent authentication now uses:
+
+  ASAN Parent JWT
+
+  NOT Firebase Authentication.
+
+  FCM itself still remains Firebase-based.
+*/
+
 router.post(
   "/save-token",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
 
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         parentId,
@@ -927,12 +996,20 @@ router.post(
             req.parent._id
           )
       ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "You cannot modify another Parent account",
-        });
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
+
+            message:
+              "You cannot modify another Parent account",
+          });
       }
+
+      /* ===================================================
+         FCM TOKEN
+      =================================================== */
 
       const normalizedToken =
         typeof fcmToken ===
@@ -940,13 +1017,23 @@ router.post(
           ? fcmToken.trim()
           : "";
 
-      if (!normalizedToken) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "FCM token is required",
-        });
+      if (
+        !normalizedToken
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "FCM token is required",
+          });
       }
+
+      /* ===================================================
+         SAVE TOKEN
+      =================================================== */
 
       await Parent.findByIdAndUpdate(
         req.parent._id,
@@ -964,22 +1051,30 @@ router.post(
         }
       );
 
-      return res.status(200).json({
-        success: true,
-        message:
-          "Token saved",
-      });
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "FCM token saved successfully",
+        });
     } catch (error) {
       console.error(
         "SAVE PARENT FCM TOKEN ERROR:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to save token",
-      });
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to save token",
+        });
     }
   }
 );
@@ -992,27 +1087,36 @@ router.post(
 router.get(
   "/by-id/:driverId",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
 
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const driverId =
         normalizeDriverId(
           req.params.driverId
         );
 
-      if (!driverId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Driver ID is required",
-        });
+      if (
+        !driverId
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver ID is required",
+          });
       }
 
       const driver =
         await Driver.findOne({
           driverId,
+
           status:
             "approved",
         }).select(
@@ -1020,28 +1124,40 @@ router.get(
         );
 
       if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Approved Driver not found",
-        });
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "Approved Driver not found",
+          });
       }
 
-      return res.status(200).json({
-        success: true,
-        driver,
-      });
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          driver,
+        });
     } catch (error) {
       console.error(
         "GET DRIVER BY ID ERROR:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to fetch Driver",
-      });
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to fetch Driver",
+        });
     }
   }
 );
