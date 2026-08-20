@@ -1,71 +1,67 @@
 import express from "express";
 
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+import verifyPhoneEmail from "../middleware/verifyPhoneEmail.js";
 
 import {
   parentAuthLimiter,
 } from "../middleware/rateLimiters.js";
 
 import {
-  loginParentWithFirebase,
-  registerParentWithFirebase,
+  loginParent,
+  registerParent,
 } from "../controllers/parentAuthController.js";
 
-const router = express.Router();
+const router =
+  express.Router();
 
 /* =========================================================
-   PARENT FIREBASE AUTH ROUTES
+   PARENT PHONE.EMAIL AUTH ROUTES
 ========================================================= */
 
 /*
-  Firebase handles:
+  AUTH FLOW:
 
-  1. Send OTP
-  2. Verify OTP
-
-  After successful OTP verification,
-  the frontend receives a Firebase ID token.
-
-  Send it to the backend as:
-
-  Authorization: Bearer <FIREBASE_ID_TOKEN>
-
-  Flow:
-
-  Firebase ID Token
-        ↓
-  Rate Limiter
-        ↓
-  verifyFirebaseToken
-        ↓
-  Parent Auth Controller
+  Phone.Email
+      ↓
+  OTP verification
+      ↓
+  userJsonUrl
+      ↓
+  Parent frontend
+      ↓
+  ASAN Backend
+      ↓
+  verifyPhoneEmail
+      ↓
+  req.verifiedIdentity
+      ↓
+  Parent auth controller
+      ↓
+  MongoDB Parent
+      ↓
+  ASAN Parent JWT
 */
 
 /* =========================================================
-   FIREBASE LOGIN
+   LOGIN
 ========================================================= */
 
 /*
   POST /api/parent-auth/login
 
-  Headers:
-
-  Authorization: Bearer <firebase-id-token>
-
   Body:
 
-  No phone required.
-  No OTP required.
-  No password required.
-
-  Phone and Firebase UID are obtained only
-  from the verified Firebase token.
+  {
+    "userJsonUrl":
+      "https://user.phone.email/user_xxxxx.json"
+  }
 
   Existing Parent:
 
   {
     "success": true,
     "needsRegistration": false,
+    "token": "<ASAN_PARENT_JWT>",
     "data": {}
   }
 
@@ -83,41 +79,49 @@ router.post(
 
   parentAuthLimiter,
 
-  verifyFirebaseToken,
+  verifyPhoneEmail,
 
-  loginParentWithFirebase
+  loginParent
 );
 
 /* =========================================================
-   FIREBASE REGISTRATION
+   REGISTER
 ========================================================= */
 
 /*
   POST /api/parent-auth/register
 
-  Headers:
-
-  Authorization: Bearer <firebase-id-token>
-
   Body:
 
   {
-    "name": "Parent Name",
-    "email": "parent@gmail.com",
-    "address": "Hyderabad",
-    "latitude": 17.385,
-    "longitude": 78.4867
+    "userJsonUrl":
+      "https://user.phone.email/user_xxxxx.json",
+
+    "name":
+      "Parent Name",
+
+    "email":
+      "parent@gmail.com",
+
+    "address":
+      "Hyderabad",
+
+    "latitude":
+      17.385,
+
+    "longitude":
+      78.4867
   }
 
   DO NOT send:
 
-  password
-  otp
   phone
+  otp
   firebaseUid
+  password
 
-  Phone and Firebase UID are taken only
-  from the verified Firebase ID token.
+  Phone comes only from the verified
+  Phone.Email response.
 */
 
 router.post(
@@ -125,9 +129,9 @@ router.post(
 
   parentAuthLimiter,
 
-  verifyFirebaseToken,
+  verifyPhoneEmail,
 
-  registerParentWithFirebase
+  registerParent
 );
 
 /* =========================================================
