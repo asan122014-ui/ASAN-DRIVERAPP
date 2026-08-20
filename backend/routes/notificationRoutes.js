@@ -23,12 +23,8 @@ const router = express.Router();
    HELPERS
 ========================================================= */
 
-const normalizeDriverId = (
-  driverId
-) => {
-  return String(
-    driverId || ""
-  )
+const normalizeDriverId = (driverId) => {
+  return String(driverId || "")
     .trim()
     .toUpperCase();
 };
@@ -115,7 +111,7 @@ const requireOwnParentParam = (
     String(
       req.params?.parentId ||
         ""
-    );
+    ).trim();
 
   if (!parentId) {
     return res.status(400).json({
@@ -148,17 +144,19 @@ const requireOwnParentParam = (
 ========================================================= */
 
 /*
-  Existing endpoint remains:
+  Supported:
 
-  PUT /api/notifications/read-all
+  DRIVER
 
-  DRIVER:
-  ?driverId=ASAN-XXXXXX
+  PUT /api/notifications/read-all?driverId=ASAN-XXXXXX
 
-  PARENT:
-  ?parentId=<MongoId>
+  PARENT
 
-  The supplied ID is NEVER trusted by itself.
+  PUT /api/notifications/read-all?parentId=<MongoId>
+
+  The ID supplied through query parameters is never
+  trusted by itself.
+
   Authentication must prove ownership.
 */
 
@@ -223,6 +221,7 @@ const authorizeReadAll = (
 
         if (
           !requestedDriverId ||
+          !authenticatedDriverId ||
           requestedDriverId !==
             authenticatedDriverId
         ) {
@@ -343,7 +342,7 @@ const authorizeSingleNotification =
       }
 
       /* ===================================================
-         FIND NOTIFICATION RECIPIENT
+         FIND NOTIFICATION
       =================================================== */
 
       const notification =
@@ -387,6 +386,7 @@ const authorizeSingleNotification =
 
             if (
               !notificationDriverId ||
+              !authenticatedDriverId ||
               notificationDriverId !==
                 authenticatedDriverId
             ) {
@@ -461,6 +461,10 @@ const authorizeSingleNotification =
         );
       }
 
+      /* ===================================================
+         UNKNOWN RECIPIENT
+      =================================================== */
+
       return res.status(403).json({
         success: false,
 
@@ -487,12 +491,6 @@ const authorizeSingleNotification =
    ADMIN ONLY
 ========================================================= */
 
-/*
-  Development/testing endpoint.
-
-  It can no longer be called publicly.
-*/
-
 router.post(
   "/test",
 
@@ -506,29 +504,43 @@ router.post(
 ========================================================= */
 
 /*
-  REMOVED from this router.
+  There is intentionally NO token-registration
+  endpoint here.
 
-  Parent secured token registration:
+  Parent:
 
   POST /api/auth/save-token
+
   Firebase authenticated.
 
-  Driver secured token registration:
+  Driver:
 
   POST /api/driver/save-token
-  Driver JWT authenticated.
 
-  Do not create a third public token-registration route here.
+  Driver JWT authenticated.
 */
 
 /* =========================================================
-   DRIVER UNREAD NOTIFICATIONS
+   DRIVER NOTIFICATION HISTORY
 ========================================================= */
 
 /*
-  Driver identity comes from Driver JWT.
+  IMPORTANT:
 
-  Query driverId is no longer trusted.
+  GET /api/notifications
+
+  This route should return BOTH:
+
+  read: false
+  read: true
+
+  notifications.
+
+  Opening Notifications changes read status,
+  but read notifications must remain in the feed
+  until MongoDB TTL deletes them after 4 days.
+
+  Driver identity comes only from Driver JWT.
 */
 
 router.get(
@@ -556,11 +568,19 @@ router.get(
    PARENT NOTIFICATION HISTORY
 ========================================================= */
 
+/*
+  Example:
+
+  GET /api/notifications/parent/68abc123...
+*/
+
 router.get(
   "/parent/:parentId",
 
   verifyFirebaseToken,
+
   requireParentAccount,
+
   requireOwnParentParam,
 
   getParentNotifications
@@ -569,6 +589,25 @@ router.get(
 /* =========================================================
    MARK ALL AS READ
 ========================================================= */
+
+/*
+  DRIVER:
+
+  PUT /api/notifications/read-all
+      ?driverId=ASAN-XXXXXX
+
+  PARENT:
+
+  PUT /api/notifications/read-all
+      ?parentId=<MongoId>
+
+  This should ONLY update:
+
+  read   -> true
+  readAt -> current time
+
+  It must NEVER delete notifications.
+*/
 
 router.put(
   "/read-all",
@@ -581,6 +620,15 @@ router.put(
 /* =========================================================
    MARK SINGLE NOTIFICATION AS READ
 ========================================================= */
+
+/*
+  Example:
+
+  PUT /api/notifications/68abc123/read
+
+  Frontend currently uses this endpoint when automatically
+  marking notifications as read.
+*/
 
 router.put(
   "/:id/read",
