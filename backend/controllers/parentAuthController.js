@@ -5,45 +5,50 @@ import Parent from "../models/Parent.js";
    PHONE NORMALIZATION
 ========================================================= */
 
-const normalizePhone = (phone) => {
+const normalizePhone = (
+  phone
+) => {
   if (!phone) {
     return null;
   }
 
-  let value =
+  const value =
     String(phone)
       .trim()
-      .replace(/[\s()-]/g, "");
+      .replace(
+        /[\s()-]/g,
+        ""
+      );
 
-  /* =====================================================
-     10 DIGIT INDIAN NUMBER
-  ===================================================== */
+  if (
+    /^\+\d{8,15}$/.test(
+      value
+    )
+  ) {
+    return value;
+  }
 
-  if (/^\d{10}$/.test(value)) {
+  if (
+    /^\d{10}$/.test(
+      value
+    )
+  ) {
     return `+91${value}`;
   }
 
-  /* =====================================================
-     91XXXXXXXXXX
-  ===================================================== */
-
-  if (/^91\d{10}$/.test(value)) {
+  if (
+    /^91\d{10}$/.test(
+      value
+    )
+  ) {
     return `+${value}`;
-  }
-
-  /* =====================================================
-     +91XXXXXXXXXX / INTERNATIONAL E.164
-  ===================================================== */
-
-  if (/^\+\d{8,15}$/.test(value)) {
-    return value;
   }
 
   return null;
 };
 
 /* =========================================================
-   VALIDATE COORDINATES
+   LOCATION VALIDATION
 ========================================================= */
 
 const validateCoordinates = (
@@ -51,17 +56,27 @@ const validateCoordinates = (
   longitude
 ) => {
   const lat =
-    Number(latitude);
+    Number(
+      latitude
+    );
 
   const lng =
-    Number(longitude);
+    Number(
+      longitude
+    );
 
   if (
-    !Number.isFinite(lat) ||
-    !Number.isFinite(lng)
+    !Number.isFinite(
+      lat
+    ) ||
+    !Number.isFinite(
+      lng
+    )
   ) {
     return {
-      valid: false,
+      valid:
+        false,
+
       message:
         "Valid latitude and longitude are required",
     };
@@ -72,7 +87,9 @@ const validateCoordinates = (
     lat > 90
   ) {
     return {
-      valid: false,
+      valid:
+        false,
+
       message:
         "Latitude must be between -90 and 90",
     };
@@ -83,16 +100,23 @@ const validateCoordinates = (
     lng > 180
   ) {
     return {
-      valid: false,
+      valid:
+        false,
+
       message:
         "Longitude must be between -180 and 180",
     };
   }
 
   return {
-    valid: true,
-    latitude: lat,
-    longitude: lng,
+    valid:
+      true,
+
+    latitude:
+      lat,
+
+    longitude:
+      lng,
   };
 };
 
@@ -100,7 +124,9 @@ const validateCoordinates = (
    SAFE PARENT
 ========================================================= */
 
-const getSafeParent = (parent) => {
+const getSafeParent = (
+  parent
+) => {
   if (!parent) {
     return null;
   }
@@ -109,11 +135,15 @@ const getSafeParent = (parent) => {
 };
 
 /* =========================================================
-   CREATE ASAN PARENT JWT
+   CREATE PARENT JWT
 ========================================================= */
 
-const createParentToken = (parent) => {
-  if (!process.env.JWT_SECRET) {
+const createParentToken = (
+  parent
+) => {
+  if (
+    !process.env.JWT_SECRET
+  ) {
     throw new Error(
       "JWT_SECRET is not configured"
     );
@@ -122,12 +152,16 @@ const createParentToken = (parent) => {
   return jwt.sign(
     {
       id:
-        String(parent._id),
+        String(
+          parent._id
+        ),
 
       tokenType:
         "parent",
     },
+
     process.env.JWT_SECRET,
+
     {
       algorithm:
         "HS256",
@@ -139,7 +173,7 @@ const createParentToken = (parent) => {
 };
 
 /* =========================================================
-   BUILD AUTH RESPONSE
+   AUTH RESPONSE
 ========================================================= */
 
 const sendAuthenticatedParent = (
@@ -149,12 +183,17 @@ const sendAuthenticatedParent = (
   message = "Login successful"
 ) => {
   const token =
-    createParentToken(parent);
+    createParentToken(
+      parent
+    );
 
   return res
-    .status(statusCode)
+    .status(
+      statusCode
+    )
     .json({
-      success: true,
+      success:
+        true,
 
       message,
 
@@ -171,18 +210,7 @@ const sendAuthenticatedParent = (
 };
 
 /* =========================================================
-   LOGIN WITH VERIFIED PHONE
-
-   IMPORTANT:
-   req.verifiedIdentity will be attached later by our
-   Phone.Email verification middleware/controller.
-
-   Expected structure:
-
-   req.verifiedIdentity = {
-     provider: "phone.email",
-     phone: "+918309649713"
-   }
+   LOGIN
 ========================================================= */
 
 export const loginParent =
@@ -191,10 +219,6 @@ export const loginParent =
     res
   ) => {
     try {
-      /* ===================================================
-         VERIFIED IDENTITY
-      =================================================== */
-
       const {
         provider,
         phone,
@@ -218,16 +242,14 @@ export const loginParent =
           });
       }
 
-      /* ===================================================
-         NORMALIZE VERIFIED PHONE
-      =================================================== */
-
       const verifiedPhone =
         normalizePhone(
           phone
         );
 
-      if (!verifiedPhone) {
+      if (
+        !verifiedPhone
+      ) {
         return res
           .status(400)
           .json({
@@ -239,17 +261,13 @@ export const loginParent =
           });
       }
 
-      /* ===================================================
-         FIND EXISTING PARENT
-      =================================================== */
-
       const parent =
         await Parent.findByPhone(
           verifiedPhone
         );
 
       /* ===================================================
-         NEW USER
+         NEW PARENT
       =================================================== */
 
       if (!parent) {
@@ -271,7 +289,7 @@ export const loginParent =
       }
 
       /* ===================================================
-         ACTIVE CHECK
+         ACTIVE
       =================================================== */
 
       if (
@@ -289,10 +307,6 @@ export const loginParent =
           });
       }
 
-      /* ===================================================
-         LOGIN SUCCESS
-      =================================================== */
-
       return sendAuthenticatedParent(
         res,
         parent,
@@ -308,7 +322,8 @@ export const loginParent =
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to login Parent",
@@ -317,7 +332,7 @@ export const loginParent =
   };
 
 /* =========================================================
-   REGISTER PARENT WITH VERIFIED PHONE
+   REGISTER
 ========================================================= */
 
 export const registerParent =
@@ -326,10 +341,6 @@ export const registerParent =
     res
   ) => {
     try {
-      /* ===================================================
-         VERIFIED PHONE
-      =================================================== */
-
       const {
         provider,
         phone,
@@ -358,7 +369,9 @@ export const registerParent =
           phone
         );
 
-      if (!verifiedPhone) {
+      if (
+        !verifiedPhone
+      ) {
         return res
           .status(400)
           .json({
@@ -370,10 +383,6 @@ export const registerParent =
           });
       }
 
-      /* ===================================================
-         BODY
-      =================================================== */
-
       const {
         name,
         email,
@@ -381,10 +390,11 @@ export const registerParent =
         latitude,
         longitude,
       } =
-        req.body || {};
+        req.body ||
+        {};
 
       /* ===================================================
-         REQUIRED DATA
+         REQUIRED
       =================================================== */
 
       if (
@@ -407,25 +417,25 @@ export const registerParent =
           });
       }
 
-      /* ===================================================
-         NORMALIZE DATA
-      =================================================== */
-
       const normalizedName =
-        String(name)
-          .trim();
+        String(
+          name
+        ).trim();
 
       const normalizedEmail =
-        String(email)
+        String(
+          email
+        )
           .trim()
           .toLowerCase();
 
       const normalizedAddress =
-        String(address)
-          .trim();
+        String(
+          address
+        ).trim();
 
       /* ===================================================
-         EMAIL VALIDATION
+         EMAIL
       =================================================== */
 
       const emailRegex =
@@ -457,7 +467,9 @@ export const registerParent =
           longitude
         );
 
-      if (!location.valid) {
+      if (
+        !location.valid
+      ) {
         return res
           .status(400)
           .json({
@@ -497,13 +509,6 @@ export const registerParent =
             });
         }
 
-        /*
-          Do not create duplicates.
-
-          If this verified number already belongs
-          to a Parent, authenticate that Parent.
-        */
-
         return sendAuthenticatedParent(
           res,
           existingPhoneParent,
@@ -536,11 +541,7 @@ export const registerParent =
       }
 
       /* ===================================================
-         CREATE PARENT
-
-         SECURITY:
-         Phone NEVER comes from req.body.
-         It comes only from verified Phone.Email identity.
+         CREATE
       =================================================== */
 
       const parent =
@@ -570,10 +571,6 @@ export const registerParent =
           isActive:
             true,
         });
-
-      /* ===================================================
-         CREATE APP SESSION
-      =================================================== */
 
       return sendAuthenticatedParent(
         res,
@@ -664,7 +661,8 @@ export const registerParent =
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to register Parent",
