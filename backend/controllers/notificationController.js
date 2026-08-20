@@ -214,7 +214,7 @@ const handleControllerError = (
 ) => {
   console.error(
     fallbackMessage,
-    error.message
+    error
   );
 
   if (
@@ -243,15 +243,25 @@ const handleControllerError = (
 };
 
 /* =========================================================
-   GET DRIVER UNREAD NOTIFICATIONS
+   GET DRIVER NOTIFICATIONS
 ========================================================= */
 
 /*
   SECURITY:
 
-  Driver identity comes from verifyDriver.
+  Driver identity comes only from verifyDriver.
 
   req.query.driverId is ignored.
+
+  IMPORTANT:
+
+  This returns BOTH:
+
+  read: false
+  read: true
+
+  Read notifications remain visible until MongoDB TTL
+  removes them 4 days after createdAt.
 */
 
 export const getNotifications =
@@ -274,15 +284,18 @@ export const getNotifications =
         });
       }
 
+      /* ===================================================
+         DRIVER FILTER
+
+         DO NOT add read:false here.
+      =================================================== */
+
       const filter = {
         driver:
           driverId,
 
         recipientType:
           "driver",
-
-        read:
-          false,
       };
 
       /* ===================================================
@@ -295,7 +308,7 @@ export const getNotifications =
       );
 
       /* ===================================================
-         FETCH
+         FETCH ALL DRIVER NOTIFICATIONS
       =================================================== */
 
       const notifications =
@@ -308,18 +321,53 @@ export const getNotifications =
           })
           .lean();
 
-      return res.status(200).json({
-        success: true,
+      /* ===================================================
+         UNREAD COUNT
+      =================================================== */
 
-        count:
-          notifications.length,
+      const unreadCount =
+        notifications.reduce(
+          (
+            count,
+            notification
+          ) => {
+            return notification.read
+              ? count
+              : count + 1;
+          },
+          0
+        );
 
-        unreadCount:
-          notifications.length,
+      /* ===================================================
+         RESPONSE
+      =================================================== */
 
-        data:
-          notifications,
-      });
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          /*
+            Total notifications still stored
+            inside the 4-day retention period.
+          */
+
+          count:
+            notifications.length,
+
+          /*
+            Used by Dashboard bell.
+          */
+
+          unreadCount,
+
+          /*
+            Contains BOTH read and unread.
+          */
+
+          data:
+            notifications,
+        });
     } catch (error) {
       return handleControllerError(
         error,
@@ -398,12 +446,14 @@ export const getAllNotifications =
             normalizedPriority
           )
         ) {
-          return res.status(400).json({
-            success: false,
+          return res
+            .status(400)
+            .json({
+              success: false,
 
-            message:
-              "Priority must be low, medium or high",
-          });
+              message:
+                "Priority must be low, medium or high",
+            });
         }
 
         filter.priority =
@@ -437,17 +487,19 @@ export const getAllNotifications =
           0
         );
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success: true,
 
-        count:
-          notifications.length,
+          count:
+            notifications.length,
 
-        unreadCount,
+          unreadCount,
 
-        data:
-          notifications,
-      });
+          data:
+            notifications,
+        });
     } catch (error) {
       return handleControllerError(
         error,
@@ -467,11 +519,13 @@ export const getAllNotifications =
   Parent identity comes from:
 
   Firebase token
-       ↓
+  ↓
   req.parent
 
   parentId from the URL has already been ownership checked
   by notificationRoutes.js.
+
+  Both read and unread notifications are returned.
 */
 
 export const getParentNotifications =
@@ -484,12 +538,14 @@ export const getParentNotifications =
         req.parent;
 
       if (!parent) {
-        return res.status(401).json({
-          success: false,
+        return res
+          .status(401)
+          .json({
+            success: false,
 
-          message:
-            "Parent authentication required",
-        });
+            message:
+              "Parent authentication required",
+          });
       }
 
       const notifications =
@@ -519,17 +575,19 @@ export const getParentNotifications =
           0
         );
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success: true,
 
-        count:
-          notifications.length,
+          count:
+            notifications.length,
 
-        unreadCount,
+          unreadCount,
 
-        data:
-          notifications,
-      });
+          data:
+            notifications,
+        });
     } catch (error) {
       return handleControllerError(
         error,
@@ -659,12 +717,14 @@ export const markAsRead =
           id
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success: false,
 
-          message:
-            "Invalid Notification ID",
-        });
+            message:
+              "Invalid Notification ID",
+          });
       }
 
       /* ===================================================
@@ -679,9 +739,9 @@ export const markAsRead =
       /*
         Defense in depth:
 
-        Even though notificationRoutes.js has already
-        authorized the notification, query it again with
-        recipient ownership included.
+        notificationRoutes.js already checks ownership.
+
+        We also query using recipient ownership here.
       */
 
       const notification =
@@ -693,12 +753,14 @@ export const markAsRead =
         });
 
       if (!notification) {
-        return res.status(404).json({
-          success: false,
+        return res
+          .status(404)
+          .json({
+            success: false,
 
-          message:
-            "Notification not found",
-        });
+            message:
+              "Notification not found",
+          });
       }
 
       /* ===================================================
@@ -708,32 +770,39 @@ export const markAsRead =
       if (
         notification.read
       ) {
-        return res.status(200).json({
-          success: true,
+        return res
+          .status(200)
+          .json({
+            success: true,
 
-          message:
-            "Notification already read",
+            message:
+              "Notification already read",
 
-          data:
-            notification,
-        });
+            data:
+              notification,
+          });
       }
 
       /* ===================================================
          MARK READ
+
+         IMPORTANT:
+         THIS DOES NOT DELETE THE NOTIFICATION.
       =================================================== */
 
       await notification.markAsRead();
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success: true,
 
-        message:
-          "Notification marked as read",
+          message:
+            "Notification marked as read",
 
-        data:
-          notification,
-      });
+          data:
+            notification,
+        });
     } catch (error) {
       return handleControllerError(
         error,
@@ -771,6 +840,10 @@ export const markAllAsRead =
         req.query?.childId
       );
 
+      /*
+        Only unread records need updating.
+      */
+
       filter.read =
         false;
 
@@ -779,6 +852,15 @@ export const markAllAsRead =
 
       /* ===================================================
          UPDATE
+
+         IMPORTANT:
+
+         This only changes:
+
+         read   = true
+         readAt = current time
+
+         Nothing is deleted.
       =================================================== */
 
       const result =
@@ -795,15 +877,17 @@ export const markAllAsRead =
           }
         );
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success: true,
 
-        message:
-          "All notifications marked as read",
+          message:
+            "All notifications marked as read",
 
-        modifiedCount:
-          result.modifiedCount,
-      });
+          modifiedCount:
+            result.modifiedCount,
+        });
     } catch (error) {
       return handleControllerError(
         error,
@@ -825,9 +909,9 @@ export const markAllAsRead =
 
   Protected by verifyAdmin.
 
-  This is a testing utility only.
+  Testing utility only.
 
-  It sends FCM but does NOT create a real
+  Sends FCM but does not create a real
   Notification database record.
 */
 
@@ -847,12 +931,14 @@ export const sendTestNotification =
       =================================================== */
 
       if (!parentId) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success: false,
 
-          message:
-            "parentId is required",
-        });
+            message:
+              "parentId is required",
+          });
       }
 
       if (
@@ -860,12 +946,14 @@ export const sendTestNotification =
           parentId
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success: false,
 
-          message:
-            "Invalid Parent ID",
-        });
+            message:
+              "Invalid Parent ID",
+          });
       }
 
       /* ===================================================
@@ -875,12 +963,14 @@ export const sendTestNotification =
       if (
         !parentMessaging
       ) {
-        return res.status(503).json({
-          success: false,
+        return res
+          .status(503)
+          .json({
+            success: false,
 
-          message:
-            "Parent Firebase Messaging is unavailable",
-        });
+            message:
+              "Parent Firebase Messaging is unavailable",
+          });
       }
 
       /* ===================================================
@@ -893,12 +983,14 @@ export const sendTestNotification =
         );
 
       if (!parent) {
-        return res.status(404).json({
-          success: false,
+        return res
+          .status(404)
+          .json({
+            success: false,
 
-          message:
-            "Parent not found",
-        });
+            message:
+              "Parent not found",
+          });
       }
 
       /* ===================================================
@@ -922,12 +1014,14 @@ export const sendTestNotification =
         tokens.length ===
         0
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success: false,
 
-          message:
-            "FCM tokens not found",
-        });
+            message:
+              "FCM tokens not found",
+          });
       }
 
       /* ===================================================
@@ -941,8 +1035,7 @@ export const sendTestNotification =
         let index = 0;
         index <
         tokens.length;
-        index +=
-        500
+        index += 500
       ) {
         chunks.push(
           tokens.slice(
@@ -1028,7 +1121,9 @@ export const sendTestNotification =
               )
             ) {
               invalidTokens.push(
-                chunk[index]
+                chunk[
+                  index
+                ]
               );
             }
           }
@@ -1070,21 +1165,23 @@ export const sendTestNotification =
         `Test Parent FCM: ${successCount} delivered, ${failureCount} failed`
       );
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success: true,
 
-        message:
-          "Test notification processed",
+          message:
+            "Test notification processed",
 
-        data: {
-          successCount,
+          data: {
+            successCount,
 
-          failureCount,
+            failureCount,
 
-          removedInvalidTokens:
-            uniqueInvalidTokens.length,
-        },
-      });
+            removedInvalidTokens:
+              uniqueInvalidTokens.length,
+          },
+        });
     } catch (error) {
       return handleControllerError(
         error,
