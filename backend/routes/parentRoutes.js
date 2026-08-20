@@ -7,10 +7,11 @@ import DriverRequest from "../models/DriverRequest.js";
 import Trip from "../models/Trips.js";
 import Notification from "../models/Notification.js";
 
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+import verifyParent from "../middleware/verifyParent.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
 
-const router = express.Router();
+const router =
+  express.Router();
 
 /* =========================================================
    HELPERS
@@ -20,15 +21,25 @@ const router = express.Router();
    SAFE PARENT RESPONSE
 ========================================================= */
 
-const getSafeParent = (parent) => {
+const getSafeParent = (
+  parent
+) => {
   if (!parent) {
     return null;
   }
 
   const data =
-    typeof parent.toObject === "function"
+    typeof parent.toObject ===
+    "function"
       ? parent.toObject()
       : { ...parent };
+
+  /*
+    firebaseUid is still temporarily present
+    in the MongoDB schema during migration.
+
+    Never expose it to clients.
+  */
 
   delete data.password;
   delete data.firebaseUid;
@@ -38,93 +49,19 @@ const getSafeParent = (parent) => {
 };
 
 /* =========================================================
-   LOAD AUTHENTICATED PARENT
+   VERIFY PARENT OWNERSHIP
 ========================================================= */
 
 /*
-  Flow:
+  verifyParent already authenticates the ASAN Parent JWT
+  and attaches:
 
-  Firebase ID Token
-        ↓
-  verifyFirebaseToken
-        ↓
-  req.firebaseUser.uid
-        ↓
-  Find MongoDB Parent linked to that Firebase UID
+  req.parent
+  req.parentAuth
+
+  This middleware only checks that a route parameter
+  belongs to that authenticated Parent.
 */
-
-const requireParentAccount = async (
-  req,
-  res,
-  next
-) => {
-  try {
-    const firebaseUid =
-      req.firebaseUser?.uid;
-
-    if (!firebaseUid) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          message:
-            "Parent authentication required",
-        });
-    }
-
-    const parent =
-      await Parent.findOne({
-        firebaseUid,
-      }).select(
-        "+firebaseUid"
-      );
-
-    if (!parent) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message:
-            "Parent account not found",
-        });
-    }
-
-    if (
-      parent.status ===
-      "inactive"
-    ) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message:
-            "Parent account is inactive",
-        });
-    }
-
-    req.parent =
-      parent;
-
-    return next();
-  } catch (error) {
-    console.error(
-      "LOAD PARENT ERROR:",
-      error
-    );
-
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message:
-          "Failed to authenticate Parent",
-      });
-  }
-};
-
-/* =========================================================
-   VERIFY PARENT OWNERSHIP
-========================================================= */
 
 const requireOwnParent = (
   paramName
@@ -150,19 +87,25 @@ const requireOwnParent = (
         .status(400)
         .json({
           success: false,
+
           message:
             "Parent ID is required",
         });
     }
 
     if (
-      requestedParentId !==
-      authenticatedParentId
+      String(
+        requestedParentId
+      ) !==
+      String(
+        authenticatedParentId
+      )
     ) {
       return res
         .status(403)
         .json({
           success: false,
+
           message:
             "You cannot access another Parent account",
         });
@@ -173,26 +116,31 @@ const requireOwnParent = (
 };
 
 /* =========================================================
-   CHECK OPTIONAL BODY PARENT ID
+   OPTIONAL BODY PARENT ID
 ========================================================= */
 
 /*
-  Existing frontend requests may still send parentId.
+  Some existing frontend requests may still send:
 
-  We don't trust it.
+  {
+    parentId: "..."
+  }
 
-  If it is supplied, it must match the authenticated
-  Firebase Parent.
+  We do not trust that value.
+
+  If supplied, it must match the Parent identity
+  established by the verified ASAN Parent JWT.
 */
 
 const validateBodyParentId = (
-  req,
-  res
+  req
 ) => {
   const suppliedParentId =
     req.body?.parentId;
 
-  if (!suppliedParentId) {
+  if (
+    !suppliedParentId
+  ) {
     return true;
   }
 
@@ -201,7 +149,7 @@ const validateBodyParentId = (
       suppliedParentId
     ) ===
     String(
-      req.parent._id
+      req.parent?._id
     )
   );
 };
@@ -266,7 +214,9 @@ router.get(
         .status(200)
         .json({
           success: true,
-          data: result,
+
+          data:
+            result,
         });
     } catch (error) {
       console.error(
@@ -277,7 +227,9 @@ router.get(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
+
           message:
             "Failed to fetch Parents",
         });
@@ -292,8 +244,8 @@ router.get(
 router.get(
   "/download-data/:parentId",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
+
   requireOwnParent(
     "parentId"
   ),
@@ -307,7 +259,7 @@ router.get(
         req.parent._id;
 
       /* ===================================================
-         LOAD RELATED DATA
+         RELATED DATA
       =================================================== */
 
       const [
@@ -346,45 +298,46 @@ router.get(
          DOWNLOAD DATA
       =================================================== */
 
-      const downloadData = {
-        parent:
-          getSafeParent(
-            req.parent
-          ),
+      const downloadData =
+        {
+          parent:
+            getSafeParent(
+              req.parent
+            ),
 
-        children:
-          children.map(
-            (
-              child
-            ) =>
-              child.toObject()
-          ),
+          children:
+            children.map(
+              (
+                child
+              ) =>
+                child.toObject()
+            ),
 
-        trips:
-          trips.map(
-            (
-              trip
-            ) =>
-              trip.toObject()
-          ),
+          trips:
+            trips.map(
+              (
+                trip
+              ) =>
+                trip.toObject()
+            ),
 
-        notifications:
-          notifications.map(
-            (
-              notification
-            ) =>
-              notification.toObject()
-          ),
+          notifications:
+            notifications.map(
+              (
+                notification
+              ) =>
+                notification.toObject()
+            ),
 
-        downloadedAt:
-          new Date()
-            .toISOString(),
-      };
+          downloadedAt:
+            new Date().toISOString(),
+        };
 
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "Data downloaded successfully",
@@ -401,7 +354,8 @@ router.get(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to download data",
@@ -437,7 +391,8 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "parentId and driverId are required",
@@ -469,7 +424,9 @@ router.put(
         return res
           .status(404)
           .json({
-            success: false,
+            success:
+              false,
+
             message:
               "Driver not found",
           });
@@ -482,7 +439,8 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Only approved Drivers can be assigned",
@@ -502,9 +460,26 @@ router.put(
         return res
           .status(404)
           .json({
-            success: false,
+            success:
+              false,
+
             message:
               "Parent not found",
+          });
+      }
+
+      if (
+        parent.isActive ===
+        false
+      ) {
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
+
+            message:
+              "Parent account is inactive",
           });
       }
 
@@ -538,7 +513,8 @@ router.put(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "Driver assigned successfully",
@@ -561,7 +537,9 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
+
             message:
               "Invalid Parent ID",
           });
@@ -570,7 +548,8 @@ router.put(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to assign Driver",
@@ -583,32 +562,48 @@ router.put(
    LOGOUT / REMOVE FCM TOKEN
 ========================================================= */
 
+/*
+  Authentication session is JWT-based.
+
+  The JWT itself is removed client-side.
+
+  Backend logout is used to remove the current
+  device's FCM token from the Parent account.
+*/
+
 router.put(
   "/logout",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
 
   async (
     req,
     res
   ) => {
     try {
+      /* ===================================================
+         OPTIONAL BODY PARENT OWNERSHIP CHECK
+      =================================================== */
+
       if (
         !validateBodyParentId(
-          req,
-          res
+          req
         )
       ) {
         return res
           .status(403)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "You cannot logout another Parent account",
           });
       }
+
+      /* ===================================================
+         FCM TOKEN
+      =================================================== */
 
       const fcmToken =
         typeof req.body
@@ -618,22 +613,25 @@ router.put(
           : "";
 
       /*
-        Firebase logout itself happens client-side.
-
-        No FCM token means there is nothing
-        else to remove from MongoDB.
+        No FCM token means the session may still
+        safely be cleared client-side.
       */
 
       if (!fcmToken) {
         return res
           .status(200)
           .json({
-            success: true,
+            success:
+              true,
 
             message:
               "Logout successful",
           });
       }
+
+      /* ===================================================
+         REMOVE DEVICE TOKEN
+      =================================================== */
 
       await Parent.findByIdAndUpdate(
         req.parent._id,
@@ -649,10 +647,11 @@ router.put(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
-            "FCM token removed successfully",
+            "Logout successful",
         });
     } catch (error) {
       console.error(
@@ -663,7 +662,8 @@ router.put(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Logout failed",
@@ -673,14 +673,13 @@ router.put(
 );
 
 /* =========================================================
-   LINK DRIVER — AUTHENTICATED PARENT ONLY
+   LINK DRIVER — AUTHENTICATED PARENT
 ========================================================= */
 
 router.post(
   "/link-driver",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
 
   async (
     req,
@@ -693,19 +692,19 @@ router.post(
         req.body || {};
 
       /* ===================================================
-         VERIFY OPTIONAL BODY PARENT ID
+         OPTIONAL BODY PARENT ID
       =================================================== */
 
       if (
         !validateBodyParentId(
-          req,
-          res
+          req
         )
       ) {
         return res
           .status(403)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "You cannot link a Driver to another Parent account",
@@ -720,7 +719,8 @@ router.post(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Driver ID is required",
@@ -748,7 +748,8 @@ router.post(
         return res
           .status(404)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Invalid Driver ID",
@@ -756,7 +757,7 @@ router.post(
       }
 
       /* ===================================================
-         DRIVER MUST BE APPROVED
+         APPROVED DRIVER ONLY
       =================================================== */
 
       if (
@@ -766,7 +767,8 @@ router.post(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Driver is not approved",
@@ -781,13 +783,19 @@ router.post(
       =================================================== */
 
       if (
-        parent.driverId ===
-        driver.driverId
+        String(
+          parent.driverId ||
+            ""
+        ).toUpperCase() ===
+        String(
+          driver.driverId
+        ).toUpperCase()
       ) {
         return res
           .status(200)
           .json({
-            success: true,
+            success:
+              true,
 
             message:
               "Driver already linked",
@@ -829,7 +837,8 @@ router.post(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "Driver linked successfully",
@@ -848,7 +857,8 @@ router.post(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to link Driver",
@@ -864,8 +874,8 @@ router.post(
 router.get(
   "/:id",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
+
   requireOwnParent(
     "id"
   ),
@@ -878,7 +888,8 @@ router.get(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           data:
             getSafeParent(
@@ -894,7 +905,8 @@ router.get(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Failed to fetch Parent",
@@ -910,8 +922,8 @@ router.get(
 router.put(
   "/:id",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
+
   requireOwnParent(
     "id"
   ),
@@ -922,30 +934,29 @@ router.put(
   ) => {
     try {
       /*
-        IMPORTANT:
-
-        Use an allow-list rather than copying the
-        whole request body.
-
-        Parent is allowed to edit only:
+        ALLOWED PROFILE FIELDS:
 
         - name
         - email
         - address
         - latitude + longitude
 
-        Cannot directly modify:
+        NOT DIRECTLY EDITABLE:
 
-        - firebaseUid
         - phone
         - driverId
-        - status
+        - isActive
+        - firebaseUid
         - fcmTokens
-        - referral fields
-        - database fields
+        - referralCode
+        - referredBy
+
+        Phone change will later have its own
+        Phone.Email OTP verification flow.
       */
 
-      const updates = {};
+      const updates =
+        {};
 
       /* ===================================================
          NAME
@@ -964,7 +975,8 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Name cannot be empty",
@@ -992,7 +1004,8 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Address cannot be empty",
@@ -1029,7 +1042,8 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Enter a valid email address",
@@ -1054,7 +1068,8 @@ router.put(
           return res
             .status(409)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Email is already registered",
@@ -1086,7 +1101,8 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Latitude and longitude must be provided together",
@@ -1118,7 +1134,8 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Invalid latitude or longitude",
@@ -1132,7 +1149,8 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Latitude must be between -90 and 90",
@@ -1146,22 +1164,24 @@ router.put(
           return res
             .status(400)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Longitude must be between -180 and 180",
             });
         }
 
-        updates.homeLocation = {
-          type:
-            "Point",
+        updates.homeLocation =
+          {
+            type:
+              "Point",
 
-          coordinates: [
-            longitude,
-            latitude,
-          ],
-        };
+            coordinates: [
+              longitude,
+              latitude,
+            ],
+          };
       }
 
       /* ===================================================
@@ -1177,7 +1197,8 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "No valid profile fields were provided",
@@ -1198,7 +1219,9 @@ router.put(
           },
 
           {
-            new: true,
+            new:
+              true,
+
             runValidators:
               true,
           }
@@ -1208,7 +1231,8 @@ router.put(
         return res
           .status(404)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Parent not found",
@@ -1218,7 +1242,8 @@ router.put(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "Parent updated successfully",
@@ -1238,10 +1263,32 @@ router.put(
         error?.code ===
         11000
       ) {
+        const duplicateField =
+          Object.keys(
+            error.keyPattern ||
+              {}
+          )[0];
+
+        if (
+          duplicateField ===
+          "email"
+        ) {
+          return res
+            .status(409)
+            .json({
+              success:
+                false,
+
+              message:
+                "Email is already registered",
+            });
+        }
+
         return res
           .status(409)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Parent information already exists",
@@ -1255,7 +1302,9 @@ router.put(
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
+
             message:
               error.message,
           });
@@ -1264,7 +1313,9 @@ router.put(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
+
           message:
             "Update failed",
         });
@@ -1279,8 +1330,8 @@ router.put(
 router.delete(
   "/:id",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
+
   requireOwnParent(
     "id"
   ),
@@ -1294,7 +1345,7 @@ router.delete(
         req.parent._id;
 
       /* ===================================================
-         DELETE RELATED RECORDS
+         DELETE RELATED DATA
       =================================================== */
 
       await Promise.all([
@@ -1318,7 +1369,7 @@ router.delete(
       ]);
 
       /* ===================================================
-         DELETE PARENT DOCUMENT
+         DELETE PARENT
       =================================================== */
 
       await Parent.findByIdAndDelete(
@@ -1328,7 +1379,8 @@ router.delete(
       return res
         .status(200)
         .json({
-          success: true,
+          success:
+            true,
 
           message:
             "Parent and related records deleted successfully",
@@ -1342,7 +1394,8 @@ router.delete(
       return res
         .status(500)
         .json({
-          success: false,
+          success:
+            false,
 
           message:
             "Delete failed",
