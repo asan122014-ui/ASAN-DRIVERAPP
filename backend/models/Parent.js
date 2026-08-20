@@ -4,176 +4,168 @@ import mongoose from "mongoose";
    PARENT SCHEMA
 ========================================================= */
 
-const parentSchema = new mongoose.Schema(
-  {
-    /* =====================================================
-       FIREBASE AUTHENTICATION
-    ===================================================== */
+const parentSchema =
+  new mongoose.Schema(
+    {
+      /* =====================================================
+         BASIC DETAILS
+      ===================================================== */
 
-    firebaseUid: {
-      type: String,
-      unique: true,
-      sparse: true,
-      trim: true,
-      select: false,
-    },
-
-    /* =====================================================
-       BASIC DETAILS
-    ===================================================== */
-
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-
-    /*
-      Parent phone numbers may exist in either form:
-
-      8309649713
-      +918309649713
-
-      Firebase normally returns E.164 format.
-    */
-
-    phone: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
-
-    /* =====================================================
-       HOME ADDRESS
-    ===================================================== */
-
-    address: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    homeLocation: {
-      type: {
+      name: {
         type: String,
-        enum: ["Point"],
-        default: "Point",
+        required: true,
+        trim: true,
       },
 
-      coordinates: {
-        type: [Number],
+      email: {
+        type: String,
         required: true,
-        default: [0, 0],
+        unique: true,
+        lowercase: true,
+        trim: true,
+      },
 
-        validate: {
-          validator(value) {
-            if (
-              !Array.isArray(value) ||
-              value.length !== 2
-            ) {
-              return false;
-            }
+      /*
+        Parent phone numbers may exist as:
 
-            const [lng, lat] = value;
+        8309649713
+        918309649713
+        +918309649713
 
-            return (
-              Number.isFinite(lng) &&
-              Number.isFinite(lat) &&
-              lng >= -180 &&
-              lng <= 180 &&
-              lat >= -90 &&
-              lat <= 90
-            );
+        Phone helpers below handle these variants.
+      */
+
+      phone: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+      },
+
+      /* =====================================================
+         HOME ADDRESS
+      ===================================================== */
+
+      address: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+
+      homeLocation: {
+        type: {
+          type: String,
+          enum: ["Point"],
+          default: "Point",
+        },
+
+        coordinates: {
+          type: [Number],
+          required: true,
+          default: [0, 0],
+
+          validate: {
+            validator(value) {
+              if (
+                !Array.isArray(value) ||
+                value.length !== 2
+              ) {
+                return false;
+              }
+
+              const [lng, lat] =
+                value;
+
+              return (
+                Number.isFinite(lng) &&
+                Number.isFinite(lat) &&
+                lng >= -180 &&
+                lng <= 180 &&
+                lat >= -90 &&
+                lat <= 90
+              );
+            },
+
+            message:
+              "Invalid home location coordinates",
           },
-
-          message:
-            "Invalid home location coordinates",
         },
       },
+
+      /* =====================================================
+         DRIVER LINK
+      ===================================================== */
+
+      driverId: {
+        type: String,
+        default: null,
+        index: true,
+        trim: true,
+        uppercase: true,
+      },
+
+      /* =====================================================
+         PUSH NOTIFICATION TOKENS
+      ===================================================== */
+
+      fcmTokens: {
+        type: [String],
+        default: [],
+      },
+
+      /* =====================================================
+         ACCOUNT STATUS
+      ===================================================== */
+
+      isActive: {
+        type: Boolean,
+        default: true,
+      },
+
+      /* =====================================================
+         PROFILE PHOTO
+      ===================================================== */
+
+      profilePhoto: {
+        type: String,
+        default: null,
+      },
+
+      /* =====================================================
+         REFERRAL
+      ===================================================== */
+
+      referralCode: {
+        type: String,
+        unique: true,
+        sparse: true,
+        trim: true,
+        uppercase: true,
+      },
+
+      referredBy: {
+        type:
+          mongoose.Schema.Types
+            .ObjectId,
+
+        ref: "Parent",
+
+        default: null,
+      },
     },
 
-    /* =====================================================
-       DRIVER LINK
-    ===================================================== */
+    {
+      timestamps: true,
 
-    driverId: {
-      type: String,
-      default: null,
-      index: true,
-      trim: true,
-      uppercase: true,
-    },
+      toJSON: {
+        virtuals: true,
+      },
 
-    /* =====================================================
-       PUSH NOTIFICATION TOKENS
-    ===================================================== */
-
-    fcmTokens: {
-      type: [String],
-      default: [],
-    },
-
-    /* =====================================================
-       ACCOUNT STATUS
-    ===================================================== */
-
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-
-    /* =====================================================
-       PROFILE PHOTO
-    ===================================================== */
-
-    profilePhoto: {
-      type: String,
-      default: null,
-    },
-
-    /* =====================================================
-       REFERRAL
-    ===================================================== */
-
-    referralCode: {
-      type: String,
-      unique: true,
-      sparse: true,
-      trim: true,
-      uppercase: true,
-    },
-
-    referredBy: {
-      type:
-        mongoose.Schema.Types.ObjectId,
-
-      ref: "Parent",
-
-      default: null,
-    },
-  },
-
-  {
-    timestamps: true,
-
-    toJSON: {
-      virtuals: true,
-    },
-
-    toObject: {
-      virtuals: true,
-    },
-  }
-);
+      toObject: {
+        virtuals: true,
+      },
+    }
+  );
 
 /* =========================================================
    INDEXES
@@ -194,10 +186,14 @@ parentSchema.statics.getPhoneVariants =
     }
 
     const raw =
-      String(phone).trim();
+      String(phone)
+        .trim();
 
     const digits =
-      raw.replace(/\D/g, "");
+      raw.replace(
+        /\D/g,
+        ""
+      );
 
     const variants =
       new Set();
@@ -205,13 +201,16 @@ parentSchema.statics.getPhoneVariants =
     variants.add(raw);
 
     if (digits) {
-      variants.add(digits);
+      variants.add(
+        digits
+      );
     }
 
     /*
-      Firebase Indian number:
+      Indian E.164 / country-code format:
 
       +91XXXXXXXXXX
+      91XXXXXXXXXX
     */
 
     if (
@@ -241,7 +240,9 @@ parentSchema.statics.getPhoneVariants =
     if (
       digits.length === 10
     ) {
-      variants.add(digits);
+      variants.add(
+        digits
+      );
 
       variants.add(
         `+91${digits}`
@@ -287,7 +288,8 @@ parentSchema.statics.findByPhone =
       );
 
     if (
-      variants.length === 0
+      variants.length ===
+      0
     ) {
       return null;
     }
@@ -297,26 +299,6 @@ parentSchema.statics.findByPhone =
         $in: variants,
       },
     });
-  };
-
-/* =========================================================
-   FIND BY FIREBASE UID
-========================================================= */
-
-parentSchema.statics.findByFirebaseUid =
-  function (firebaseUid) {
-    if (!firebaseUid) {
-      return null;
-    }
-
-    return this.findOne({
-      firebaseUid:
-        String(
-          firebaseUid
-        ).trim(),
-    }).select(
-      "+firebaseUid"
-    );
   };
 
 /* =========================================================
@@ -352,7 +334,8 @@ parentSchema.statics.phoneExists =
       );
 
     if (
-      variants.length === 0
+      variants.length ===
+      0
     ) {
       return false;
     }
@@ -360,7 +343,8 @@ parentSchema.statics.phoneExists =
     const count =
       await this.countDocuments({
         phone: {
-          $in: variants,
+          $in:
+            variants,
         },
       });
 
@@ -388,12 +372,6 @@ parentSchema.virtual(
    TRIPS VIRTUAL
 ========================================================= */
 
-/*
-  Trip model uses:
-
-  parent: ObjectId
-*/
-
 parentSchema.virtual(
   "trips",
   {
@@ -410,12 +388,6 @@ parentSchema.virtual(
 /* =========================================================
    NOTIFICATIONS VIRTUAL
 ========================================================= */
-
-/*
-  Notification model uses:
-
-  parent: ObjectId
-*/
 
 parentSchema.virtual(
   "notifications",
@@ -454,18 +426,20 @@ parentSchema.virtual(
    JSON CLEANUP
 ========================================================= */
 
-const cleanParent =
-  (doc, ret) => {
-    delete ret.firebaseUid;
-    delete ret.__v;
+const cleanParent = (
+  doc,
+  ret
+) => {
+  delete ret.__v;
 
-    return ret;
-  };
+  return ret;
+};
 
 parentSchema.set(
   "toJSON",
   {
     virtuals: true,
+
     transform:
       cleanParent,
   }
@@ -475,6 +449,7 @@ parentSchema.set(
   "toObject",
   {
     virtuals: true,
+
     transform:
       cleanParent,
   }
