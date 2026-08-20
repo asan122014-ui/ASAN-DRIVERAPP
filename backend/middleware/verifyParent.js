@@ -30,7 +30,7 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       EXTRACT TOKEN
+       TOKEN
     ===================================================== */
 
     const token =
@@ -94,7 +94,7 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       REQUIRE PARENT DATABASE ID
+       REQUIRE MONGODB PARENT ID
     ===================================================== */
 
     if (!decoded?.id) {
@@ -106,7 +106,7 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       FIND CURRENT PARENT
+       GET CURRENT PARENT FROM MONGODB
     ===================================================== */
 
     const parent =
@@ -123,19 +123,17 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       OPTIONAL ACCOUNT STATUS CHECK
+       ACTIVE ACCOUNT CHECK
     ===================================================== */
 
     if (
-      parent.status &&
-      String(parent.status)
-        .toLowerCase() ===
-        "blocked"
+      parent.isActive ===
+      false
     ) {
       return res.status(403).json({
         success: false,
         message:
-          "Parent account is blocked",
+          "Parent account is disabled",
       });
     }
 
@@ -148,15 +146,12 @@ const verifyParent = async (
 
     req.parentAuth = {
       id:
-        String(parent._id),
-
-      parentId:
-        parent.parentId || null,
+        String(
+          parent._id
+        ),
 
       phone:
-        parent.phone ||
-        parent.phoneNumber ||
-        null,
+        parent.phone,
 
       tokenType:
         "parent",
@@ -171,7 +166,7 @@ const verifyParent = async (
     );
 
     /* =====================================================
-       EXPIRED JWT
+       EXPIRED
     ===================================================== */
 
     if (
@@ -186,7 +181,7 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       INVALID JWT
+       INVALID
     ===================================================== */
 
     if (
@@ -201,7 +196,7 @@ const verifyParent = async (
     }
 
     /* =====================================================
-       NOT ACTIVE YET
+       TOKEN NOT ACTIVE YET
     ===================================================== */
 
     if (
