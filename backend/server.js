@@ -31,14 +31,6 @@ import Parent from "./models/Parent.js";
 import Admin from "./models/Admin.js";
 
 /* =========================================================
-   FIREBASE
-========================================================= */
-
-import {
-  parentAuth,
-} from "./config/firebaseAdmin.js";
-
-/* =========================================================
    MIDDLEWARE
 ========================================================= */
 
@@ -78,11 +70,12 @@ const ADMIN_ROLES =
   ]);
 
 /* =========================================================
-   INITIALIZE EXPRESS
+   EXPRESS
 ========================================================= */
 
 const app =
   express();
+
 const trustProxyHops =
   Number(
     process.env.TRUST_PROXY_HOPS ||
@@ -93,6 +86,7 @@ app.set(
   "trust proxy",
   trustProxyHops
 );
+
 /* =========================================================
    HTTP SERVER
 ========================================================= */
@@ -103,7 +97,7 @@ const server =
   );
 
 /* =========================================================
-   NORMALIZE DRIVER ID
+   DRIVER ID NORMALIZER
 ========================================================= */
 
 const normalizeDriverId = (
@@ -119,17 +113,6 @@ const normalizeDriverId = (
 /* =========================================================
    CORS CONFIGURATION
 ========================================================= */
-
-/*
-  Render example:
-
-  ALLOWED_ORIGINS=https://admin.yourdomain.com,https://www.yourdomain.com
-
-  Native Android/iOS requests generally have no browser
-  Origin header, so requests without Origin are allowed.
-
-  localhost is automatically allowed outside production.
-*/
 
 const ALLOWED_ORIGINS =
   new Set(
@@ -176,9 +159,9 @@ const corsOriginValidator = (
   callback
 ) => {
   /*
-    Native mobile applications, curl,
-    Postman and server-to-server requests
-    may not include Origin.
+    Native mobile applications,
+    Postman, curl and server-to-server
+    requests may not contain Origin.
   */
 
   if (!origin) {
@@ -272,18 +255,6 @@ app.use(
    LEGACY LOCAL UPLOADS
 ========================================================= */
 
-/*
-  Driver documents and verification photos now use
-  Cloudinary.
-
-  Local /uploads should therefore NOT be public
-  by default.
-
-  Enable only if some legacy frontend still requires it:
-
-  ENABLE_LOCAL_UPLOADS=true
-*/
-
 if (
   process.env
     .ENABLE_LOCAL_UPLOADS ===
@@ -298,7 +269,7 @@ if (
 }
 
 /* =========================================================
-   DRIVER AUTH ROUTES
+   DRIVER AUTH
 ========================================================= */
 
 app.use(
@@ -307,8 +278,18 @@ app.use(
 );
 
 /* =========================================================
-   PARENT FIREBASE AUTH
+   PARENT AUTH
 ========================================================= */
+
+/*
+  Phone.Email OTP
+       ↓
+  Phone.Email verification
+       ↓
+  Parent MongoDB account
+       ↓
+  ASAN Parent JWT
+*/
 
 app.use(
   "/api/parent-auth",
@@ -343,7 +324,7 @@ app.use(
 );
 
 /* =========================================================
-   NOTIFICATION ROUTES
+   NOTIFICATIONS
 ========================================================= */
 
 app.use(
@@ -352,7 +333,7 @@ app.use(
 );
 
 /* =========================================================
-   STUDENT COMPATIBILITY ROUTES
+   STUDENT COMPATIBILITY
 ========================================================= */
 
 app.use(
@@ -361,7 +342,7 @@ app.use(
 );
 
 /* =========================================================
-   ADMIN ROUTES
+   ADMIN
 ========================================================= */
 
 app.use(
@@ -370,15 +351,8 @@ app.use(
 );
 
 /* =========================================================
-   ADMIN BILLING ROUTES
+   ADMIN BILLING
 ========================================================= */
-
-/*
-  Defense in depth:
-
-  Everything mounted under /api/admin/billing
-  requires a valid Admin JWT.
-*/
 
 app.use(
   "/api/admin/billing",
@@ -387,7 +361,7 @@ app.use(
 );
 
 /* =========================================================
-   INVOICE ROUTES
+   INVOICES
 ========================================================= */
 
 app.use(
@@ -396,7 +370,7 @@ app.use(
 );
 
 /* =========================================================
-   CHILD ROUTES
+   CHILDREN
 ========================================================= */
 
 app.use(
@@ -405,7 +379,7 @@ app.use(
 );
 
 /* =========================================================
-   DRIVER REQUEST ROUTES
+   DRIVER REQUEST
 ========================================================= */
 
 app.use(
@@ -444,7 +418,7 @@ app.set(
 
 /*
   Parent MongoDB ID
-        ↓
+      ↓
   Set<socketId>
 */
 
@@ -452,8 +426,8 @@ const parentConnections =
   new Map();
 
 /*
-  Custom Driver ID
-        ↓
+  Driver ID
+      ↓
   Set<socketId>
 */
 
@@ -462,7 +436,7 @@ const driverConnections =
 
 /*
   Driver ID
-        ↓
+      ↓
   Set<Parent MongoDB ID>
 */
 
@@ -470,7 +444,7 @@ const driverParentsMap =
   new Map();
 
 /* =========================================================
-   CONNECTION MAP HELPERS
+   CONNECTION HELPERS
 ========================================================= */
 
 const addConnection = (
@@ -523,7 +497,7 @@ const removeConnection = (
 };
 
 /* =========================================================
-   SOCKET AUTHENTICATION — DRIVER
+   DRIVER SOCKET AUTH
 ========================================================= */
 
 const authenticateDriverSocket =
@@ -630,7 +604,7 @@ const authenticateDriverSocket =
   };
 
 /* =========================================================
-   SOCKET AUTHENTICATION — ADMIN
+   ADMIN SOCKET AUTH
 ========================================================= */
 
 const authenticateAdminSocket =
@@ -724,61 +698,94 @@ const authenticateAdminSocket =
   };
 
 /* =========================================================
-   SOCKET AUTHENTICATION — PARENT
+   PARENT SOCKET AUTH
 ========================================================= */
+
+/*
+  Parent now uses the ASAN JWT generated
+  after successful Phone.Email verification.
+
+  Expected token payload:
+
+  {
+    id: "<MongoDB Parent _id>",
+    tokenType: "parent"
+  }
+*/
 
 const authenticateParentSocket =
   async (
     token
   ) => {
-    if (!parentAuth) {
+    /* =====================================================
+       JWT SECRET
+    ===================================================== */
+
+    if (
+      !process.env.JWT_SECRET
+    ) {
       throw new Error(
-        "Parent Firebase Auth is unavailable"
+        "JWT_SECRET is not configured"
       );
     }
 
+    /* =====================================================
+       VERIFY JWT
+    ===================================================== */
+
     const decoded =
-      await parentAuth.verifyIdToken(
+      jwt.verify(
         token,
-        true
+        process.env.JWT_SECRET,
+        {
+          algorithms: [
+            "HS256",
+          ],
+        }
       );
 
+    /* =====================================================
+       TOKEN TYPE
+    ===================================================== */
+
     if (
-      !decoded?.uid
+      !decoded ||
+      typeof decoded !==
+        "object" ||
+      decoded.tokenType !==
+        "parent" ||
+      !decoded.id
     ) {
       throw new Error(
         "Invalid Parent token"
       );
     }
 
-    /*
-      Parent authentication is Phone OTP only.
-    */
+    /* =====================================================
+       OBJECT ID
+    ===================================================== */
 
     if (
-      decoded.firebase
-        ?.sign_in_provider !==
-      "phone"
+      !mongoose.Types.ObjectId.isValid(
+        String(
+          decoded.id
+        )
+      )
     ) {
       throw new Error(
-        "Invalid Parent authentication provider"
+        "Invalid Parent token"
       );
     }
 
-    if (
-      !decoded.phone_number
-    ) {
-      throw new Error(
-        "Parent phone number is missing"
-      );
-    }
+    /* =====================================================
+       CURRENT PARENT
+    ===================================================== */
 
     const parent =
-      await Parent.findOne({
-        firebaseUid:
-          decoded.uid,
-      }).select(
-        "+firebaseUid _id driverId status name"
+      await Parent.findById(
+        decoded.id
+      ).select(
+        "_id driverId isActive name phone"
       );
 
     if (!parent) {
@@ -787,14 +794,22 @@ const authenticateParentSocket =
       );
     }
 
+    /* =====================================================
+       ACTIVE CHECK
+    ===================================================== */
+
     if (
-      parent.status ===
-      "inactive"
+      parent.isActive ===
+      false
     ) {
       throw new Error(
         "Parent account is inactive"
       );
     }
+
+    /* =====================================================
+       AUTHENTICATED USER
+    ===================================================== */
 
     return {
       role:
@@ -810,9 +825,6 @@ const authenticateParentSocket =
           parent._id
         ),
 
-      firebaseUid:
-        decoded.uid,
-
       linkedDriverId:
         normalizeDriverId(
           parent.driverId
@@ -825,21 +837,22 @@ const authenticateParentSocket =
 ========================================================= */
 
 /*
-  Client sends:
+  Client:
 
   auth: {
-    token: "..."
+    token: "<ASAN JWT>"
   }
 
-  No client-supplied role is trusted.
+  Token routing:
 
-  Token hint is decoded ONLY to determine which
-  verification method should process the token.
+  Driver
+    tokenType = driver
 
-  Actual authentication still uses:
+  Parent
+    tokenType = parent
 
-  Driver/Admin → jwt.verify()
-  Parent       → Firebase verifyIdToken()
+  Admin
+    role = superadmin / reviewer
 */
 
 io.use(
@@ -865,6 +878,10 @@ io.use(
         );
       }
 
+      /* ===================================================
+         TOKEN HINT
+      =================================================== */
+
       let tokenHint =
         null;
 
@@ -882,7 +899,7 @@ io.use(
         null;
 
       /* ===================================================
-         DRIVER TOKEN
+         DRIVER
       =================================================== */
 
       if (
@@ -899,7 +916,7 @@ io.use(
       }
 
       /* ===================================================
-         ADMIN TOKEN
+         ADMIN
       =================================================== */
 
       else if (
@@ -917,14 +934,30 @@ io.use(
       }
 
       /* ===================================================
-         PARENT FIREBASE TOKEN
+         PARENT
       =================================================== */
 
-      else {
+      else if (
+        tokenHint &&
+        typeof tokenHint ===
+          "object" &&
+        tokenHint.tokenType ===
+          "parent"
+      ) {
         user =
           await authenticateParentSocket(
             token
           );
+      }
+
+      /* ===================================================
+         UNKNOWN TOKEN
+      =================================================== */
+
+      else {
+        throw new Error(
+          "Unsupported authentication token"
+        );
       }
 
       socket.user =
@@ -950,7 +983,7 @@ io.use(
 );
 
 /* =========================================================
-   VERIFY CURRENT PARENT ↔ DRIVER LINK
+   VERIFY PARENT ↔ DRIVER LINK
 ========================================================= */
 
 const verifyParentDriverLink =
@@ -958,6 +991,10 @@ const verifyParentDriverLink =
     socket,
     requestedDriverId
   ) => {
+    /* =====================================================
+       REQUIRE PARENT
+    ===================================================== */
+
     if (
       socket.user?.role !==
       "parent"
@@ -965,20 +1002,28 @@ const verifyParentDriverLink =
       return null;
     }
 
+    /* =====================================================
+       CURRENT PARENT
+    ===================================================== */
+
     const parent =
       await Parent.findById(
         socket.user.parentId
       ).select(
-        "driverId status"
+        "driverId isActive"
       );
 
     if (
       !parent ||
-      parent.status ===
-        "inactive"
+      parent.isActive ===
+        false
     ) {
       return null;
     }
+
+    /* =====================================================
+       DRIVER IDS
+    ===================================================== */
 
     const linkedDriverId =
       normalizeDriverId(
@@ -1020,7 +1065,7 @@ io.on(
     );
 
     /* =====================================================
-       AUTOMATIC USER ROOM
+       AUTOMATIC ROOMS
     ===================================================== */
 
     if (
@@ -1199,14 +1244,6 @@ io.on(
               ""
             );
 
-      /*
-        Parent is automatically joined to their room
-        on connection.
-
-        This event remains only for backwards
-        compatibility.
-      */
-
       if (
         requestedParentId &&
         requestedParentId !==
@@ -1334,11 +1371,6 @@ io.on(
           return;
         }
 
-        /*
-          Driver may send an offer only to a Parent
-          that securely joined this Driver session.
-        */
-
         const parentSet =
           driverParentsMap.get(
             user.driverId
@@ -1387,7 +1419,9 @@ io.on(
             return;
           }
 
-          if (!data.answer) {
+          if (
+            !data.answer
+          ) {
             return;
           }
 
@@ -1397,7 +1431,9 @@ io.on(
               data.driverId
             );
 
-          if (!driverId) {
+          if (
+            !driverId
+          ) {
             return;
           }
 
@@ -1457,7 +1493,9 @@ io.on(
                   ""
               );
 
-            if (!parentId) {
+            if (
+              !parentId
+            ) {
               return;
             }
 
@@ -1506,7 +1544,9 @@ io.on(
                 data.driverId
               );
 
-            if (!driverId) {
+            if (
+              !driverId
+            ) {
               return;
             }
 
@@ -1590,7 +1630,9 @@ io.on(
             data.driverId
           );
 
-        if (!driverId) {
+        if (
+          !driverId
+        ) {
           return;
         }
 
@@ -1647,15 +1689,6 @@ io.on(
         data = {}
       ) => {
         try {
-          /*
-            SECURITY:
-
-            driverId is derived from the authenticated
-            Driver JWT.
-
-            Any driverId supplied in data is ignored.
-          */
-
           if (
             user.role !==
             "driver"
@@ -1706,10 +1739,8 @@ io.on(
           if (
             latitude < -90 ||
             latitude > 90 ||
-            longitude <
-              -180 ||
-            longitude >
-              180
+            longitude < -180 ||
+            longitude > 180
           ) {
             return;
           }
@@ -1790,7 +1821,7 @@ io.on(
             new Date();
 
           /* =================================================
-             DATABASE
+             SAVE LOCATION
           ================================================= */
 
           const driver =
@@ -1805,10 +1836,6 @@ io.on(
 
               {
                 $set: {
-                  /*
-                    Current GeoJSON position.
-                  */
-
                   location: {
                     type:
                       "Point",
@@ -1818,10 +1845,6 @@ io.on(
                       latitude,
                     ],
                   },
-
-                  /*
-                    Detailed latest position.
-                  */
 
                   lastLocation: {
                     lat:
@@ -1856,40 +1879,42 @@ io.on(
               }
             );
 
-          if (!driver) {
+          if (
+            !driver
+          ) {
             return;
           }
 
-          const locationPayload = {
-            driverId:
-              user.driverId,
+          /* =================================================
+             BROADCAST
+          ================================================= */
 
-            lat:
-              latitude,
+          const locationPayload =
+            {
+              driverId:
+                user.driverId,
 
-            lng:
-              longitude,
+              lat:
+                latitude,
 
-            eta:
-              safeEta,
+              lng:
+                longitude,
 
-            speed:
-              safeSpeed,
+              eta:
+                safeEta,
 
-            heading:
-              safeHeading,
+              speed:
+                safeSpeed,
 
-            accuracy:
-              safeAccuracy,
+              heading:
+                safeHeading,
 
-            updatedAt:
-              updatedAt.toISOString(),
-          };
+              accuracy:
+                safeAccuracy,
 
-          /*
-            socket.to() excludes the Driver that
-            originally sent the GPS update.
-          */
+              updatedAt:
+                updatedAt.toISOString(),
+            };
 
           socket
             .to(
@@ -1925,7 +1950,9 @@ io.on(
           return;
         }
 
-        if (!data.frame) {
+        if (
+          !data.frame
+        ) {
           return;
         }
 
@@ -1992,13 +2019,6 @@ io.on(
               socket.id
             );
 
-          /*
-            Another device/socket for this same Parent
-            is still connected.
-
-            Do not remove the Parent from Driver maps yet.
-          */
-
           if (
             remainingConnections >
             0
@@ -2061,16 +2081,18 @@ app.get(
     req,
     res
   ) => {
-    return res.status(200).json({
-      success:
-        true,
+    return res
+      .status(200)
+      .json({
+        success:
+          true,
 
-      status:
-        "OK",
+        status:
+          "OK",
 
-      time:
-        new Date(),
-    });
+        time:
+          new Date(),
+      });
   }
 );
 
@@ -2083,13 +2105,15 @@ app.use(
     req,
     res
   ) => {
-    return res.status(404).json({
-      success:
-        false,
+    return res
+      .status(404)
+      .json({
+        success:
+          false,
 
-      message:
-        "Route not found",
-    });
+        message:
+          "Route not found",
+      });
   }
 );
 
@@ -2133,7 +2157,7 @@ app.use(
 );
 
 /* =========================================================
-   SERVER CONFIGURATION
+   SERVER CONFIG
 ========================================================= */
 
 const PORT =
@@ -2183,7 +2207,7 @@ connectDB()
     );
 
     /* =====================================================
-       START SERVER
+       LISTEN
     ===================================================== */
 
     server.listen(
@@ -2199,7 +2223,7 @@ connectDB()
         );
 
         console.log(
-          "🔥 Parent Firebase Auth: /api/parent-auth"
+          "📱 Parent Auth: /api/parent-auth"
         );
 
         console.log(
