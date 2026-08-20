@@ -1,221 +1,227 @@
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import Parent from "../models/Parent.js";
 
 /* =========================================================
-   VERIFY ASAN PARENT JWT
+   VERIFY PARENT JWT
 ========================================================= */
 
-const verifyParent = async (
-  req,
-  res,
-  next
-) => {
-  try {
-    /* =====================================================
-       AUTHORIZATION HEADER
-    ===================================================== */
+const verifyParent =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      /* ===================================================
+         AUTH HEADER
+      =================================================== */
 
-    const authHeader =
-      req.headers.authorization;
+      const authHeader =
+        req.headers.authorization;
 
-    if (
-      !authHeader ||
-      !authHeader.startsWith("Bearer ")
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent authentication token missing",
-      });
-    }
+      if (
+        !authHeader ||
+        !authHeader.startsWith(
+          "Bearer "
+        )
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
 
-    /* =====================================================
-       TOKEN
-    ===================================================== */
+            message:
+              "Parent authentication token missing",
+          });
+      }
 
-    const token =
-      authHeader
-        .slice(7)
-        .trim();
+      /* ===================================================
+         TOKEN
+      =================================================== */
 
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent authentication token missing",
-      });
-    }
+      const token =
+        authHeader
+          .slice(7)
+          .trim();
 
-    /* =====================================================
-       JWT SECRET
-    ===================================================== */
+      if (!token) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
 
-    const jwtSecret =
-      process.env.JWT_SECRET;
+            message:
+              "Parent authentication token missing",
+          });
+      }
 
-    if (!jwtSecret) {
-      console.error(
-        "JWT_SECRET is not configured"
-      );
+      /* ===================================================
+         SECRET
+      =================================================== */
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Authentication service unavailable",
-      });
-    }
+      if (
+        !process.env.JWT_SECRET
+      ) {
+        console.error(
+          "JWT_SECRET is not configured"
+        );
 
-    /* =====================================================
-       VERIFY JWT
-    ===================================================== */
+        return res
+          .status(500)
+          .json({
+            success:
+              false,
 
-    const decoded =
-      jwt.verify(
-        token,
-        jwtSecret,
+            message:
+              "Authentication service unavailable",
+          });
+      }
+
+      /* ===================================================
+         VERIFY
+      =================================================== */
+
+      const decoded =
+        jwt.verify(
+          token,
+          process.env.JWT_SECRET,
+          {
+            algorithms: [
+              "HS256",
+            ],
+          }
+        );
+
+      if (
+        !decoded ||
+        typeof decoded !==
+          "object" ||
+        decoded.tokenType !==
+          "parent" ||
+        !decoded.id
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid Parent authentication token",
+          });
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          String(
+            decoded.id
+          )
+        )
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Invalid Parent authentication token",
+          });
+      }
+
+      /* ===================================================
+         CURRENT PARENT
+      =================================================== */
+
+      const parent =
+        await Parent.findById(
+          decoded.id
+        );
+
+      if (!parent) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Parent account not found",
+          });
+      }
+
+      if (
+        parent.isActive ===
+        false
+      ) {
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
+
+            message:
+              "Parent account is inactive",
+          });
+      }
+
+      /* ===================================================
+         REQUEST USER
+      =================================================== */
+
+      req.parent =
+        parent;
+
+      req.parentAuth =
         {
-          algorithms: ["HS256"],
-        }
+          id:
+            String(
+              parent._id
+            ),
+
+          phone:
+            parent.phone,
+
+          tokenType:
+            "parent",
+        };
+
+      next();
+    } catch (error) {
+      console.error(
+        "PARENT JWT ERROR:",
+        error?.name ||
+          error?.message
       );
 
-    /* =====================================================
-       REQUIRE PARENT TOKEN
-    ===================================================== */
+      if (
+        error.name ===
+        "TokenExpiredError"
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
 
-    if (
-      decoded?.tokenType !==
-      "parent"
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Invalid Parent authentication token",
-      });
+            message:
+              "Parent session expired",
+          });
+      }
+
+      return res
+        .status(401)
+        .json({
+          success:
+            false,
+
+          message:
+            "Invalid Parent authentication token",
+        });
     }
-
-    /* =====================================================
-       REQUIRE MONGODB PARENT ID
-    ===================================================== */
-
-    if (!decoded?.id) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid Parent authentication token",
-      });
-    }
-
-    /* =====================================================
-       GET CURRENT PARENT FROM MONGODB
-    ===================================================== */
-
-    const parent =
-      await Parent.findById(
-        decoded.id
-      );
-
-    if (!parent) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent account not found",
-      });
-    }
-
-    /* =====================================================
-       ACTIVE ACCOUNT CHECK
-    ===================================================== */
-
-    if (
-      parent.isActive ===
-      false
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Parent account is disabled",
-      });
-    }
-
-    /* =====================================================
-       ATTACH AUTHENTICATED PARENT
-    ===================================================== */
-
-    req.parent =
-      parent;
-
-    req.parentAuth = {
-      id:
-        String(
-          parent._id
-        ),
-
-      phone:
-        parent.phone,
-
-      tokenType:
-        "parent",
-    };
-
-    next();
-  } catch (error) {
-    console.error(
-      "PARENT JWT AUTH ERROR:",
-      error?.name ||
-        error?.message
-    );
-
-    /* =====================================================
-       EXPIRED
-    ===================================================== */
-
-    if (
-      error.name ===
-      "TokenExpiredError"
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent session expired",
-      });
-    }
-
-    /* =====================================================
-       INVALID
-    ===================================================== */
-
-    if (
-      error.name ===
-      "JsonWebTokenError"
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid Parent authentication token",
-      });
-    }
-
-    /* =====================================================
-       TOKEN NOT ACTIVE YET
-    ===================================================== */
-
-    if (
-      error.name ===
-      "NotBeforeError"
-    ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Parent authentication token is not active yet",
-      });
-    }
-
-    return res.status(401).json({
-      success: false,
-      message:
-        "Parent authentication failed",
-    });
-  }
-};
+  };
 
 export default verifyParent;
