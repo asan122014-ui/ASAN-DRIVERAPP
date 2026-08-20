@@ -1,61 +1,45 @@
+import jwt from "jsonwebtoken";
 import Parent from "../models/Parent.js";
 
 /* =========================================================
-   HELPERS
+   PHONE NORMALIZATION
 ========================================================= */
 
-/*
-  Firebase normally returns phone numbers
-  in E.164 format:
-
-  +918309649713
-
-  Existing Parent accounts may still contain:
-
-  8309649713
-
-  Parent.getPhoneVariants() handles both formats.
-*/
-
-const normalizeFirebasePhone = (phone) => {
+const normalizePhone = (phone) => {
   if (!phone) {
     return null;
   }
 
   let value =
-    String(phone).trim();
+    String(phone)
+      .trim()
+      .replace(/[\s()-]/g, "");
 
-  /*
-    Remove spaces, brackets and hyphens,
-    but preserve leading +.
-  */
-
-  value = value.replace(
-    /[\s()-]/g,
-    ""
-  );
-
-  /*
-    Fallback for 10-digit Indian number.
-  */
+  /* =====================================================
+     10 DIGIT INDIAN NUMBER
+  ===================================================== */
 
   if (/^\d{10}$/.test(value)) {
     return `+91${value}`;
   }
 
-  /*
-    Fallback for:
+  /* =====================================================
+     91XXXXXXXXXX
+  ===================================================== */
 
-    918309649713
-  */
-
-  if (
-    /^91\d{10}$/.test(value)
-  ) {
+  if (/^91\d{10}$/.test(value)) {
     return `+${value}`;
   }
 
-  return value;
+  /* =====================================================
+     +91XXXXXXXXXX / INTERNATIONAL E.164
+  ===================================================== */
+
+  if (/^\+\d{8,15}$/.test(value)) {
+    return value;
+  }
+
+  return null;
 };
 
 /* =========================================================
@@ -72,25 +56,16 @@ const validateCoordinates = (
   const lng =
     Number(longitude);
 
-  /* =====================================================
-     NUMERIC VALIDATION
-  ===================================================== */
-
   if (
     !Number.isFinite(lat) ||
     !Number.isFinite(lng)
   ) {
     return {
       valid: false,
-
       message:
         "Valid latitude and longitude are required",
     };
   }
-
-  /* =====================================================
-     LATITUDE
-  ===================================================== */
 
   if (
     lat < -90 ||
@@ -98,15 +73,10 @@ const validateCoordinates = (
   ) {
     return {
       valid: false,
-
       message:
         "Latitude must be between -90 and 90",
     };
   }
-
-  /* =====================================================
-     LONGITUDE
-  ===================================================== */
 
   if (
     lng < -180 ||
@@ -114,7 +84,6 @@ const validateCoordinates = (
   ) {
     return {
       valid: false,
-
       message:
         "Longitude must be between -180 and 180",
     };
@@ -122,136 +91,130 @@ const validateCoordinates = (
 
   return {
     valid: true,
-
-    latitude:
-      lat,
-
-    longitude:
-      lng,
+    latitude: lat,
+    longitude: lng,
   };
 };
 
 /* =========================================================
-   SAFE PARENT RESPONSE
+   SAFE PARENT
 ========================================================= */
 
-const getSafeParent = (
-  parent
-) => {
+const getSafeParent = (parent) => {
   if (!parent) {
     return null;
   }
-
-  /*
-    Parent model's toJSON transform removes:
-
-    firebaseUid
-    __v
-  */
 
   return parent.toJSON();
 };
 
 /* =========================================================
-   FIND PARENT BY VERIFIED PHONE
+   CREATE ASAN PARENT JWT
 ========================================================= */
 
-/*
-  This helper explicitly selects firebaseUid because
-  firebaseUid has:
-
-  select: false
-
-  in Parent.js.
-
-  We need to see the UID during migration so an
-  existing Parent account cannot be linked to
-  two different Firebase accounts.
-*/
-
-const findParentByVerifiedPhone =
-  async (phone) => {
-    const phoneVariants =
-      Parent.getPhoneVariants(
-        phone
-      );
-
-    if (
-      !phoneVariants.length
-    ) {
-      return null;
-    }
-
-    return Parent.findOne({
-      phone: {
-        $in:
-          phoneVariants,
-      },
-    }).select(
-      "+firebaseUid"
+const createParentToken = (parent) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error(
+      "JWT_SECRET is not configured"
     );
-  };
+  }
 
-/* =========================================================
-   CHECK FIREBASE LINK CONFLICT
-========================================================= */
+  return jwt.sign(
+    {
+      id:
+        String(parent._id),
 
-const hasFirebaseConflict = (
-  parent,
-  firebaseUid
-) => {
-  return Boolean(
-    parent?.firebaseUid &&
-      parent.firebaseUid !==
-        firebaseUid
+      tokenType:
+        "parent",
+    },
+    process.env.JWT_SECRET,
+    {
+      algorithm:
+        "HS256",
+
+      expiresIn:
+        "7d",
+    }
   );
 };
 
 /* =========================================================
-   FIREBASE PARENT LOGIN
+   BUILD AUTH RESPONSE
 ========================================================= */
 
-/*
-  FLOW:
+const sendAuthenticatedParent = (
+  res,
+  parent,
+  statusCode = 200,
+  message = "Login successful"
+) => {
+  const token =
+    createParentToken(parent);
 
-  Firebase Phone OTP
-        ↓
-  OTP verified by Firebase
-        ↓
-  Frontend receives Firebase ID token
-        ↓
-  verifyFirebaseToken
-        ↓
-  req.firebaseUser
-        ↓
-  loginParentWithFirebase
-*/
+  return res
+    .status(statusCode)
+    .json({
+      success: true,
 
-export const loginParentWithFirebase =
-  async (req, res) => {
+      message,
+
+      needsRegistration:
+        false,
+
+      token,
+
+      data:
+        getSafeParent(
+          parent
+        ),
+    });
+};
+
+/* =========================================================
+   LOGIN WITH VERIFIED PHONE
+
+   IMPORTANT:
+   req.verifiedIdentity will be attached later by our
+   Phone.Email verification middleware/controller.
+
+   Expected structure:
+
+   req.verifiedIdentity = {
+     provider: "phone.email",
+     phone: "+918309649713"
+   }
+========================================================= */
+
+export const loginParent =
+  async (
+    req,
+    res
+  ) => {
     try {
       /* ===================================================
-         FIREBASE USER
+         VERIFIED IDENTITY
       =================================================== */
 
       const {
-        uid,
+        provider,
         phone,
       } =
-        req.firebaseUser ||
+        req.verifiedIdentity ||
         {};
 
       if (
-        !uid ||
+        provider !==
+          "phone.email" ||
         !phone
       ) {
         return res
           .status(401)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
-              "Verified Firebase user not found",
+              "Verified phone identity not found",
           });
       }
 
@@ -260,7 +223,7 @@ export const loginParentWithFirebase =
       =================================================== */
 
       const verifiedPhone =
-        normalizeFirebasePhone(
+        normalizePhone(
           phone
         );
 
@@ -268,246 +231,79 @@ export const loginParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
-
-            message:
-              "Verified phone number not found",
-          });
-      }
-
-      /* ===================================================
-         1. FIND BY FIREBASE UID
-      =================================================== */
-
-      let parent =
-        await Parent.findByFirebaseUid(
-          uid
-        );
-
-      if (parent) {
-        /* ===============================================
-           ACTIVE STATUS
-        =============================================== */
-
-        if (!parent.isActive) {
-          return res
-            .status(403)
-            .json({
-              success: false,
-
-              message:
-                "Parent account is inactive",
-            });
-        }
-
-        return res
-          .status(200)
-          .json({
-            success: true,
-
-            message:
-              "Login successful",
-
-            needsRegistration:
+            success:
               false,
 
-            data:
-              getSafeParent(
-                parent
-              ),
+            message:
+              "Invalid verified phone number",
           });
       }
 
       /* ===================================================
-         2. FIND EXISTING ACCOUNT BY PHONE
+         FIND EXISTING PARENT
       =================================================== */
 
-      /*
-        Example:
-
-        MongoDB:
-
-        8309649713
-
-        Firebase:
-
-        +918309649713
-
-        We search all supported phone variants.
-      */
-
-      parent =
-        await findParentByVerifiedPhone(
+      const parent =
+        await Parent.findByPhone(
           verifiedPhone
         );
 
-      if (parent) {
-        /* ===============================================
-           ACTIVE STATUS
-        =============================================== */
+      /* ===================================================
+         NEW USER
+      =================================================== */
 
-        if (!parent.isActive) {
-          return res
-            .status(403)
-            .json({
-              success: false,
-
-              message:
-                "Parent account is inactive",
-            });
-        }
-
-        /* ===============================================
-           FIREBASE UID CONFLICT
-        =============================================== */
-
-        /*
-          If this MongoDB Parent is already linked
-          to another Firebase UID, do NOT replace it.
-        */
-
-        if (
-          hasFirebaseConflict(
-            parent,
-            uid
-          )
-        ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
-
-              message:
-                "This Parent account is already linked to another Firebase account",
-            });
-        }
-
-        /* ===============================================
-           LINK FIREBASE UID
-        =============================================== */
-
-        parent.firebaseUid =
-          uid;
-
-        /*
-          Keep the existing MongoDB phone value.
-
-          We do not force migration from:
-
-          8309649713
-
-          to:
-
-          +918309649713
-
-          during login.
-        */
-
-        await parent.save();
-
+      if (!parent) {
         return res
           .status(200)
           .json({
-            success: true,
-
-            message:
-              "Login successful",
-
-            migratedToFirebase:
+            success:
               true,
 
-            needsRegistration:
-              false,
+            message:
+              "Phone verified. Complete registration.",
 
-            data:
-              getSafeParent(
-                parent
-              ),
+            needsRegistration:
+              true,
+
+            phone:
+              verifiedPhone,
           });
       }
 
       /* ===================================================
-         3. NEW FIREBASE USER
-      =================================================== */
-
-      /*
-        Firebase authentication succeeded,
-        but no Parent account exists yet.
-
-        Frontend should now open Parent registration.
-      */
-
-      return res
-        .status(200)
-        .json({
-          success: true,
-
-          message:
-            "Phone verified. Complete registration.",
-
-          needsRegistration:
-            true,
-
-          phone:
-            verifiedPhone,
-        });
-    } catch (error) {
-      console.error(
-        "FIREBASE PARENT LOGIN ERROR:",
-        error
-      );
-
-      /* ===================================================
-         DUPLICATE FIREBASE UID
+         ACTIVE CHECK
       =================================================== */
 
       if (
-        error?.code ===
-        11000
+        parent.isActive ===
+        false
       ) {
-        const duplicateField =
-          Object.keys(
-            error.keyPattern ||
-              {}
-          )[0];
-
-        if (
-          duplicateField ===
-          "firebaseUid"
-        ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
-
-              message:
-                "This Firebase account is already linked to another Parent account",
-            });
-        }
-
-        if (
-          duplicateField ===
-          "phone"
-        ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
-
-              message:
-                "Phone number is already registered",
-            });
-        }
-
         return res
-          .status(409)
+          .status(403)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
-              "Parent account already exists",
+              "Parent account is inactive",
           });
       }
+
+      /* ===================================================
+         LOGIN SUCCESS
+      =================================================== */
+
+      return sendAuthenticatedParent(
+        res,
+        parent,
+        200,
+        "Login successful"
+      );
+    } catch (error) {
+      console.error(
+        "PARENT LOGIN ERROR:",
+        error
+      );
 
       return res
         .status(500)
@@ -521,43 +317,44 @@ export const loginParentWithFirebase =
   };
 
 /* =========================================================
-   FIREBASE PARENT REGISTRATION
+   REGISTER PARENT WITH VERIFIED PHONE
 ========================================================= */
 
-export const registerParentWithFirebase =
-  async (req, res) => {
+export const registerParent =
+  async (
+    req,
+    res
+  ) => {
     try {
       /* ===================================================
-         FIREBASE USER
+         VERIFIED PHONE
       =================================================== */
 
       const {
-        uid,
+        provider,
         phone,
       } =
-        req.firebaseUser ||
+        req.verifiedIdentity ||
         {};
 
       if (
-        !uid ||
+        provider !==
+          "phone.email" ||
         !phone
       ) {
         return res
           .status(401)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
-              "Verified Firebase user not found",
+              "Verified phone identity not found",
           });
       }
 
-      /* ===================================================
-         VERIFIED PHONE
-      =================================================== */
-
       const verifiedPhone =
-        normalizeFirebasePhone(
+        normalizePhone(
           phone
         );
 
@@ -565,15 +362,16 @@ export const registerParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
-              "Verified phone number not found",
+              "Invalid verified phone number",
           });
       }
 
       /* ===================================================
-         REGISTRATION DATA
+         BODY
       =================================================== */
 
       const {
@@ -586,7 +384,7 @@ export const registerParentWithFirebase =
         req.body || {};
 
       /* ===================================================
-         REQUIRED FIELDS
+         REQUIRED DATA
       =================================================== */
 
       if (
@@ -601,7 +399,8 @@ export const registerParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Name, email, address, latitude and longitude are required",
@@ -609,11 +408,12 @@ export const registerParentWithFirebase =
       }
 
       /* ===================================================
-         NORMALIZE INPUT
+         NORMALIZE DATA
       =================================================== */
 
       const normalizedName =
-        String(name).trim();
+        String(name)
+          .trim();
 
       const normalizedEmail =
         String(email)
@@ -621,7 +421,8 @@ export const registerParentWithFirebase =
           .toLowerCase();
 
       const normalizedAddress =
-        String(address).trim();
+        String(address)
+          .trim();
 
       /* ===================================================
          EMAIL VALIDATION
@@ -638,7 +439,8 @@ export const registerParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Enter a valid email address",
@@ -646,7 +448,7 @@ export const registerParentWithFirebase =
       }
 
       /* ===================================================
-         LOCATION VALIDATION
+         LOCATION
       =================================================== */
 
       const location =
@@ -659,7 +461,8 @@ export const registerParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               location.message,
@@ -667,150 +470,65 @@ export const registerParentWithFirebase =
       }
 
       /* ===================================================
-         1. CHECK FIREBASE UID
-      =================================================== */
-
-      const firebaseParent =
-        await Parent.findByFirebaseUid(
-          uid
-        );
-
-      if (firebaseParent) {
-        if (
-          !firebaseParent.isActive
-        ) {
-          return res
-            .status(403)
-            .json({
-              success: false,
-
-              message:
-                "Parent account is inactive",
-            });
-        }
-
-        return res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Parent account already registered",
-
-            needsRegistration:
-              false,
-
-            data:
-              getSafeParent(
-                firebaseParent
-              ),
-          });
-      }
-
-      /* ===================================================
-         2. CHECK EXISTING PHONE
+         EXISTING PHONE
       =================================================== */
 
       const existingPhoneParent =
-        await findParentByVerifiedPhone(
+        await Parent.findByPhone(
           verifiedPhone
         );
-
-      /*
-        This may happen when an existing Parent
-        directly calls /register after Firebase
-        verification instead of first calling /login.
-
-        Do not create a duplicate account.
-
-        Instead link the existing Parent safely.
-      */
 
       if (
         existingPhoneParent
       ) {
-        /* ===============================================
-           ACTIVE STATUS
-        =============================================== */
-
         if (
-          !existingPhoneParent.isActive
+          existingPhoneParent
+            .isActive ===
+          false
         ) {
           return res
             .status(403)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Parent account is inactive",
             });
         }
 
-        /* ===============================================
-           FIREBASE CONFLICT CHECK
-        =============================================== */
+        /*
+          Do not create duplicates.
 
-        if (
-          hasFirebaseConflict(
-            existingPhoneParent,
-            uid
-          )
-        ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
+          If this verified number already belongs
+          to a Parent, authenticate that Parent.
+        */
 
-              message:
-                "This Parent account is already linked to another Firebase account",
-            });
-        }
-
-        /* ===============================================
-           LINK FIREBASE
-        =============================================== */
-
-        existingPhoneParent.firebaseUid =
-          uid;
-
-        await existingPhoneParent.save();
-
-        return res
-          .status(200)
-          .json({
-            success: true,
-
-            message:
-              "Existing Parent account linked with Firebase successfully",
-
-            migratedToFirebase:
-              true,
-
-            needsRegistration:
-              false,
-
-            data:
-              getSafeParent(
-                existingPhoneParent
-              ),
-          });
+        return sendAuthenticatedParent(
+          res,
+          existingPhoneParent,
+          200,
+          "Parent account already exists. Login successful."
+        );
       }
 
       /* ===================================================
-         3. CHECK EMAIL
+         EXISTING EMAIL
       =================================================== */
 
       const existingEmail =
-        await Parent.findOne({
-          email:
-            normalizedEmail,
-        });
+        await Parent.findByEmail(
+          normalizedEmail
+        );
 
-      if (existingEmail) {
+      if (
+        existingEmail
+      ) {
         return res
           .status(409)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Email is already registered",
@@ -818,23 +536,15 @@ export const registerParentWithFirebase =
       }
 
       /* ===================================================
-         4. CREATE NEW PARENT
+         CREATE PARENT
+
+         SECURITY:
+         Phone NEVER comes from req.body.
+         It comes only from verified Phone.Email identity.
       =================================================== */
-
-      /*
-        SECURITY:
-
-        Phone is NOT read from req.body.
-
-        It comes exclusively from the Firebase
-        verified authentication token.
-      */
 
       const parent =
         await Parent.create({
-          firebaseUid:
-            uid,
-
           name:
             normalizedName,
 
@@ -862,33 +572,23 @@ export const registerParentWithFirebase =
         });
 
       /* ===================================================
-         SUCCESS
+         CREATE APP SESSION
       =================================================== */
 
-      return res
-        .status(201)
-        .json({
-          success: true,
-
-          message:
-            "Parent registered successfully",
-
-          needsRegistration:
-            false,
-
-          data:
-            getSafeParent(
-              parent
-            ),
-        });
+      return sendAuthenticatedParent(
+        res,
+        parent,
+        201,
+        "Parent registered successfully"
+      );
     } catch (error) {
       console.error(
-        "FIREBASE PARENT REGISTER ERROR:",
+        "PARENT REGISTER ERROR:",
         error
       );
 
       /* ===================================================
-         MONGODB DUPLICATE
+         DUPLICATE
       =================================================== */
 
       if (
@@ -901,10 +601,6 @@ export const registerParentWithFirebase =
               {}
           )[0];
 
-        /* ===============================================
-           EMAIL
-        =============================================== */
-
         if (
           duplicateField ===
           "email"
@@ -912,16 +608,13 @@ export const registerParentWithFirebase =
           return res
             .status(409)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Email is already registered",
             });
         }
-
-        /* ===============================================
-           PHONE
-        =============================================== */
 
         if (
           duplicateField ===
@@ -930,35 +623,19 @@ export const registerParentWithFirebase =
           return res
             .status(409)
             .json({
-              success: false,
+              success:
+                false,
 
               message:
                 "Phone number is already registered",
             });
         }
 
-        /* ===============================================
-           FIREBASE UID
-        =============================================== */
-
-        if (
-          duplicateField ===
-          "firebaseUid"
-        ) {
-          return res
-            .status(409)
-            .json({
-              success: false,
-
-              message:
-                "Firebase account is already registered",
-            });
-        }
-
         return res
           .status(409)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               "Parent account already exists",
@@ -966,7 +643,7 @@ export const registerParentWithFirebase =
       }
 
       /* ===================================================
-         MONGOOSE VALIDATION
+         VALIDATION
       =================================================== */
 
       if (
@@ -976,16 +653,13 @@ export const registerParentWithFirebase =
         return res
           .status(400)
           .json({
-            success: false,
+            success:
+              false,
 
             message:
               error.message,
           });
       }
-
-      /* ===================================================
-         GENERAL ERROR
-      =================================================== */
 
       return res
         .status(500)
