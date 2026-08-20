@@ -3,7 +3,6 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
 import Invoice from "../models/Invoice.js";
-import Parent from "../models/Parent.js";
 
 import {
   getAllInvoices,
@@ -17,7 +16,7 @@ import {
 
 import verifyAdmin from "../middleware/verifyAdmin.js";
 import verifyDriver from "../middleware/verifyDriver.js";
-import verifyFirebaseToken from "../middleware/verifyFirebaseToken.js";
+import verifyParent from "../middleware/verifyParent.js";
 
 const router =
   express.Router();
@@ -47,173 +46,144 @@ const normalizeDriverId = (
 };
 
 /* =========================================================
-   LOAD AUTHENTICATED PARENT
-========================================================= */
-
-const requireParentAccount =
-  async (
-    req,
-    res,
-    next
-  ) => {
-    try {
-      const firebaseUid =
-        req.firebaseUser?.uid;
-
-      if (!firebaseUid) {
-        return res.status(401).json({
-          success: false,
-
-          message:
-            "Parent authentication required",
-        });
-      }
-
-      const parent =
-        await Parent.findOne({
-          firebaseUid,
-        }).select(
-          "+firebaseUid"
-        );
-
-      if (!parent) {
-        return res.status(404).json({
-          success: false,
-
-          message:
-            "Parent account not found",
-        });
-      }
-
-      if (
-        parent.status ===
-        "inactive"
-      ) {
-        return res.status(403).json({
-          success: false,
-
-          message:
-            "Parent account is inactive",
-        });
-      }
-
-      req.parent =
-        parent;
-
-      return next();
-    } catch (error) {
-      console.error(
-        "INVOICE PARENT AUTH ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-
-        message:
-          "Parent authentication failed",
-      });
-    }
-  };
-
-/* =========================================================
    VERIFY PARENT PARAM OWNERSHIP
 ========================================================= */
 
-const requireOwnParent =
-  (
-    req,
-    res,
-    next
-  ) => {
-    const requestedParentId =
-      String(
-        req.params?.parentId ||
-          ""
-      );
+const requireOwnParent = (
+  req,
+  res,
+  next
+) => {
+  const requestedParentId =
+    String(
+      req.params?.parentId ||
+        ""
+    ).trim();
 
-    if (!requestedParentId) {
-      return res.status(400).json({
-        success: false,
+  const authenticatedParentId =
+    String(
+      req.parent?._id ||
+        ""
+    ).trim();
+
+  if (!requestedParentId) {
+    return res
+      .status(400)
+      .json({
+        success:
+          false,
 
         message:
           "Parent ID is required",
       });
-    }
+  }
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        requestedParentId
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
+  if (
+    !mongoose.Types.ObjectId.isValid(
+      requestedParentId
+    )
+  ) {
+    return res
+      .status(400)
+      .json({
+        success:
+          false,
 
         message:
           "Invalid Parent ID",
       });
-    }
+  }
 
-    if (
-      requestedParentId !==
-      String(
-        req.parent._id
-      )
-    ) {
-      return res.status(403).json({
-        success: false,
+  if (!authenticatedParentId) {
+    return res
+      .status(401)
+      .json({
+        success:
+          false,
+
+        message:
+          "Parent authentication required",
+      });
+  }
+
+  if (
+    requestedParentId !==
+    authenticatedParentId
+  ) {
+    return res
+      .status(403)
+      .json({
+        success:
+          false,
 
         message:
           "You cannot access another Parent's invoices",
       });
-    }
+  }
 
-    return next();
-  };
+  return next();
+};
 
 /* =========================================================
    VERIFY DRIVER PARAM OWNERSHIP
 ========================================================= */
 
-const requireOwnDriver =
-  (
-    req,
-    res,
-    next
-  ) => {
-    const requestedDriverId =
-      normalizeDriverId(
-        req.params?.driverId
-      );
+const requireOwnDriver = (
+  req,
+  res,
+  next
+) => {
+  const requestedDriverId =
+    normalizeDriverId(
+      req.params?.driverId
+    );
 
-    const authenticatedDriverId =
-      normalizeDriverId(
-        req.driver?.driverId
-      );
+  const authenticatedDriverId =
+    normalizeDriverId(
+      req.driver?.driverId
+    );
 
-    if (!requestedDriverId) {
-      return res.status(400).json({
-        success: false,
+  if (!requestedDriverId) {
+    return res
+      .status(400)
+      .json({
+        success:
+          false,
 
         message:
           "Driver ID is required",
       });
-    }
+  }
 
-    if (
-      requestedDriverId !==
-      authenticatedDriverId
-    ) {
-      return res.status(403).json({
-        success: false,
+  if (!authenticatedDriverId) {
+    return res
+      .status(401)
+      .json({
+        success:
+          false,
+
+        message:
+          "Driver authentication required",
+      });
+  }
+
+  if (
+    requestedDriverId !==
+    authenticatedDriverId
+  ) {
+    return res
+      .status(403)
+      .json({
+        success:
+          false,
 
         message:
           "You cannot access another Driver's invoices",
       });
-    }
+  }
 
-    return next();
-  };
+  return next();
+};
 
 /* =========================================================
    ADMIN OR PARENT INVOICE ACCESS
@@ -251,17 +221,18 @@ const authorizeInvoiceAccess =
 
       if (
         !mongoose.Types.ObjectId.isValid(
-          String(
-            id
-          )
+          String(id)
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Invalid Invoice ID",
-        });
+            message:
+              "Invalid Invoice ID",
+          });
       }
 
       /* ===================================================
@@ -277,12 +248,15 @@ const authorizeInvoiceAccess =
           "Bearer "
         )
       ) {
-        return res.status(401).json({
-          success: false,
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
 
-          message:
-            "Authentication required",
-        });
+            message:
+              "Authentication required",
+          });
       }
 
       const token =
@@ -291,29 +265,26 @@ const authorizeInvoiceAccess =
           .trim();
 
       if (!token) {
-        return res.status(401).json({
-          success: false,
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
 
-          message:
-            "Authentication required",
-        });
+            message:
+              "Authentication required",
+          });
       }
 
       /* ===================================================
-         DETERMINE TOKEN TYPE
+         TOKEN HINT
       =================================================== */
 
       /*
-        jwt.decode() is used ONLY to decide which
-        verified middleware should process the token.
+        jwt.decode() is used only to decide which
+        authentication middleware should verify the token.
 
-        It is NOT used for authentication.
-
-        Actual verification is still performed by:
-
-        verifyAdmin
-        OR
-        verifyFirebaseToken
+        It is NOT trusted as authentication.
       */
 
       let decoded =
@@ -330,7 +301,7 @@ const authorizeInvoiceAccess =
       }
 
       /* ===================================================
-         ADMIN TOKEN
+         ADMIN
       =================================================== */
 
       if (
@@ -346,10 +317,11 @@ const authorizeInvoiceAccess =
           res,
 
           () => {
-            req.invoiceAccess = {
-              type:
-                "admin",
-            };
+            req.invoiceAccess =
+              {
+                type:
+                  "admin",
+              };
 
             return next();
           }
@@ -357,7 +329,7 @@ const authorizeInvoiceAccess =
       }
 
       /* ===================================================
-         DRIVER TOKEN NOT ALLOWED HERE
+         DRIVER
       =================================================== */
 
       if (
@@ -367,59 +339,59 @@ const authorizeInvoiceAccess =
         decoded.tokenType ===
           "driver"
       ) {
-        return res.status(403).json({
-          success: false,
+        return res
+          .status(403)
+          .json({
+            success:
+              false,
 
-          message:
-            "Drivers must use the Driver invoice endpoint",
-        });
+            message:
+              "Drivers must use the Driver invoice endpoint",
+          });
       }
 
       /* ===================================================
-         PARENT FIREBASE TOKEN
+         PARENT
       =================================================== */
 
-      return verifyFirebaseToken(
-        req,
-        res,
+      if (
+        decoded &&
+        typeof decoded ===
+          "object" &&
+        decoded.tokenType ===
+          "parent"
+      ) {
+        return verifyParent(
+          req,
+          res,
 
-        () => {
-          return requireParentAccount(
-            req,
-            res,
+          async () => {
+            try {
+              const invoice =
+                await Invoice.findOne({
+                  _id:
+                    id,
 
-            async () => {
-              try {
-                /* =========================================
-                   VERIFY INVOICE OWNERSHIP
-                ========================================= */
+                  parentId:
+                    req.parent._id,
+                }).select(
+                  "_id parentId"
+                );
 
-                const invoice =
-                  await Invoice.findOne({
-                    _id:
-                      id,
-
-                    parentId:
-                      req.parent._id,
-                  }).select(
-                    "_id parentId"
-                  );
-
-                if (!invoice) {
-                  /*
-                    Return 404 rather than revealing whether
-                    another Parent owns the Invoice.
-                  */
-
-                  return res.status(404).json({
-                    success: false,
+              if (!invoice) {
+                return res
+                  .status(404)
+                  .json({
+                    success:
+                      false,
 
                     message:
                       "Invoice not found",
                   });
-                }
+              }
 
-                req.invoiceAccess = {
+              req.invoiceAccess =
+                {
                   type:
                     "parent",
 
@@ -427,36 +399,55 @@ const authorizeInvoiceAccess =
                     req.parent._id,
                 };
 
-                return next();
-              } catch (error) {
-                console.error(
-                  "INVOICE OWNERSHIP ERROR:",
-                  error
-                );
+              return next();
+            } catch (error) {
+              console.error(
+                "INVOICE OWNERSHIP ERROR:",
+                error
+              );
 
-                return res.status(500).json({
-                  success: false,
+              return res
+                .status(500)
+                .json({
+                  success:
+                    false,
 
                   message:
                     "Invoice authorization failed",
                 });
-              }
             }
-          );
-        }
-      );
+          }
+        );
+      }
+
+      /* ===================================================
+         UNKNOWN TOKEN
+      =================================================== */
+
+      return res
+        .status(401)
+        .json({
+          success:
+            false,
+
+          message:
+            "Unsupported authentication token",
+        });
     } catch (error) {
       console.error(
         "INVOICE ACCESS ERROR:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Invoice authorization failed",
-      });
+          message:
+            "Invoice authorization failed",
+        });
     }
   };
 
@@ -481,8 +472,8 @@ router.get(
 router.get(
   "/parent/:parentId",
 
-  verifyFirebaseToken,
-  requireParentAccount,
+  verifyParent,
+
   requireOwnParent,
 
   getParentInvoices
@@ -497,6 +488,7 @@ router.get(
   "/driver/:driverId",
 
   verifyDriver,
+
   requireOwnDriver,
 
   getDriverInvoices
@@ -534,10 +526,11 @@ router.post(
 ========================================================= */
 
 /*
-  Parent or Driver must NEVER be able to mark
-  an Invoice as paid by themselves.
+  Parent or Driver must never be able
+  to manually mark an Invoice as paid.
 
-  Razorpay verification will be added separately.
+  Payment gateway verification can be
+  added separately.
 */
 
 router.put(
@@ -554,7 +547,7 @@ router.put(
 ========================================================= */
 
 /*
-  Keep LAST so:
+  Keep this route LAST so:
 
   /parent/...
   /driver/...
