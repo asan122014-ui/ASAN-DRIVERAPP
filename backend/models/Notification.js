@@ -50,13 +50,12 @@ const NOTIFICATION_TYPES = [
 
   "driver_request_submitted",
   "driver_request_accepted",
-   "driver_request_rejected",
+  "driver_request_rejected",
 
   /* ================= DRIVER ASSIGNMENT ================= */
 
   "driver_assigned",
   "driver_changed",
-   
 
   /* ================= LEGACY ================= */
 
@@ -101,8 +100,7 @@ const notificationSchema =
 
       parent: {
         type:
-          mongoose.Schema.Types
-            .ObjectId,
+          mongoose.Schema.Types.ObjectId,
 
         ref: "Parent",
 
@@ -115,8 +113,7 @@ const notificationSchema =
 
       child: {
         type:
-          mongoose.Schema.Types
-            .ObjectId,
+          mongoose.Schema.Types.ObjectId,
 
         ref: "Child",
 
@@ -236,8 +233,7 @@ const notificationSchema =
 
       meta: {
         type:
-          mongoose.Schema.Types
-            .Mixed,
+          mongoose.Schema.Types.Mixed,
 
         default: () => ({}),
       },
@@ -358,6 +354,34 @@ notificationSchema.index({
   notificationKey: 1,
   createdAt: -1,
 });
+
+/* =========================================================
+   AUTO DELETE NOTIFICATIONS AFTER 4 DAYS
+========================================================= */
+
+/*
+  MongoDB TTL index.
+
+  Notification remains in database for 4 days from createdAt.
+
+  read: true does NOT delete it.
+
+  readAt is NOT used for expiry.
+
+  4 days =
+  4 * 24 * 60 * 60
+  = 345600 seconds
+*/
+
+notificationSchema.index(
+  {
+    createdAt: 1,
+  },
+  {
+    expireAfterSeconds:
+      4 * 24 * 60 * 60,
+  }
+);
 
 /* =========================================================
    INSTANCE METHOD — MARK AS READ
