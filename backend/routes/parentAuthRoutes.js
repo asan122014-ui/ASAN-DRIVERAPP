@@ -11,38 +11,55 @@ import {
   registerParent,
 } from "../controllers/parentAuthController.js";
 
+/* =========================================================
+   ROUTER
+========================================================= */
+
 const router =
   express.Router();
 
 /* =========================================================
-   PARENT AUTH
-========================================================= */
+   PARENT AUTH FLOW
 
-/*
-  Phone.Email OTP
+   Phone.Email OTP Verification
         ↓
-  userJsonUrl
+   userJsonUrl
         ↓
-  verifyPhoneEmail
+   verifyPhoneEmail
         ↓
-  req.verifiedIdentity
+   req.verifiedIdentity.phone
         ↓
-  MongoDB Parent
+   MongoDB Parent
         ↓
-  ASAN Parent JWT
-*/
+   ASAN Parent JWT
+========================================================= */
 
 /* =========================================================
-   LOGIN
+   LOGIN EXISTING PARENT
 ========================================================= */
 
 /*
-  POST /api/parent-auth/login
+POST /api/parent-auth/login
 
-  {
-    "userJsonUrl":
-      "https://user.phone.email/..."
-  }
+BODY:
+
+{
+  "userJsonUrl": "https://user.phone.email/..."
+}
+
+FLOW:
+
+Phone.Email verifies OTP
+        ↓
+Backend verifies userJsonUrl
+        ↓
+Verified phone extracted
+        ↓
+Parent searched in MongoDB
+        ↓
+ASAN Parent JWT issued
+        ↓
+Dashboard
 */
 
 router.post(
@@ -56,23 +73,31 @@ router.post(
 );
 
 /* =========================================================
-   REGISTER
+   REGISTER NEW PARENT
 ========================================================= */
 
 /*
-  POST /api/parent-auth/register
+POST /api/parent-auth/register
 
-  {
-    "userJsonUrl": "...",
+BODY:
 
-    "name": "Parent Name",
-    "email": "parent@gmail.com",
-    "address": "Hyderabad",
-    "latitude": 17.385,
-    "longitude": 78.486
-  }
+{
+  "userJsonUrl": "https://user.phone.email/...",
+  "name": "Parent Name",
+  "email": "parent@gmail.com",
+  "address": "Hyderabad",
+  "latitude": 17.385,
+  "longitude": 78.486
+}
 
-  Phone is NOT accepted from req.body.
+IMPORTANT:
+
+The phone number is NOT accepted as trusted identity
+from req.body.
+
+The verified phone number must come from:
+
+req.verifiedIdentity.phone
 */
 
 router.post(
