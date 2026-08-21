@@ -47,16 +47,29 @@ import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
 ========================================================= */
 
 import authRoutes from "./routes/authRoutes.js";
+
+import driverAuthRoutes from "./routes/driverAuthRoutes.js";
+
 import parentAuthRoutes from "./routes/parentAuthRoutes.js";
+
 import parentRoutes from "./routes/parentRoutes.js";
+
 import driverRoutes from "./routes/driver.js";
+
 import tripRoutes from "./routes/trip.js";
+
 import notificationRoutes from "./routes/notificationRoutes.js";
+
 import studentRoutes from "./routes/student.js";
+
 import adminRoutes from "./routes/adminRoutes.js";
+
 import childRoutes from "./routes/child.js";
+
 import billingRoutes from "./routes/billingRoutes.js";
+
 import invoiceRoutes from "./routes/invoiceRoutes.js";
+
 import driverRequestRoutes from "./routes/driverRequest.js";
 
 /* =========================================================
@@ -78,7 +91,8 @@ const app =
 
 const trustProxyHops =
   Number(
-    process.env.TRUST_PROXY_HOPS ||
+    process.env
+      .TRUST_PROXY_HOPS ||
       1
   );
 
@@ -123,11 +137,19 @@ const ALLOWED_ORIGINS =
     )
       .split(",")
       .map(
-        (origin) =>
+        (
+          origin
+        ) =>
           origin.trim()
       )
-      .filter(Boolean)
+      .filter(
+        Boolean
+      )
   );
+
+/* =========================================================
+   DEVELOPMENT ORIGIN
+========================================================= */
 
 const isDevelopmentOrigin = (
   origin
@@ -141,7 +163,9 @@ const isDevelopmentOrigin = (
 
   try {
     const url =
-      new URL(origin);
+      new URL(
+        origin
+      );
 
     return (
       url.hostname ===
@@ -154,17 +178,26 @@ const isDevelopmentOrigin = (
   }
 };
 
+/* =========================================================
+   CORS ORIGIN VALIDATOR
+========================================================= */
+
 const corsOriginValidator = (
   origin,
   callback
 ) => {
   /*
     Native mobile applications,
-    Postman, curl and server-to-server
-    requests may not contain Origin.
+    Postman,
+    curl,
+    server-to-server requests
+
+    may not include an Origin header.
   */
 
-  if (!origin) {
+  if (
+    !origin
+  ) {
     return callback(
       null,
       true
@@ -262,6 +295,7 @@ if (
 ) {
   app.use(
     "/uploads",
+
     express.static(
       "uploads"
     )
@@ -269,8 +303,18 @@ if (
 }
 
 /* =========================================================
-   DRIVER AUTH
+   LEGACY AUTH ROUTES
 ========================================================= */
+
+/*
+  Existing auth routes are kept for compatibility.
+
+  Do NOT use this route for the new Driver login frontend.
+
+  New Driver authentication uses:
+
+  /api/driver-auth
+*/
 
 app.use(
   "/api/auth",
@@ -278,17 +322,62 @@ app.use(
 );
 
 /* =========================================================
+   DRIVER AUTH
+========================================================= */
+
+/*
+  Driver authentication:
+
+  Email
+      +
+  Password
+      ↓
+  MongoDB Driver
+      ↓
+  bcrypt verification
+      ↓
+  ASAN Driver JWT
+
+  JWT payload:
+
+  {
+    id: "<MongoDB Driver _id>",
+    tokenType: "driver"
+  }
+
+  Endpoints:
+
+  POST /api/driver-auth/login
+  GET  /api/driver-auth/me
+  POST /api/driver-auth/logout
+*/
+
+app.use(
+  "/api/driver-auth",
+  driverAuthRoutes
+);
+
+/* =========================================================
    PARENT AUTH
 ========================================================= */
 
 /*
-  Phone.Email OTP
-       ↓
-  Phone.Email verification
-       ↓
+  Parent authentication:
+
+  Email OTP
+      ↓
+  OTP verification
+      ↓
   Parent MongoDB account
-       ↓
+      ↓
   ASAN Parent JWT
+
+  JWT payload:
+
+  {
+    id: "<MongoDB Parent _id>",
+    tokenType: "parent"
+  }
 */
 
 app.use(
@@ -356,7 +445,9 @@ app.use(
 
 app.use(
   "/api/admin/billing",
+
   verifyAdmin,
+
   billingRoutes
 );
 
@@ -426,7 +517,7 @@ const parentConnections =
   new Map();
 
 /*
-  Driver ID
+  Driver public ID
       ↓
   Set<socketId>
 */
@@ -435,7 +526,7 @@ const driverConnections =
   new Map();
 
 /*
-  Driver ID
+  Driver public ID
       ↓
   Set<Parent MongoDB ID>
 */
@@ -453,7 +544,15 @@ const addConnection = (
   socketId
 ) => {
   if (
-    !map.has(key)
+    !key
+  ) {
+    return;
+  }
+
+  if (
+    !map.has(
+      key
+    )
   ) {
     map.set(
       key,
@@ -462,19 +561,37 @@ const addConnection = (
   }
 
   map
-    .get(key)
-    .add(socketId);
+    .get(
+      key
+    )
+    .add(
+      socketId
+    );
 };
+
+/* =========================================================
+   REMOVE CONNECTION
+========================================================= */
 
 const removeConnection = (
   map,
   key,
   socketId
 ) => {
-  const sockets =
-    map.get(key);
+  if (
+    !key
+  ) {
+    return 0;
+  }
 
-  if (!sockets) {
+  const sockets =
+    map.get(
+      key
+    );
+
+  if (
+    !sockets
+  ) {
     return 0;
   }
 
@@ -500,22 +617,50 @@ const removeConnection = (
    DRIVER SOCKET AUTH
 ========================================================= */
 
+/*
+  Driver JWT:
+
+  {
+    id: "<MongoDB Driver _id>",
+    tokenType: "driver"
+  }
+
+  IMPORTANT:
+
+  driverId is NOT stored inside the JWT anymore.
+
+  We load the latest Driver account from MongoDB
+  and obtain driverId from there.
+*/
+
 const authenticateDriverSocket =
   async (
     token
   ) => {
+    /* =====================================================
+       JWT SECRET
+    ===================================================== */
+
     if (
-      !process.env.JWT_SECRET
+      !process.env
+        .JWT_SECRET
     ) {
       throw new Error(
         "JWT_SECRET is not configured"
       );
     }
 
+    /* =====================================================
+       VERIFY JWT
+    ===================================================== */
+
     const decoded =
       jwt.verify(
         token,
-        process.env.JWT_SECRET,
+
+        process.env
+          .JWT_SECRET,
+
         {
           algorithms: [
             "HS256",
@@ -523,25 +668,35 @@ const authenticateDriverSocket =
         }
       );
 
+    /* =====================================================
+       TOKEN TYPE
+    ===================================================== */
+
     if (
       !decoded ||
       typeof decoded !==
         "object" ||
       decoded.tokenType !==
         "driver" ||
-      !decoded.id ||
-      !decoded.driverId
+      !decoded.id
     ) {
       throw new Error(
         "Invalid Driver token"
       );
     }
 
+    /* =====================================================
+       MONGODB ID
+    ===================================================== */
+
+    const driverMongoId =
+      String(
+        decoded.id
+      );
+
     if (
       !mongoose.Types.ObjectId.isValid(
-        String(
-          decoded.id
-        )
+        driverMongoId
       )
     ) {
       throw new Error(
@@ -549,18 +704,43 @@ const authenticateDriverSocket =
       );
     }
 
+    /* =====================================================
+       CURRENT DRIVER
+    ===================================================== */
+
     const driver =
       await Driver.findById(
-        decoded.id
+        driverMongoId
       ).select(
-        "_id driverId email status"
+        [
+          "_id",
+          "driverId",
+          "email",
+          "status",
+          "isOnline",
+          "currentStatus",
+        ].join(" ")
       );
 
-    if (!driver) {
+    if (
+      !driver
+    ) {
       throw new Error(
         "Driver account not found"
       );
     }
+
+    /* =====================================================
+       APPROVAL
+    ===================================================== */
+
+    /*
+      Pending and rejected Drivers may authenticate
+      through HTTP login to see their account status.
+
+      But they cannot establish an operational
+      Driver socket connection.
+    */
 
     if (
       driver.status !==
@@ -571,21 +751,26 @@ const authenticateDriverSocket =
       );
     }
 
+    /* =====================================================
+       PUBLIC DRIVER ID
+    ===================================================== */
+
     const driverId =
       normalizeDriverId(
         driver.driverId
       );
 
     if (
-      driverId !==
-      normalizeDriverId(
-        decoded.driverId
-      )
+      !driverId
     ) {
       throw new Error(
-        "Invalid Driver token"
+        "Driver ID has not been assigned"
       );
     }
+
+    /* =====================================================
+       AUTHENTICATED DRIVER
+    ===================================================== */
 
     return {
       role:
@@ -612,23 +797,35 @@ const authenticateAdminSocket =
     token
   ) => {
     if (
-      !process.env.JWT_SECRET
+      !process.env
+        .JWT_SECRET
     ) {
       throw new Error(
         "JWT_SECRET is not configured"
       );
     }
 
+    /* =====================================================
+       VERIFY JWT
+    ===================================================== */
+
     const decoded =
       jwt.verify(
         token,
-        process.env.JWT_SECRET,
+
+        process.env
+          .JWT_SECRET,
+
         {
           algorithms: [
             "HS256",
           ],
         }
       );
+
+    /* =====================================================
+       TOKEN
+    ===================================================== */
 
     if (
       !decoded ||
@@ -645,6 +842,10 @@ const authenticateAdminSocket =
       );
     }
 
+    /* =====================================================
+       MONGODB ID
+    ===================================================== */
+
     if (
       !mongoose.Types.ObjectId.isValid(
         String(
@@ -657,6 +858,10 @@ const authenticateAdminSocket =
       );
     }
 
+    /* =====================================================
+       CURRENT ADMIN
+    ===================================================== */
+
     const admin =
       await Admin.findById(
         decoded.id
@@ -664,11 +869,17 @@ const authenticateAdminSocket =
         "_id email role"
       );
 
-    if (!admin) {
+    if (
+      !admin
+    ) {
       throw new Error(
         "Admin account not found"
       );
     }
+
+    /* =====================================================
+       ROLE CHECK
+    ===================================================== */
 
     if (
       !ADMIN_ROLES.has(
@@ -679,6 +890,10 @@ const authenticateAdminSocket =
         "Admin access denied"
       );
     }
+
+    /* =====================================================
+       AUTHENTICATED ADMIN
+    ===================================================== */
 
     return {
       role:
@@ -702,10 +917,7 @@ const authenticateAdminSocket =
 ========================================================= */
 
 /*
-  Parent now uses the ASAN JWT generated
-  after successful Phone.Email verification.
-
-  Expected token payload:
+  Expected Parent JWT:
 
   {
     id: "<MongoDB Parent _id>",
@@ -722,7 +934,8 @@ const authenticateParentSocket =
     ===================================================== */
 
     if (
-      !process.env.JWT_SECRET
+      !process.env
+        .JWT_SECRET
     ) {
       throw new Error(
         "JWT_SECRET is not configured"
@@ -736,7 +949,10 @@ const authenticateParentSocket =
     const decoded =
       jwt.verify(
         token,
-        process.env.JWT_SECRET,
+
+        process.env
+          .JWT_SECRET,
+
         {
           algorithms: [
             "HS256",
@@ -785,10 +1001,18 @@ const authenticateParentSocket =
       await Parent.findById(
         decoded.id
       ).select(
-        "_id driverId isActive name phone"
+        [
+          "_id",
+          "driverId",
+          "isActive",
+          "name",
+          "phone",
+        ].join(" ")
       );
 
-    if (!parent) {
+    if (
+      !parent
+    ) {
       throw new Error(
         "Parent account not found"
       );
@@ -808,7 +1032,7 @@ const authenticateParentSocket =
     }
 
     /* =====================================================
-       AUTHENTICATED USER
+       AUTHENTICATED PARENT
     ===================================================== */
 
     return {
@@ -839,20 +1063,22 @@ const authenticateParentSocket =
 /*
   Client:
 
-  auth: {
-    token: "<ASAN JWT>"
-  }
+  io(URL, {
+    auth: {
+      token: "<ASAN JWT>"
+    }
+  })
 
-  Token routing:
+  Routing:
 
   Driver
-    tokenType = driver
+      tokenType = driver
 
   Parent
-    tokenType = parent
+      tokenType = parent
 
   Admin
-    role = superadmin / reviewer
+      role = superadmin / reviewer
 */
 
 io.use(
@@ -861,16 +1087,26 @@ io.use(
     next
   ) => {
     try {
+      /* ===================================================
+         TOKEN
+      =================================================== */
+
       const token =
         typeof socket
           .handshake
           ?.auth
           ?.token ===
         "string"
-          ? socket.handshake.auth.token.trim()
+          ? socket
+              .handshake
+              .auth
+              .token
+              .trim()
           : "";
 
-      if (!token) {
+      if (
+        !token
+      ) {
         return next(
           new Error(
             "Authentication required"
@@ -881,6 +1117,15 @@ io.use(
       /* ===================================================
          TOKEN HINT
       =================================================== */
+
+      /*
+        jwt.decode is used only to determine
+        which authentication handler should verify
+        the token.
+
+        Real verification happens inside each
+        authenticate*Socket function.
+      */
 
       let tokenHint =
         null;
@@ -951,7 +1196,7 @@ io.use(
       }
 
       /* ===================================================
-         UNKNOWN TOKEN
+         UNKNOWN
       =================================================== */
 
       else {
@@ -967,7 +1212,9 @@ io.use(
         user;
 
       return next();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         "Socket authentication rejected:",
         error.message
@@ -1044,6 +1291,25 @@ const verifyParentDriverLink =
       return null;
     }
 
+    /* =====================================================
+       ENSURE DRIVER IS STILL APPROVED
+    ===================================================== */
+
+    const driverExists =
+      await Driver.exists({
+        driverId:
+          linkedDriverId,
+
+        status:
+          "approved",
+      });
+
+    if (
+      !driverExists
+    ) {
+      return null;
+    }
+
     return linkedDriverId;
   };
 
@@ -1054,18 +1320,24 @@ const verifyParentDriverLink =
 io.on(
   "connection",
 
-  (socket) => {
+  (
+    socket
+  ) => {
     const user =
       socket.user;
 
     console.log(
-      "✅ Authenticated socket connected:",
+      "Authenticated socket connected:",
       socket.id,
       user.role
     );
 
     /* =====================================================
        AUTOMATIC ROOMS
+    ===================================================== */
+
+    /* =====================================================
+       PARENT
     ===================================================== */
 
     if (
@@ -1086,6 +1358,10 @@ io.on(
       );
     }
 
+    /* =====================================================
+       DRIVER
+    ===================================================== */
+
     if (
       user.role ===
       "driver"
@@ -1103,6 +1379,10 @@ io.on(
         socket.id
       );
     }
+
+    /* =====================================================
+       ADMIN
+    ===================================================== */
 
     if (
       user.role ===
@@ -1128,7 +1408,8 @@ io.on(
             typeof data ===
             "string"
               ? data
-              : data?.driverId;
+              : data
+                  ?.driverId;
 
           const requestedDriverId =
             normalizeDriverId(
@@ -1208,7 +1489,9 @@ io.on(
 
             return;
           }
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "JOIN DRIVER ROOM ERROR:",
             error.message
@@ -1241,7 +1524,7 @@ io.on(
             )
           : String(
               parentData ||
-              ""
+                ""
             );
 
       if (
@@ -1292,7 +1575,9 @@ io.on(
               data.driverId
             );
 
-          if (!driverId) {
+          if (
+            !driverId
+          ) {
             return;
           }
 
@@ -1312,7 +1597,9 @@ io.on(
           }
 
           driverParentsMap
-            .get(driverId)
+            .get(
+              driverId
+            )
             .add(
               user.parentId
             );
@@ -1326,7 +1613,9 @@ io.on(
                 user.parentId,
             }
           );
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "START CAMERA ERROR:",
             error.message
@@ -1453,7 +1742,9 @@ io.on(
                 driverId,
               }
             );
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "WEBRTC ANSWER ERROR:",
             error.message
@@ -1567,7 +1858,9 @@ io.on(
                 }
               );
           }
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "ICE CANDIDATE ERROR:",
             error.message
@@ -1706,6 +1999,10 @@ io.on(
           } =
             data;
 
+          /* =================================================
+             LOCATION REQUIRED
+          ================================================= */
+
           if (
             lat ===
               undefined ||
@@ -1725,6 +2022,10 @@ io.on(
               lng
             );
 
+          /* =================================================
+             COORDINATE VALIDATION
+          ================================================= */
+
           if (
             !Number.isFinite(
               latitude
@@ -1737,10 +2038,14 @@ io.on(
           }
 
           if (
-            latitude < -90 ||
-            latitude > 90 ||
-            longitude < -180 ||
-            longitude > 180
+            latitude <
+              -90 ||
+            latitude >
+              90 ||
+            longitude <
+              -180 ||
+            longitude >
+              180
           ) {
             return;
           }
@@ -1821,69 +2126,69 @@ io.on(
             new Date();
 
           /* =================================================
-             SAVE LOCATION
+             LOAD DRIVER
           ================================================= */
 
           const driver =
-            await Driver.findOneAndUpdate(
-              {
-                driverId:
-                  user.driverId,
+            await Driver.findOne({
+              driverId:
+                user.driverId,
 
-                status:
-                  "approved",
-              },
-
-              {
-                $set: {
-                  location: {
-                    type:
-                      "Point",
-
-                    coordinates: [
-                      longitude,
-                      latitude,
-                    ],
-                  },
-
-                  lastLocation: {
-                    lat:
-                      latitude,
-
-                    lng:
-                      longitude,
-
-                    eta:
-                      safeEta,
-
-                    speed:
-                      safeSpeed,
-
-                    heading:
-                      safeHeading,
-
-                    accuracy:
-                      safeAccuracy,
-
-                    updatedAt,
-                  },
-                },
-              },
-
-              {
-                new:
-                  true,
-
-                runValidators:
-                  true,
-              }
-            );
+              status:
+                "approved",
+            });
 
           if (
             !driver
           ) {
             return;
           }
+
+          /* =================================================
+             UPDATE LIVE LOCATION
+          ================================================= */
+
+          /*
+            Uses the Driver model method so REST and
+            Socket location updates use the same logic.
+          */
+
+          driver.updateLiveLocation({
+            lat:
+              latitude,
+
+            lng:
+              longitude,
+
+            eta:
+              safeEta,
+
+            speed:
+              safeSpeed,
+
+            heading:
+              safeHeading,
+
+            accuracy:
+              safeAccuracy,
+          });
+
+          /* =================================================
+             ONLINE STATUS
+          ================================================= */
+
+          driver.isOnline =
+            true;
+
+          if (
+            driver.currentStatus ===
+            "offline"
+          ) {
+            driver.currentStatus =
+              "idle";
+          }
+
+          await driver.save();
 
           /* =================================================
              BROADCAST
@@ -1913,6 +2218,10 @@ io.on(
                 safeAccuracy,
 
               updatedAt:
+                driver
+                  .lastLocation
+                  ?.updatedAt
+                  ?.toISOString?.() ||
                 updatedAt.toISOString(),
             };
 
@@ -1924,7 +2233,9 @@ io.on(
               "live_location",
               locationPayload
             );
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "LIVE LOCATION ERROR:",
             error.message
@@ -1980,9 +2291,9 @@ io.on(
     socket.on(
       "disconnect",
 
-      () => {
+      async () => {
         console.log(
-          "❌ Socket disconnected:",
+          "Socket disconnected:",
           socket.id,
           user.role
         );
@@ -1995,11 +2306,45 @@ io.on(
           user.role ===
           "driver"
         ) {
-          removeConnection(
-            driverConnections,
-            user.driverId,
-            socket.id
-          );
+          const remainingConnections =
+            removeConnection(
+              driverConnections,
+              user.driverId,
+              socket.id
+            );
+
+          /*
+            Only mark Driver offline once all of that
+            Driver's socket connections are gone.
+          */
+
+          if (
+            remainingConnections ===
+            0
+          ) {
+            try {
+              await Driver.findByIdAndUpdate(
+                user.id,
+
+                {
+                  $set: {
+                    isOnline:
+                      false,
+
+                    currentStatus:
+                      "offline",
+                  },
+                }
+              );
+            } catch (
+              error
+            ) {
+              console.error(
+                "DRIVER OFFLINE UPDATE ERROR:",
+                error.message
+              );
+            }
+          }
 
           return;
         }
@@ -2169,75 +2514,85 @@ const PORT =
 ========================================================= */
 
 connectDB()
-  .then(() => {
-    console.log(
-      "✅ Database connected successfully"
-    );
+  .then(
+    () => {
+      console.log(
+        "Database connected successfully"
+      );
 
-    /* =====================================================
-       VERIFICATION PHOTO CLEANUP
-    ===================================================== */
+      /* =====================================================
+         VERIFICATION PHOTO CLEANUP
+      ===================================================== */
 
-    cron.schedule(
-      "0 2 * * *",
+      cron.schedule(
+        "0 2 * * *",
 
-      async () => {
-        try {
-          await cleanupVerificationPhotos();
+        async () => {
+          try {
+            await cleanupVerificationPhotos();
+
+            console.log(
+              "Verification photo cleanup completed"
+            );
+          } catch (
+            error
+          ) {
+            console.error(
+              "Verification photo cleanup failed:",
+              error.message
+            );
+          }
+        },
+
+        {
+          timezone:
+            "Asia/Kolkata",
+        }
+      );
+
+      console.log(
+        "Verification photo cleanup: Daily 2:00 AM IST"
+      );
+
+      /* =====================================================
+         LISTEN
+      ===================================================== */
+
+      server.listen(
+        PORT,
+
+        () => {
+          console.log(
+            `Server running on port ${PORT}`
+          );
 
           console.log(
-            "✅ Verification photo cleanup completed"
+            "Health: /api/health"
           );
-        } catch (error) {
-          console.error(
-            "Verification photo cleanup failed:",
-            error.message
+
+          console.log(
+            "Parent Auth: /api/parent-auth"
+          );
+
+          console.log(
+            "Driver Auth: /api/driver-auth"
+          );
+
+          console.log(
+            "Driver APIs: /api/driver"
+          );
+
+          console.log(
+            "Admin: /api/admin"
           );
         }
-      },
-
-      {
-        timezone:
-          "Asia/Kolkata",
-      }
-    );
-
-    console.log(
-      "⏰ Verification photo cleanup: Daily 2:00 AM IST"
-    );
-
-    /* =====================================================
-       LISTEN
-    ===================================================== */
-
-    server.listen(
-      PORT,
-
-      () => {
-        console.log(
-          `🚀 Server running on port ${PORT}`
-        );
-
-        console.log(
-          "❤️ Health: /api/health"
-        );
-
-        console.log(
-          "📱 Parent Auth: /api/parent-auth"
-        );
-
-        console.log(
-          "🚗 Driver Auth: /api/auth"
-        );
-
-        console.log(
-          "🛡️ Admin: /api/admin"
-        );
-      }
-    );
-  })
+      );
+    }
+  )
   .catch(
-    (error) => {
+    (
+      error
+    ) => {
       console.error(
         "DATABASE CONNECTION FAILED:",
         error
