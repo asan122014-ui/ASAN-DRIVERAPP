@@ -5,6 +5,10 @@ import Driver from "../models/Driver.js";
 import Otp from "../models/Otp.js";
 
 import {
+  cloudinary,
+} from "../config/cloudinary.js";
+
+import {
   sendDriverOtpEmail,
 } from "../services/emailService.js";
 
@@ -24,21 +28,18 @@ const OTP_MAX_ATTEMPTS =
 const DRIVER_LOGIN_PURPOSE =
   "driver_login";
 
+const DRIVER_REGISTER_PURPOSE =
+  "driver_register";
+
 /* =========================================================
-   EMAIL NORMALIZATION
+   NORMALIZE EMAIL
 ========================================================= */
 
 const normalizeEmail = (
   email
 ) => {
-  if (
-    !email
-  ) {
-    return "";
-  }
-
   return String(
-    email
+    email || ""
   )
     .trim()
     .toLowerCase();
@@ -54,6 +55,106 @@ const isValidEmail = (
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     email
   );
+};
+
+/* =========================================================
+   NORMALIZE PHONE
+========================================================= */
+
+const normalizePhone = (
+  phone
+) => {
+  return String(
+    phone || ""
+  ).replace(
+    /\D/g,
+    ""
+  );
+};
+
+/* =========================================================
+   PHONE VALIDATION
+========================================================= */
+
+const isValidPhone = (
+  phone
+) => {
+  return /^[6-9]\d{9}$/.test(
+    phone
+  );
+};
+
+/* =========================================================
+   VALIDATE LOCATION
+========================================================= */
+
+const validateCoordinates = (
+  latitude,
+  longitude
+) => {
+  const lat =
+    Number(
+      latitude
+    );
+
+  const lng =
+    Number(
+      longitude
+    );
+
+  if (
+    !Number.isFinite(
+      lat
+    ) ||
+    !Number.isFinite(
+      lng
+    )
+  ) {
+    return {
+      valid:
+        false,
+
+      message:
+        "Valid latitude and longitude are required",
+    };
+  }
+
+  if (
+    lat < -90 ||
+    lat > 90
+  ) {
+    return {
+      valid:
+        false,
+
+      message:
+        "Latitude must be between -90 and 90",
+    };
+  }
+
+  if (
+    lng < -180 ||
+    lng > 180
+  ) {
+    return {
+      valid:
+        false,
+
+      message:
+        "Longitude must be between -180 and 180",
+    };
+  }
+
+  return {
+    valid:
+      true,
+
+    latitude:
+      lat,
+
+    longitude:
+      lng,
+  };
 };
 
 /* =========================================================
@@ -92,7 +193,7 @@ const hashOtp = (
 };
 
 /* =========================================================
-   SAFE HASH COMPARISON
+   SAFE OTP HASH COMPARISON
 ========================================================= */
 
 const compareOtpHash = (
@@ -130,7 +231,7 @@ const compareOtpHash = (
 };
 
 /* =========================================================
-   OTP INPUT VALIDATION
+   VALIDATE OTP INPUT
 ========================================================= */
 
 const validateOtpInput = (
@@ -174,11 +275,10 @@ const getSafeDriver = (
         };
 
   /*
-    Password is no longer part of the Driver schema.
+    Legacy protection.
 
-    This delete is retained temporarily so old MongoDB
-    documents containing a legacy password can never
-    accidentally expose it.
+    Password no longer exists in the current Driver schema,
+    but old MongoDB records may still contain the field.
   */
 
   delete data.password;
@@ -190,15 +290,6 @@ const getSafeDriver = (
 /* =========================================================
    CREATE DRIVER JWT
 ========================================================= */
-
-/*
-  Driver JWT:
-
-  {
-    id: "<MongoDB Driver _id>",
-    tokenType: "driver"
-  }
-*/
 
 const createDriverToken = (
   driver
@@ -250,10 +341,6 @@ const createDriverToken = (
 const getDriverStatusInfo = (
   driver
 ) => {
-  /* =====================================================
-     APPROVED
-  ===================================================== */
-
   if (
     driver.status ===
     "approved"
@@ -275,10 +362,6 @@ const getDriverStatusInfo = (
         null,
     };
   }
-
-  /* =====================================================
-     PENDING
-  ===================================================== */
 
   if (
     driver.status ===
@@ -302,10 +385,6 @@ const getDriverStatusInfo = (
     };
   }
 
-  /* =====================================================
-     REJECTED
-  ===================================================== */
-
   if (
     driver.status ===
     "rejected"
@@ -324,14 +403,11 @@ const getDriverStatusInfo = (
         "Your Driver application was rejected",
 
       rejectionReason:
-        driver.rejectionReason ||
+        driver
+          .rejectionReason ||
         null,
     };
   }
-
-  /* =====================================================
-     UNKNOWN
-  ===================================================== */
 
   return {
     status:
@@ -353,23 +429,93 @@ const getDriverStatusInfo = (
 };
 
 /* =========================================================
-   CREATE AND SEND DRIVER OTP
+   CLEANUP UPLOADED CLOUDINARY FILES
+========================================================= */
+
+const cleanupUploadedFiles =
+  async (
+    files
+  ) => {
+    try {
+      if (
+        !files
+      ) {
+        return;
+      }
+
+      const uploadedFiles =
+        Object.values(
+          files
+        )
+          .flat()
+          .filter(
+            (
+              file
+            ) =>
+              file?.filename
+          );
+
+      if (
+        uploadedFiles.length ===
+        0
+      ) {
+        return;
+      }
+
+      const results =
+        await Promise.allSettled(
+          uploadedFiles.map(
+            (
+              file
+            ) =>
+              cloudinary
+                .uploader
+                .destroy(
+                  file.filename
+                )
+          )
+        );
+
+      const failed =
+        results.filter(
+          (
+            result
+          ) =>
+            result.status ===
+            "rejected"
+        );
+
+      if (
+        failed.length >
+        0
+      ) {
+        console.warn(
+          `${failed.length} Driver file cleanup operation(s) failed`
+        );
+      }
+    } catch (
+      error
+    ) {
+      console.error(
+        "DRIVER CLOUDINARY CLEANUP ERROR:",
+        error.message
+      );
+    }
+  };
+
+/* =========================================================
+   CREATE AND SEND OTP
 ========================================================= */
 
 const createAndSendDriverOtp =
   async ({
     email,
+    purpose,
   }) => {
-    /* =====================================================
-       EXISTING OTP
-    ===================================================== */
-
     const existingOtp =
       await Otp.findOne({
         email,
-
-        purpose:
-          DRIVER_LOGIN_PURPOSE,
+        purpose,
       });
 
     /* =====================================================
@@ -440,15 +586,13 @@ const createAndSendDriverOtp =
       );
 
     /* =====================================================
-       STORE OTP HASH
+       STORE HASH
     ===================================================== */
 
     await Otp.findOneAndUpdate(
       {
         email,
-
-        purpose:
-          DRIVER_LOGIN_PURPOSE,
+        purpose,
       },
 
       {
@@ -477,9 +621,7 @@ const createAndSendDriverOtp =
 
         $setOnInsert: {
           email,
-
-          purpose:
-            DRIVER_LOGIN_PURPOSE,
+          purpose,
         },
       },
 
@@ -496,6 +638,16 @@ const createAndSendDriverOtp =
     );
 
     /* =====================================================
+       EMAIL PURPOSE
+    ===================================================== */
+
+    const emailPurpose =
+      purpose ===
+      DRIVER_REGISTER_PURPOSE
+        ? "register"
+        : "login";
+
+    /* =====================================================
        SEND EMAIL
     ===================================================== */
 
@@ -503,23 +655,20 @@ const createAndSendDriverOtp =
       await sendDriverOtpEmail({
         email,
         otp,
+
         purpose:
-          "login",
+          emailPurpose,
       });
     } catch (
       error
     ) {
       /*
-        If sending fails, remove the OTP so an
-        unsent OTP can never remain usable.
+        Delete unsent OTP.
       */
 
       await Otp.deleteOne({
         email,
-
-        purpose:
-          DRIVER_LOGIN_PURPOSE,
-
+        purpose,
         otpHash,
       });
 
@@ -537,24 +686,20 @@ const createAndSendDriverOtp =
   };
 
 /* =========================================================
-   VERIFY STORED DRIVER OTP
+   VERIFY STORED OTP
 ========================================================= */
 
 const verifyStoredDriverOtp =
   async ({
     email,
     otp,
+    purpose,
+    consume = true,
   }) => {
-    /* =====================================================
-       FIND OTP
-    ===================================================== */
-
     const storedOtp =
       await Otp.findOne({
         email,
-
-        purpose:
-          DRIVER_LOGIN_PURPOSE,
+        purpose,
 
         used:
           false,
@@ -580,7 +725,7 @@ const verifyStoredDriverOtp =
     }
 
     /* =====================================================
-       EXPIRATION
+       EXPIRED
     ===================================================== */
 
     if (
@@ -609,7 +754,7 @@ const verifyStoredDriverOtp =
     }
 
     /* =====================================================
-       ATTEMPT LIMIT
+       MAX ATTEMPTS
     ===================================================== */
 
     if (
@@ -634,7 +779,7 @@ const verifyStoredDriverOtp =
     }
 
     /* =====================================================
-       COMPARE OTP
+       COMPARE
     ===================================================== */
 
     const valid =
@@ -698,33 +843,32 @@ const verifyStoredDriverOtp =
     }
 
     /* =====================================================
-       VERIFIED — CONSUME OTP
+       CONSUME
     ===================================================== */
 
-    /*
-      Delete immediately.
-
-      The OTP cannot be replayed after successful
-      authentication.
-    */
-
-    await Otp.deleteOne({
-      _id:
-        storedOtp._id,
-    });
+    if (
+      consume
+    ) {
+      await Otp.deleteOne({
+        _id:
+          storedOtp._id,
+      });
+    }
 
     return {
       valid:
         true,
+
+      storedOtp,
     };
   };
 
 /* =========================================================
-   SEND DRIVER LOGIN OTP
+   SEND DRIVER REGISTRATION OTP
 ========================================================= */
 
 /*
-  POST /api/driver-auth/send-login-otp
+  POST /api/driver-auth/send-register-otp
 
   BODY:
 
@@ -733,21 +877,21 @@ const verifyStoredDriverOtp =
   }
 */
 
-export const sendLoginOtp =
+export const sendRegisterOtp =
   async (
     req,
     res
   ) => {
     try {
-      /* ===================================================
-         EMAIL
-      =================================================== */
-
       const email =
         normalizeEmail(
           req.body
             ?.email
         );
+
+      /* ===================================================
+         EMAIL
+      =================================================== */
 
       if (
         !email ||
@@ -767,7 +911,874 @@ export const sendLoginOtp =
       }
 
       /* ===================================================
-         DRIVER ACCOUNT
+         ALREADY REGISTERED
+      =================================================== */
+
+      const existingDriver =
+        await Driver.findByEmail(
+          email
+        );
+
+      if (
+        existingDriver
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "This email is already registered. Please sign in instead.",
+          });
+      }
+
+      /* ===================================================
+         SEND OTP
+      =================================================== */
+
+      const result =
+        await createAndSendDriverOtp({
+          email,
+
+          purpose:
+            DRIVER_REGISTER_PURPOSE,
+        });
+
+      if (
+        !result.success &&
+        result.cooldown
+      ) {
+        return res
+          .status(429)
+          .json({
+            success:
+              false,
+
+            message:
+              `Please wait ${result.secondsRemaining} seconds before requesting another OTP.`,
+
+            retryAfter:
+              result.secondsRemaining,
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Registration OTP sent successfully",
+
+          expiresIn:
+            result.expiresIn,
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "SEND DRIVER REGISTER OTP ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to send registration OTP",
+        });
+    }
+  };
+
+/* =========================================================
+   VERIFY DRIVER REGISTRATION OTP + CREATE DRIVER
+========================================================= */
+
+/*
+  POST /api/driver-auth/verify-register-otp
+
+  multipart/form-data
+
+  TEXT:
+
+  email
+  otp
+  name
+  phone
+  address
+  latitude
+  longitude
+  vehicleNumber
+  vehicleType
+  vehicleModel
+  licenseNumber
+
+  FILES:
+
+  licenseFront
+  licenseBack
+  rcFront
+  rcBack
+  insurance
+  idFront
+  idBack
+  profilePhoto
+*/
+
+export const verifyRegisterOtp =
+  async (
+    req,
+    res
+  ) => {
+    let driverSaved =
+      false;
+
+    try {
+      const {
+        name,
+        phone,
+        address,
+        latitude,
+        longitude,
+        vehicleNumber,
+        vehicleType,
+        vehicleModel,
+        licenseNumber,
+      } =
+        req.body ||
+        {};
+
+      const email =
+        normalizeEmail(
+          req.body
+            ?.email
+        );
+
+      const otp =
+        validateOtpInput(
+          req.body
+            ?.otp
+        );
+
+      /* ===================================================
+         REQUIRED TEXT FIELDS
+      =================================================== */
+
+      if (
+        !name?.trim?.() ||
+        !email ||
+        !phone ||
+        !address?.trim?.() ||
+        latitude ===
+          undefined ||
+        longitude ===
+          undefined ||
+        !vehicleNumber?.trim?.() ||
+        !vehicleType?.trim?.() ||
+        !licenseNumber?.trim?.()
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "All required Driver details must be provided",
+          });
+      }
+
+      /* ===================================================
+         EMAIL
+      =================================================== */
+
+      if (
+        !isValidEmail(
+          email
+        )
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid email address",
+          });
+      }
+
+      /* ===================================================
+         OTP
+      =================================================== */
+
+      if (
+        !otp
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid 6-digit OTP",
+          });
+      }
+
+      /* ===================================================
+         NORMALIZE PROFILE
+      =================================================== */
+
+      const normalizedName =
+        String(
+          name
+        ).trim();
+
+      const normalizedPhone =
+        normalizePhone(
+          phone
+        );
+
+      const normalizedAddress =
+        String(
+          address
+        ).trim();
+
+      const normalizedVehicleNumber =
+        String(
+          vehicleNumber
+        )
+          .trim()
+          .toUpperCase()
+          .replace(
+            /\s+/g,
+            ""
+          );
+
+      const normalizedVehicleType =
+        String(
+          vehicleType
+        ).trim();
+
+      const normalizedVehicleModel =
+        String(
+          vehicleModel ||
+            ""
+        ).trim();
+
+      const normalizedLicenseNumber =
+        String(
+          licenseNumber
+        )
+          .trim()
+          .toUpperCase();
+
+      /* ===================================================
+         PHONE
+      =================================================== */
+
+      if (
+        !isValidPhone(
+          normalizedPhone
+        )
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid 10-digit Indian mobile number",
+          });
+      }
+
+      /* ===================================================
+         LOCATION
+      =================================================== */
+
+      const location =
+        validateCoordinates(
+          latitude,
+          longitude
+        );
+
+      if (
+        !location.valid
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              location.message,
+          });
+      }
+
+      /* ===================================================
+         REQUIRED DOCUMENTS
+      =================================================== */
+
+      const requiredFiles =
+        [
+          "licenseFront",
+          "licenseBack",
+          "rcFront",
+          "rcBack",
+          "insurance",
+          "idFront",
+          "idBack",
+        ];
+
+      const missingFiles =
+        requiredFiles.filter(
+          (
+            field
+          ) =>
+            !req.files?.[
+              field
+            ]?.[0]?.path
+        );
+
+      if (
+        missingFiles.length >
+        0
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "All required Driver documents must be uploaded",
+
+            missingDocuments:
+              missingFiles,
+          });
+      }
+
+      /* ===================================================
+         DUPLICATE EMAIL / PHONE
+
+         Check BEFORE consuming OTP.
+      =================================================== */
+
+      const existingDriver =
+        await Driver.findOne({
+          $or: [
+            {
+              email,
+            },
+
+            {
+              phone:
+                normalizedPhone,
+            },
+          ],
+        });
+
+      if (
+        existingDriver
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        const emailExists =
+          existingDriver.email ===
+          email;
+
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              emailExists
+                ? "This email is already registered. Please sign in instead."
+                : "Phone number is already registered",
+          });
+      }
+
+      /* ===================================================
+         VERIFY REGISTRATION OTP
+      =================================================== */
+
+      const verification =
+        await verifyStoredDriverOtp({
+          email,
+          otp,
+
+          purpose:
+            DRIVER_REGISTER_PURPOSE,
+
+          /*
+            Do not consume yet.
+
+            We consume only after all final duplicate
+            checks pass.
+          */
+
+          consume:
+            false,
+        });
+
+      if (
+        !verification.valid
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(
+            verification.status
+          )
+          .json({
+            success:
+              false,
+
+            message:
+              verification.message,
+          });
+      }
+
+      /* ===================================================
+         RACE-CONDITION CHECK
+
+         Another request could potentially register the
+         same email/phone while OTP verification occurred.
+      =================================================== */
+
+      const duplicateAfterVerification =
+        await Driver.findOne({
+          $or: [
+            {
+              email,
+            },
+
+            {
+              phone:
+                normalizedPhone,
+            },
+          ],
+        });
+
+      if (
+        duplicateAfterVerification
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver account already exists",
+          });
+      }
+
+      /* ===================================================
+         FILE HELPERS
+      =================================================== */
+
+      const getFilePath = (
+        field
+      ) => {
+        return (
+          req.files?.[
+            field
+          ]?.[0]?.path ||
+          ""
+        );
+      };
+
+      const getFilePublicId = (
+        field
+      ) => {
+        return (
+          req.files?.[
+            field
+          ]?.[0]?.filename ||
+          ""
+        );
+      };
+
+      /* ===================================================
+         CREATE DRIVER
+      =================================================== */
+
+      const driver =
+        new Driver({
+          /* PERSONAL */
+
+          name:
+            normalizedName,
+
+          phone:
+            normalizedPhone,
+
+          email,
+
+          address:
+            normalizedAddress,
+
+          /* HOME LOCATION */
+
+          homeLocation: {
+            type:
+              "Point",
+
+            coordinates: [
+              location.longitude,
+              location.latitude,
+            ],
+          },
+
+          /* INITIAL LOCATION */
+
+          location: {
+            type:
+              "Point",
+
+            coordinates: [
+              location.longitude,
+              location.latitude,
+            ],
+          },
+
+          lastLocation: {
+            lat:
+              location.latitude,
+
+            lng:
+              location.longitude,
+
+            eta:
+              "--",
+
+            speed:
+              0,
+
+            heading:
+              0,
+
+            accuracy:
+              null,
+
+            updatedAt:
+              new Date(),
+          },
+
+          /* VEHICLE */
+
+          vehicleNumber:
+            normalizedVehicleNumber,
+
+          vehicleType:
+            normalizedVehicleType,
+
+          vehicleModel:
+            normalizedVehicleModel,
+
+          licenseNumber:
+            normalizedLicenseNumber,
+
+          /* DOCUMENTS */
+
+          licenseFront:
+            getFilePath(
+              "licenseFront"
+            ),
+
+          licenseBack:
+            getFilePath(
+              "licenseBack"
+            ),
+
+          rcFront:
+            getFilePath(
+              "rcFront"
+            ),
+
+          rcBack:
+            getFilePath(
+              "rcBack"
+            ),
+
+          insurance:
+            getFilePath(
+              "insurance"
+            ),
+
+          idFront:
+            getFilePath(
+              "idFront"
+            ),
+
+          idBack:
+            getFilePath(
+              "idBack"
+            ),
+
+          profilePhoto:
+            getFilePath(
+              "profilePhoto"
+            ),
+
+          profilePhotoPublicId:
+            getFilePublicId(
+              "profilePhoto"
+            ),
+
+          /* STATUS */
+
+          status:
+            "pending",
+
+          rejectionReason:
+            null,
+
+          isOnline:
+            false,
+
+          currentStatus:
+            "offline",
+        });
+
+      /* ===================================================
+         PUBLIC DRIVER ID
+      =================================================== */
+
+      driver.driverId =
+        `ASAN-${driver._id
+          .toString()
+          .slice(
+            -6
+          )
+          .toUpperCase()}`;
+
+      /* ===================================================
+         SAVE DRIVER
+      =================================================== */
+
+      await driver.save();
+
+      driverSaved =
+        true;
+
+      /* ===================================================
+         CONSUME REGISTRATION OTP
+
+         Driver is created successfully, therefore OTP can
+         now be permanently removed.
+      =================================================== */
+
+      await Otp.deleteOne({
+        email,
+
+        purpose:
+          DRIVER_REGISTER_PURPOSE,
+      });
+
+      /* ===================================================
+         JWT
+      =================================================== */
+
+      const token =
+        createDriverToken(
+          driver
+        );
+
+      /* ===================================================
+         RESPONSE
+      =================================================== */
+
+      return res
+        .status(201)
+        .json({
+          success:
+            true,
+
+          message:
+            "Driver registered successfully. Your application is pending approval.",
+
+          token,
+
+          tokenType:
+            "Bearer",
+
+          expiresIn:
+            "7d",
+
+          status:
+            "pending",
+
+          code:
+            "DRIVER_PENDING",
+
+          nextStep:
+            "approval-pending",
+
+          rejectionReason:
+            null,
+
+          data:
+            getSafeDriver(
+              driver
+            ),
+        });
+    } catch (
+      error
+    ) {
+      if (
+        !driverSaved
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+      }
+
+      console.error(
+        "VERIFY DRIVER REGISTER OTP ERROR:",
+        error
+      );
+
+      /* ===================================================
+         DUPLICATE
+      =================================================== */
+
+      if (
+        error?.code ===
+        11000
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver account already exists",
+          });
+      }
+
+      /* ===================================================
+         VALIDATION
+      =================================================== */
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        const validationMessage =
+          Object.values(
+            error.errors ||
+              {}
+          )?.[0]
+            ?.message ||
+          error.message;
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              validationMessage,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to register Driver",
+        });
+    }
+  };
+
+/* =========================================================
+   SEND DRIVER LOGIN OTP
+========================================================= */
+
+export const sendLoginOtp =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const email =
+        normalizeEmail(
+          req.body
+            ?.email
+        );
+
+      /* ===================================================
+         EMAIL
+      =================================================== */
+
+      if (
+        !email ||
+        !isValidEmail(
+          email
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid email address",
+          });
+      }
+
+      /* ===================================================
+         DRIVER
       =================================================== */
 
       const driver =
@@ -790,17 +1801,16 @@ export const sendLoginOtp =
       }
 
       /* ===================================================
-         SEND OTP
+         SEND
       =================================================== */
 
       const result =
         await createAndSendDriverOtp({
           email,
-        });
 
-      /* ===================================================
-         COOLDOWN
-      =================================================== */
+          purpose:
+            DRIVER_LOGIN_PURPOSE,
+        });
 
       if (
         !result.success &&
@@ -819,10 +1829,6 @@ export const sendLoginOtp =
               result.secondsRemaining,
           });
       }
-
-      /* ===================================================
-         RESPONSE
-      =================================================== */
 
       return res
         .status(200)
@@ -860,36 +1866,17 @@ export const sendLoginOtp =
    VERIFY DRIVER LOGIN OTP
 ========================================================= */
 
-/*
-  POST /api/driver-auth/verify-login-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com",
-    "otp": "123456"
-  }
-*/
-
 export const verifyLoginOtp =
   async (
     req,
     res
   ) => {
     try {
-      /* ===================================================
-         EMAIL
-      =================================================== */
-
       const email =
         normalizeEmail(
           req.body
             ?.email
         );
-
-      /* ===================================================
-         OTP
-      =================================================== */
 
       const otp =
         validateOtpInput(
@@ -898,7 +1885,7 @@ export const verifyLoginOtp =
         );
 
       /* ===================================================
-         EMAIL VALIDATION
+         EMAIL
       =================================================== */
 
       if (
@@ -919,7 +1906,7 @@ export const verifyLoginOtp =
       }
 
       /* ===================================================
-         OTP VALIDATION
+         OTP
       =================================================== */
 
       if (
@@ -937,13 +1924,19 @@ export const verifyLoginOtp =
       }
 
       /* ===================================================
-         VERIFY OTP
+         VERIFY
       =================================================== */
 
       const verification =
         await verifyStoredDriverOtp({
           email,
           otp,
+
+          purpose:
+            DRIVER_LOGIN_PURPOSE,
+
+          consume:
+            true,
         });
 
       if (
@@ -963,16 +1956,8 @@ export const verifyLoginOtp =
       }
 
       /* ===================================================
-         FETCH DRIVER AGAIN
+         CURRENT DRIVER
       =================================================== */
-
-      /*
-        We fetch the Driver again after OTP verification.
-
-        This ensures that approval/rejection state is
-        always current even if Admin changed it while
-        the OTP was being entered.
-      */
 
       const driver =
         await Driver.findByEmail(
@@ -994,17 +1979,13 @@ export const verifyLoginOtp =
       }
 
       /* ===================================================
-         JWT
+         TOKEN
       =================================================== */
 
       const token =
         createDriverToken(
           driver
         );
-
-      /* ===================================================
-         STATUS
-      =================================================== */
 
       const statusInfo =
         getDriverStatusInfo(
@@ -1075,24 +2056,12 @@ export const verifyLoginOtp =
    GET CURRENT DRIVER
 ========================================================= */
 
-/*
-  GET /api/driver-auth/me
-
-  HEADER:
-
-  Authorization: Bearer <DRIVER_JWT>
-*/
-
 export const getCurrentDriver =
   async (
     req,
     res
   ) => {
     try {
-      /* ===================================================
-         AUTHENTICATED DRIVER
-      =================================================== */
-
       if (
         !req.driver
       ) {
@@ -1106,10 +2075,6 @@ export const getCurrentDriver =
               "Driver authentication required",
           });
       }
-
-      /* ===================================================
-         CURRENT DATABASE STATE
-      =================================================== */
 
       const driver =
         await Driver.findById(
@@ -1134,10 +2099,6 @@ export const getCurrentDriver =
         getDriverStatusInfo(
           driver
         );
-
-      /* ===================================================
-         RESPONSE
-      =================================================== */
 
       return res
         .status(200)
@@ -1188,34 +2149,12 @@ export const getCurrentDriver =
    DRIVER LOGOUT
 ========================================================= */
 
-/*
-  POST /api/driver-auth/logout
-
-  HEADER:
-
-  Authorization: Bearer <DRIVER_JWT>
-
-  OPTIONAL BODY:
-
-  {
-    "fcmToken": "..."
-  }
-
-  JWT is stateless.
-
-  Frontend must delete the JWT locally after logout.
-*/
-
 export const logoutDriver =
   async (
     req,
     res
   ) => {
     try {
-      /* ===================================================
-         AUTHENTICATION
-      =================================================== */
-
       if (
         !req.driver
       ) {
@@ -1231,7 +2170,7 @@ export const logoutDriver =
       }
 
       /* ===================================================
-         FCM TOKEN
+         OPTIONAL FCM TOKEN
       =================================================== */
 
       const fcmToken =
@@ -1259,7 +2198,7 @@ export const logoutDriver =
       }
 
       /* ===================================================
-         OFFLINE STATUS
+         OFFLINE
       =================================================== */
 
       await Driver.findByIdAndUpdate(
@@ -1275,10 +2214,6 @@ export const logoutDriver =
           },
         }
       );
-
-      /* ===================================================
-         RESPONSE
-      =================================================== */
 
       return res
         .status(200)
