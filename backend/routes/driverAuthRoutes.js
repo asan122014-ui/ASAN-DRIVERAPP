@@ -16,8 +16,8 @@ import {
 } from "../config/cloudinary.js";
 
 import {
-  signupLimiter,
-  loginLimiter,
+  driverOtpSendLimiter,
+  driverOtpVerifyLimiter,
 } from "../middleware/rateLimiters.js";
 
 /* =========================================================
@@ -42,15 +42,23 @@ const router =
     "email": "driver@example.com"
   }
 
-  This sends an OTP to the Driver email.
+  FLOW:
 
-  No Driver account is created yet.
+  Driver enters email
+        ↓
+  Registration OTP is generated
+        ↓
+  OTP is stored as a SHA-256 hash
+        ↓
+  OTP is sent through Resend
+        ↓
+  No Driver account is created yet
 */
 
 router.post(
   "/send-register-otp",
 
-  signupLimiter,
+  driverOtpSendLimiter,
 
   sendRegisterOtp
 );
@@ -68,6 +76,7 @@ router.post(
 
   multipart/form-data
 
+
   TEXT FIELDS:
 
   email
@@ -82,7 +91,8 @@ router.post(
   vehicleModel
   licenseNumber
 
-  FILE FIELDS:
+
+  REQUIRED FILE FIELDS:
 
   licenseFront
   licenseBack
@@ -91,19 +101,40 @@ router.post(
   insurance
   idFront
   idBack
+
+
+  OPTIONAL FILE FIELD:
+
   profilePhoto
 
-  After successful OTP verification:
 
-  Driver account is created with:
+  FLOW:
 
-  status = "pending"
+  Driver submits OTP
+        +
+  Driver details
+        +
+  Driver documents
+        ↓
+  OTP is verified
+        ↓
+  Required details are validated
+        ↓
+  Required documents are validated
+        ↓
+  Driver account is created
+        ↓
+  Driver status = pending
+        ↓
+  Public Driver ID generated
+        ↓
+  ASAN Driver JWT issued
 */
 
 router.post(
   "/verify-register-otp",
 
-  signupLimiter,
+  driverOtpVerifyLimiter,
 
   driverUpload.fields([
     {
@@ -189,13 +220,23 @@ router.post(
     "email": "driver@example.com"
   }
 
-  Sends a 6-digit OTP to the registered Driver email.
+  FLOW:
+
+  Driver enters registered email
+        ↓
+  Existing Driver account is checked
+        ↓
+  6-digit OTP generated
+        ↓
+  OTP hash stored in MongoDB
+        ↓
+  OTP sent through Resend
 */
 
 router.post(
   "/send-login-otp",
 
-  loginLimiter,
+  driverOtpSendLimiter,
 
   sendLoginOtp
 );
@@ -216,20 +257,47 @@ router.post(
     "otp": "123456"
   }
 
-  If OTP is valid:
+
+  FLOW:
+
+  Driver submits email + OTP
+        ↓
+  OTP is verified
+        ↓
+  Current Driver loaded from MongoDB
+        ↓
+  ASAN Driver JWT created
+
+
+  JWT PAYLOAD:
 
   {
-    id: "<Driver MongoDB _id>",
+    id: "<MongoDB Driver _id>",
     tokenType: "driver"
   }
 
-  is signed into the JWT.
+
+  ACCOUNT STATUS:
+
+  pending
+        ↓
+  approval-pending
+
+
+  approved
+        ↓
+  dashboard
+
+
+  rejected
+        ↓
+  application-rejected
 */
 
 router.post(
   "/verify-login-otp",
 
-  loginLimiter,
+  driverOtpVerifyLimiter,
 
   verifyLoginOtp
 );
@@ -245,16 +313,17 @@ router.post(
 
   Authorization: Bearer <DRIVER_JWT>
 
-  Works for:
+
+  This endpoint works for:
 
   pending
   approved
   rejected
 
-  Drivers because verifyDriver only authenticates
-  the Driver account.
 
-  Approval-based access is handled separately.
+  verifyDriver only verifies authentication.
+
+  It does NOT require approval.
 */
 
 router.get(
@@ -276,11 +345,28 @@ router.get(
 
   Authorization: Bearer <DRIVER_JWT>
 
+
   OPTIONAL BODY:
 
   {
     "fcmToken": "..."
   }
+
+
+  If fcmToken is supplied:
+
+  it is removed from the Driver account.
+
+
+  Driver is also marked:
+
+  isOnline = false
+  currentStatus = offline
+
+
+  JWT itself is stateless.
+
+  The frontend must delete the stored Driver JWT locally.
 */
 
 router.post(
@@ -290,6 +376,46 @@ router.post(
 
   logoutDriver
 );
+
+/* =========================================================
+   FINAL DRIVER AUTH ENDPOINTS
+========================================================= */
+
+/*
+
+  REGISTRATION
+
+  POST /api/driver-auth/send-register-otp
+
+  POST /api/driver-auth/verify-register-otp
+
+
+  LOGIN
+
+  POST /api/driver-auth/send-login-otp
+
+  POST /api/driver-auth/verify-login-otp
+
+
+  SESSION
+
+  GET /api/driver-auth/me
+
+  POST /api/driver-auth/logout
+
+
+  IMPORTANT:
+
+  Driver authentication is completely passwordless.
+
+  There is no:
+
+  /login with password
+  bcrypt password comparison
+  password field in Driver registration
+  password stored in Driver MongoDB documents
+
+*/
 
 /* =========================================================
    EXPORT
