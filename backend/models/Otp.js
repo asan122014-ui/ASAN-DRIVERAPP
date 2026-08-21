@@ -35,16 +35,25 @@ const otpSchema =
       /* =====================================================
          PURPOSE
 
-         Prevents a registration OTP from being
-         used for login and vice versa.
+         Keeps OTP flows isolated.
+
+         Parent:
+           login
+           register
+
+         Driver:
+           driver_login
       ===================================================== */
 
       purpose: {
         type: String,
+
         enum: [
           "login",
           "register",
+          "driver_login",
         ],
+
         required: true,
         index: true,
       },
@@ -72,13 +81,14 @@ const otpSchema =
       /* =====================================================
          MAXIMUM ATTEMPTS
 
-         After this many wrong OTP entries,
-         the OTP must no longer be accepted.
+         After this many incorrect OTP attempts,
+         the OTP becomes unusable.
       ===================================================== */
 
       maxAttempts: {
         type: Number,
         default: 5,
+        min: 1,
       },
 
       /* =====================================================
@@ -106,7 +116,7 @@ const otpSchema =
       /* =====================================================
          LAST SENT AT
 
-         Useful for resend cooldown.
+         Used for resend cooldown.
       ===================================================== */
 
       lastSentAt: {
@@ -121,14 +131,19 @@ const otpSchema =
   );
 
 /* =========================================================
-   UNIQUE ACTIVE OTP KEY
+   UNIQUE OTP KEY
 
    Only one OTP document should exist for:
 
    email + purpose
 
-   When sending a new OTP, update/replace the
-   existing record rather than creating many.
+   Example:
+
+   parent@gmail.com + login
+   parent@gmail.com + register
+   driver@gmail.com + driver_login
+
+   These remain separate.
 ========================================================= */
 
 otpSchema.index(
@@ -136,6 +151,7 @@ otpSchema.index(
     email: 1,
     purpose: 1,
   },
+
   {
     unique: true,
   }
@@ -144,17 +160,18 @@ otpSchema.index(
 /* =========================================================
    TTL INDEX
 
-   MongoDB automatically removes expired OTP
-   documents after expiresAt is reached.
+   MongoDB removes expired OTP documents automatically.
 
-   expireAfterSeconds: 0 means expiresAt itself
-   controls the deletion time.
+   Important:
+   TTL cleanup is not instantaneous, so controller code
+   must still check expiresAt before accepting an OTP.
 ========================================================= */
 
 otpSchema.index(
   {
     expiresAt: 1,
   },
+
   {
     expireAfterSeconds: 0,
   }
@@ -168,7 +185,9 @@ otpSchema.statics.normalizeEmail =
   function (
     email
   ) {
-    if (!email) {
+    if (
+      !email
+    ) {
       return "";
     }
 
