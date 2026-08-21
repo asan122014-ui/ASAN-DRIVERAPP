@@ -89,6 +89,10 @@ const ADMIN_ROLES =
 const app =
   express();
 
+/* =========================================================
+   TRUST PROXY
+========================================================= */
+
 const trustProxyHops =
   Number(
     process.env
@@ -303,15 +307,19 @@ if (
 }
 
 /* =========================================================
-   LEGACY AUTH ROUTES
+   COMPATIBILITY AUTH ROUTES
 ========================================================= */
 
 /*
-  Existing auth routes are kept for compatibility.
+  /api/auth is retained only for existing compatibility
+  endpoints such as:
 
-  Do NOT use this route for the new Driver login frontend.
+  POST /api/auth/save-token
+  GET  /api/auth/by-id/:driverId
 
-  New Driver authentication uses:
+  Driver registration and Driver login are NOT handled here.
+
+  Driver authentication now belongs completely to:
 
   /api/driver-auth
 */
@@ -326,29 +334,150 @@ app.use(
 ========================================================= */
 
 /*
-  Driver authentication:
+  Driver authentication is completely passwordless.
 
-  Email
-      +
-  Password
-      ↓
-  MongoDB Driver
-      ↓
-  bcrypt verification
-      ↓
-  ASAN Driver JWT
+  No password is stored in Driver documents.
+  No bcrypt password verification is used.
 
-  JWT payload:
+  =======================================================
+  DRIVER REGISTRATION
+  =======================================================
+
+  STEP 1
+
+  POST /api/driver-auth/send-register-otp
+
+  BODY:
+
+  {
+    "email": "driver@example.com"
+  }
+
+          ↓
+
+  6-digit OTP sent through Resend
+
+          ↓
+
+  STEP 2
+
+  POST /api/driver-auth/verify-register-otp
+
+  multipart/form-data
+
+  Includes:
+
+  email
+  otp
+  name
+  phone
+  address
+  latitude
+  longitude
+  vehicleNumber
+  vehicleType
+  vehicleModel
+  licenseNumber
+
+  Driver documents:
+
+  licenseFront
+  licenseBack
+  rcFront
+  rcBack
+  insurance
+  idFront
+  idBack
+  profilePhoto
+
+          ↓
+
+  OTP verified
+
+          ↓
+
+  Driver created in MongoDB
+
+          ↓
+
+  status = pending
+
+          ↓
+
+  ASAN Driver JWT issued
+
+
+  =======================================================
+  DRIVER LOGIN
+  =======================================================
+
+  STEP 1
+
+  POST /api/driver-auth/send-login-otp
+
+  BODY:
+
+  {
+    "email": "driver@example.com"
+  }
+
+          ↓
+
+  Login OTP sent through Resend
+
+          ↓
+
+  STEP 2
+
+  POST /api/driver-auth/verify-login-otp
+
+  BODY:
+
+  {
+    "email": "driver@example.com",
+    "otp": "123456"
+  }
+
+          ↓
+
+  OTP verified
+
+          ↓
+
+  Current Driver loaded from MongoDB
+
+          ↓
+
+  ASAN Driver JWT issued
+
+
+  =======================================================
+  DRIVER JWT
+  =======================================================
 
   {
     id: "<MongoDB Driver _id>",
     tokenType: "driver"
   }
 
-  Endpoints:
+  We intentionally do NOT put:
 
-  POST /api/driver-auth/login
+  driverId
+  email
+  phone
+  approval status
+
+  inside the token.
+
+  Those values are always loaded fresh from MongoDB.
+
+
+  =======================================================
+  DRIVER SESSION
+  =======================================================
+
   GET  /api/driver-auth/me
+
   POST /api/driver-auth/logout
 */
 
@@ -372,7 +501,7 @@ app.use(
       ↓
   ASAN Parent JWT
 
-  JWT payload:
+  JWT:
 
   {
     id: "<MongoDB Parent _id>",
@@ -535,7 +664,7 @@ const driverParentsMap =
   new Map();
 
 /* =========================================================
-   CONNECTION HELPERS
+   ADD CONNECTION
 ========================================================= */
 
 const addConnection = (
@@ -618,6 +747,9 @@ const removeConnection = (
 ========================================================= */
 
 /*
+  Driver Socket.IO authentication uses the same JWT
+  created by OTP registration/login.
+
   Driver JWT:
 
   {
@@ -627,10 +759,18 @@ const removeConnection = (
 
   IMPORTANT:
 
-  driverId is NOT stored inside the JWT anymore.
+  OTP is only used to issue the JWT.
 
-  We load the latest Driver account from MongoDB
-  and obtain driverId from there.
+  Socket.IO does NOT verify OTP again.
+
+  It verifies the existing Driver JWT and loads
+  the current Driver from MongoDB.
+
+  Pending and rejected Drivers can authenticate
+  through the HTTP OTP flow to view their status.
+
+  Only APPROVED Drivers may establish an
+  operational Driver socket connection.
 */
 
 const authenticateDriverSocket =
@@ -692,7 +832,7 @@ const authenticateDriverSocket =
     const driverMongoId =
       String(
         decoded.id
-      );
+      ).trim();
 
     if (
       !mongoose.Types.ObjectId.isValid(
@@ -733,14 +873,6 @@ const authenticateDriverSocket =
     /* =====================================================
        APPROVAL
     ===================================================== */
-
-    /*
-      Pending and rejected Drivers may authenticate
-      through HTTP login to see their account status.
-
-      But they cannot establish an operational
-      Driver socket connection.
-    */
 
     if (
       driver.status !==
@@ -824,7 +956,7 @@ const authenticateAdminSocket =
       );
 
     /* =====================================================
-       TOKEN
+       TOKEN STRUCTURE
     ===================================================== */
 
     if (
@@ -917,7 +1049,7 @@ const authenticateAdminSocket =
 ========================================================= */
 
 /*
-  Expected Parent JWT:
+  Parent JWT:
 
   {
     id: "<MongoDB Parent _id>",
@@ -1119,12 +1251,13 @@ io.use(
       =================================================== */
 
       /*
-        jwt.decode is used only to determine
-        which authentication handler should verify
-        the token.
+        jwt.decode is only used to decide which
+        authentication handler should verify the token.
 
-        Real verification happens inside each
-        authenticate*Socket function.
+        The token is fully cryptographically verified inside
+        authenticateDriverSocket(),
+        authenticateParentSocket(),
+        or authenticateAdminSocket().
       */
 
       let tokenHint =
@@ -1292,7 +1425,7 @@ const verifyParentDriverLink =
     }
 
     /* =====================================================
-       ENSURE DRIVER IS STILL APPROVED
+       DRIVER MUST STILL BE APPROVED
     ===================================================== */
 
     const driverExists =
@@ -1422,9 +1555,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              DRIVER
-          ================================================= */
+          =============================================== */
 
           if (
             user.role ===
@@ -1444,9 +1577,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              PARENT
-          ================================================= */
+          =============================================== */
 
           if (
             user.role ===
@@ -1770,9 +1903,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              DRIVER → PARENT
-          ================================================= */
+          =============================================== */
 
           if (
             user.role ===
@@ -1821,9 +1954,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              PARENT → DRIVER
-          ================================================= */
+          =============================================== */
 
           if (
             user.role ===
@@ -1999,9 +2132,9 @@ io.on(
           } =
             data;
 
-          /* =================================================
+          /* ===============================================
              LOCATION REQUIRED
-          ================================================= */
+          =============================================== */
 
           if (
             lat ===
@@ -2022,9 +2155,9 @@ io.on(
               lng
             );
 
-          /* =================================================
+          /* ===============================================
              COORDINATE VALIDATION
-          ================================================= */
+          =============================================== */
 
           if (
             !Number.isFinite(
@@ -2050,9 +2183,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              SPEED
-          ================================================= */
+          =============================================== */
 
           const speedNumber =
             Number(
@@ -2068,9 +2201,9 @@ io.on(
               ? speedNumber
               : 0;
 
-          /* =================================================
+          /* ===============================================
              HEADING
-          ================================================= */
+          =============================================== */
 
           const headingNumber =
             Number(
@@ -2088,9 +2221,9 @@ io.on(
               ? headingNumber
               : 0;
 
-          /* =================================================
+          /* ===============================================
              ACCURACY
-          ================================================= */
+          =============================================== */
 
           const accuracyNumber =
             Number(
@@ -2106,9 +2239,9 @@ io.on(
               ? accuracyNumber
               : null;
 
-          /* =================================================
+          /* ===============================================
              ETA
-          ================================================= */
+          =============================================== */
 
           const safeEta =
             typeof eta ===
@@ -2125,9 +2258,9 @@ io.on(
           const updatedAt =
             new Date();
 
-          /* =================================================
-             LOAD DRIVER
-          ================================================= */
+          /* ===============================================
+             LOAD APPROVED DRIVER
+          =============================================== */
 
           const driver =
             await Driver.findOne({
@@ -2144,14 +2277,9 @@ io.on(
             return;
           }
 
-          /* =================================================
+          /* ===============================================
              UPDATE LIVE LOCATION
-          ================================================= */
-
-          /*
-            Uses the Driver model method so REST and
-            Socket location updates use the same logic.
-          */
+          =============================================== */
 
           driver.updateLiveLocation({
             lat:
@@ -2173,9 +2301,9 @@ io.on(
               safeAccuracy,
           });
 
-          /* =================================================
+          /* ===============================================
              ONLINE STATUS
-          ================================================= */
+          =============================================== */
 
           driver.isOnline =
             true;
@@ -2190,9 +2318,9 @@ io.on(
 
           await driver.save();
 
-          /* =================================================
+          /* ===============================================
              BROADCAST
-          ================================================= */
+          =============================================== */
 
           const locationPayload =
             {
@@ -2298,9 +2426,9 @@ io.on(
           user.role
         );
 
-        /* =================================================
+        /* ===============================================
            DRIVER
-        ================================================= */
+        =============================================== */
 
         if (
           user.role ===
@@ -2314,8 +2442,8 @@ io.on(
             );
 
           /*
-            Only mark Driver offline once all of that
-            Driver's socket connections are gone.
+            Only mark Driver offline when all socket
+            connections for this Driver are gone.
           */
 
           if (
@@ -2349,9 +2477,9 @@ io.on(
           return;
         }
 
-        /* =================================================
+        /* ===============================================
            PARENT
-        ================================================= */
+        =============================================== */
 
         if (
           user.role ===
@@ -2576,6 +2704,22 @@ connectDB()
 
           console.log(
             "Driver Auth: /api/driver-auth"
+          );
+
+          console.log(
+            "Driver Register OTP: /api/driver-auth/send-register-otp"
+          );
+
+          console.log(
+            "Driver Verify Register OTP: /api/driver-auth/verify-register-otp"
+          );
+
+          console.log(
+            "Driver Login OTP: /api/driver-auth/send-login-otp"
+          );
+
+          console.log(
+            "Driver Verify Login OTP: /api/driver-auth/verify-login-otp"
           );
 
           console.log(
