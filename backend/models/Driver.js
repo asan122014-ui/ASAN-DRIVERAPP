@@ -2,6 +2,82 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
 /* =========================================================
+   REUSABLE GEO POINT SCHEMA
+========================================================= */
+
+const geoPointSchema =
+  new mongoose.Schema(
+    {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+
+      coordinates: {
+        type: [Number],
+        required: true,
+
+        /*
+          GeoJSON format:
+
+          [
+            longitude,
+            latitude
+          ]
+        */
+
+        validate: {
+          validator(
+            coordinates
+          ) {
+            if (
+              !Array.isArray(
+                coordinates
+              ) ||
+              coordinates.length !==
+                2
+            ) {
+              return false;
+            }
+
+            const [
+              longitude,
+              latitude,
+            ] =
+              coordinates.map(
+                Number
+              );
+
+            return (
+              Number.isFinite(
+                longitude
+              ) &&
+              Number.isFinite(
+                latitude
+              ) &&
+              longitude >=
+                -180 &&
+              longitude <=
+                180 &&
+              latitude >=
+                -90 &&
+              latitude <=
+                90
+            );
+          },
+
+          message:
+            "Location must contain valid [longitude, latitude] coordinates",
+        },
+      },
+    },
+    {
+      _id: false,
+    }
+  );
+
+/* =========================================================
    DRIVER SCHEMA
 ========================================================= */
 
@@ -16,14 +92,47 @@ const driverSchema =
         type: String,
         required: true,
         trim: true,
+
+        minlength: [
+          2,
+          "Driver name must contain at least 2 characters",
+        ],
+
+        maxlength: [
+          100,
+          "Driver name is too long",
+        ],
       },
 
       phone: {
         type: String,
         required: true,
         unique: true,
-        index: true,
         trim: true,
+
+        set(
+          value
+        ) {
+          return String(
+            value || ""
+          ).replace(
+            /\D/g,
+            ""
+          );
+        },
+
+        validate: {
+          validator(
+            value
+          ) {
+            return /^[6-9]\d{9}$/.test(
+              value
+            );
+          },
+
+          message:
+            "Enter a valid 10-digit Indian mobile number",
+        },
       },
 
       email: {
@@ -32,23 +141,57 @@ const driverSchema =
         unique: true,
         lowercase: true,
         trim: true,
+
+        set(
+          value
+        ) {
+          return String(
+            value || ""
+          )
+            .trim()
+            .toLowerCase();
+        },
+
+        validate: {
+          validator(
+            value
+          ) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+              value
+            );
+          },
+
+          message:
+            "Enter a valid email address",
+        },
       },
 
       /* =====================================================
-         PASSWORD
+         DRIVER AUTHENTICATION
       ===================================================== */
 
       /*
-        KEEP FOR NOW.
+        Driver authentication:
 
-        Driver authentication migration will be
-        handled separately later.
+        Email
+          +
+        Password
+
+        Password is never returned by normal queries.
+        Login controller must explicitly use:
+
+        .select("+password")
       */
 
       password: {
         type: String,
         required: true,
-        minlength: 6,
+
+        minlength: [
+          6,
+          "Password must contain at least 6 characters",
+        ],
+
         select: false,
       },
 
@@ -56,70 +199,42 @@ const driverSchema =
         type: String,
         required: true,
         trim: true,
+
+        maxlength: [
+          500,
+          "Address is too long",
+        ],
       },
 
       /* =====================================================
          HOME LOCATION
       ===================================================== */
 
+      /*
+        Driver's registered home/base location.
+
+        GeoJSON:
+
+        {
+          type: "Point",
+          coordinates: [
+            longitude,
+            latitude
+          ]
+        }
+
+        Do NOT default this to [0, 0].
+
+        [0, 0] is a real geographic position and would
+        incorrectly make an unknown Driver appear there.
+      */
+
       homeLocation: {
-        type: {
-          type: String,
-          enum: ["Point"],
-          default: "Point",
-        },
+        type:
+          geoPointSchema,
 
-        coordinates: {
-          type: [Number],
-
-          /*
-            GeoJSON format:
-
-            [longitude, latitude]
-          */
-
-          default: [0, 0],
-
-          validate: {
-            validator(
-              coordinates
-            ) {
-              if (
-                !Array.isArray(
-                  coordinates
-                ) ||
-                coordinates.length !==
-                  2
-              ) {
-                return false;
-              }
-
-              const [
-                longitude,
-                latitude,
-              ] =
-                coordinates.map(
-                  Number
-                );
-
-              return (
-                Number.isFinite(
-                  longitude
-                ) &&
-                Number.isFinite(
-                  latitude
-                ) &&
-                longitude >= -180 &&
-                longitude <= 180 &&
-                latitude >= -90 &&
-                latitude <= 90
-              );
-            },
-
-            message:
-              "Home location must contain valid [longitude, latitude] coordinates",
-          },
-        },
+        default:
+          undefined,
       },
 
       /* =====================================================
@@ -129,8 +244,22 @@ const driverSchema =
       vehicleNumber: {
         type: String,
         required: true,
-        uppercase: true,
         trim: true,
+        uppercase: true,
+
+        set(
+          value
+        ) {
+          return String(
+            value || ""
+          )
+            .trim()
+            .toUpperCase()
+            .replace(
+              /\s+/g,
+              ""
+            );
+        },
       },
 
       vehicleType: {
@@ -143,6 +272,17 @@ const driverSchema =
         type: String,
         required: true,
         trim: true,
+        uppercase: true,
+
+        set(
+          value
+        ) {
+          return String(
+            value || ""
+          )
+            .trim()
+            .toUpperCase();
+        },
       },
 
       vehicleModel: {
@@ -152,70 +292,128 @@ const driverSchema =
       },
 
       /* =====================================================
-         DOCUMENTS
+         DRIVER DOCUMENTS
       ===================================================== */
 
       licenseFront: {
         type: String,
         required: true,
+        trim: true,
       },
 
       licenseBack: {
         type: String,
         required: true,
+        trim: true,
       },
 
       rcFront: {
         type: String,
         required: true,
+        trim: true,
       },
 
       rcBack: {
         type: String,
         required: true,
+        trim: true,
       },
 
       insurance: {
         type: String,
         required: true,
+        trim: true,
       },
 
       idFront: {
         type: String,
         required: true,
+        trim: true,
       },
 
       idBack: {
         type: String,
         required: true,
+        trim: true,
       },
+
+      /* =====================================================
+         PROFILE IMAGE
+      ===================================================== */
 
       profilePhoto: {
         type: String,
         default: "",
+        trim: true,
       },
 
       profilePhotoPublicId: {
         type: String,
         default: "",
+        trim: true,
       },
+
+      /*
+        Retained for compatibility with existing
+        frontend/backend code.
+
+        Later, if avatar and profilePhoto serve the
+        same purpose, we can migrate to one field.
+      */
 
       avatar: {
         type: String,
         default: "",
+        trim: true,
       },
 
       /* =====================================================
-         DRIVER IDENTIFIER
+         PUBLIC DRIVER IDENTIFIER
       ===================================================== */
+
+      /*
+        This is the Driver ID given to Parents.
+
+        Example:
+
+        ASAN-D00123
+
+        Parent onboarding uses this value instead of
+        MongoDB's _id.
+
+        A pending Driver may not have a Driver ID yet,
+        therefore sparse is retained.
+      */
 
       driverId: {
         type: String,
         unique: true,
-        index: true,
         trim: true,
         uppercase: true,
         sparse: true,
+
+        set(
+          value
+        ) {
+          if (
+            value ===
+              null ||
+            value ===
+              undefined ||
+            String(
+              value
+            ).trim() ===
+              ""
+          ) {
+            return undefined;
+          }
+
+          return String(
+            value
+          )
+            .trim()
+            .toUpperCase();
+        },
       },
 
       /* =====================================================
@@ -231,8 +429,11 @@ const driverSchema =
           "rejected",
         ],
 
-        default: "pending",
-        index: true,
+        default:
+          "pending",
+
+        index:
+          true,
       },
 
       rejectionReason: {
@@ -245,13 +446,54 @@ const driverSchema =
          FCM TOKENS
       ===================================================== */
 
+      /*
+        Driver may use multiple devices/sessions.
+
+        Store Web/Android FCM registration tokens here.
+
+        Firebase Authentication is NOT being used.
+        Firebase remains only for Messaging / FCM.
+      */
+
       fcmTokens: {
-        type: [String],
+        type: [
+          String,
+        ],
+
         default: [],
+
+        set(
+          tokens
+        ) {
+          if (
+            !Array.isArray(
+              tokens
+            )
+          ) {
+            return [];
+          }
+
+          return [
+            ...new Set(
+              tokens
+                .map(
+                  (
+                    token
+                  ) =>
+                    String(
+                      token || ""
+                    ).trim()
+                )
+                .filter(
+                  Boolean
+                )
+            ),
+          ];
+        },
       },
 
       /* =====================================================
-         PERFORMANCE
+         DRIVER PERFORMANCE
       ===================================================== */
 
       rating: {
@@ -280,69 +522,37 @@ const driverSchema =
       },
 
       /* =====================================================
-         GEO LOCATION
+         CURRENT GEO LOCATION
       ===================================================== */
 
       /*
-        This can be used for geospatial queries
-        such as nearby Drivers.
+        Driver's current operational location.
+
+        Used for:
+
+        - nearby Driver queries
+        - live trip operations
+        - geospatial lookup
 
         GeoJSON:
 
-        [longitude, latitude]
+        {
+          type: "Point",
+          coordinates: [
+            longitude,
+            latitude
+          ]
+        }
+
+        No [0, 0] default is used.
       */
 
       location: {
-        type: {
-          type: String,
-          enum: ["Point"],
-          default: "Point",
-        },
+        type:
+          geoPointSchema,
 
-        coordinates: {
-          type: [Number],
-          default: [0, 0],
-
-          validate: {
-            validator(
-              coordinates
-            ) {
-              if (
-                !Array.isArray(
-                  coordinates
-                ) ||
-                coordinates.length !==
-                  2
-              ) {
-                return false;
-              }
-
-              const [
-                longitude,
-                latitude,
-              ] =
-                coordinates.map(
-                  Number
-                );
-
-              return (
-                Number.isFinite(
-                  longitude
-                ) &&
-                Number.isFinite(
-                  latitude
-                ) &&
-                longitude >= -180 &&
-                longitude <= 180 &&
-                latitude >= -90 &&
-                latitude <= 90
-              );
-            },
-
-            message:
-              "Driver location must contain valid [longitude, latitude] coordinates",
-          },
-        },
+        default:
+          undefined,
       },
 
       /* =====================================================
@@ -350,11 +560,14 @@ const driverSchema =
       ===================================================== */
 
       /*
-        This stores only the Driver's latest location.
+        Lightweight representation of the latest
+        Driver location.
 
-        Updated from:
+        This can be updated from:
 
         socket.emit("send_location")
+
+        and used by Parent live tracking.
       */
 
       lastLocation: {
@@ -426,20 +639,26 @@ const driverSchema =
           "offline",
         ],
 
-        default: "idle",
-        index: true,
+        default:
+          "offline",
+
+        index:
+          true,
       },
     },
 
     {
-      timestamps: true,
+      timestamps:
+        true,
 
       toJSON: {
-        virtuals: true,
+        virtuals:
+          true,
       },
 
       toObject: {
-        virtuals: true,
+        virtuals:
+          true,
       },
     }
   );
@@ -453,40 +672,54 @@ const driverSchema =
 */
 
 driverSchema.index({
-  location: "2dsphere",
+  location:
+    "2dsphere",
 });
 
 /*
-  Driver home location.
+  Registered Driver home location.
 */
 
 driverSchema.index({
-  homeLocation: "2dsphere",
+  homeLocation:
+    "2dsphere",
 });
 
 /*
-  Fast operational status lookup.
+  Operational Driver lookup.
+
+  Useful for queries such as:
+
+  approved
+  +
+  online
+  +
+  idle
 */
 
 driverSchema.index({
-  status: 1,
-  isOnline: 1,
-  currentStatus: 1,
+  status:
+    1,
+
+  isOnline:
+    1,
+
+  currentStatus:
+    1,
 });
 
 /* =========================================================
-   HASH PASSWORD
+   PASSWORD HASHING
 ========================================================= */
-
-/*
-  KEEP FOR NOW.
-
-  Driver authentication will be migrated separately.
-*/
 
 driverSchema.pre(
   "save",
   async function () {
+    /*
+      Do not hash password again when some unrelated
+      Driver field is updated.
+    */
+
     if (
       !this.isModified(
         "password"
@@ -495,9 +728,14 @@ driverSchema.pre(
       return;
     }
 
+    /*
+      bcrypt cost factor 12 provides a reasonable
+      security/performance balance for this application.
+    */
+
     const salt =
       await bcrypt.genSalt(
-        10
+        12
       );
 
     this.password =
@@ -513,28 +751,208 @@ driverSchema.pre(
 ========================================================= */
 
 driverSchema.methods.comparePassword =
-  function (
+  async function (
     enteredPassword
   ) {
+    if (
+      !enteredPassword ||
+      !this.password
+    ) {
+      return false;
+    }
+
     return bcrypt.compare(
-      enteredPassword,
+      String(
+        enteredPassword
+      ),
       this.password
     );
   };
 
 /* =========================================================
-   STATIC — FIND BY CUSTOM DRIVER ID
+   ADD FCM TOKEN
+========================================================= */
+
+driverSchema.methods.addFcmToken =
+  function (
+    token
+  ) {
+    const normalizedToken =
+      String(
+        token || ""
+      ).trim();
+
+    if (
+      !normalizedToken
+    ) {
+      return;
+    }
+
+    if (
+      !this.fcmTokens.includes(
+        normalizedToken
+      )
+    ) {
+      this.fcmTokens.push(
+        normalizedToken
+      );
+    }
+  };
+
+/* =========================================================
+   REMOVE FCM TOKEN
+========================================================= */
+
+driverSchema.methods.removeFcmToken =
+  function (
+    token
+  ) {
+    const normalizedToken =
+      String(
+        token || ""
+      ).trim();
+
+    this.fcmTokens =
+      this.fcmTokens.filter(
+        (
+          existingToken
+        ) =>
+          existingToken !==
+          normalizedToken
+      );
+  };
+
+/* =========================================================
+   UPDATE LIVE LOCATION
+========================================================= */
+
+driverSchema.methods.updateLiveLocation =
+  function ({
+    lat,
+    lng,
+    eta = "--",
+    speed = 0,
+    heading = 0,
+    accuracy = null,
+  }) {
+    const latitude =
+      Number(
+        lat
+      );
+
+    const longitude =
+      Number(
+        lng
+      );
+
+    if (
+      !Number.isFinite(
+        latitude
+      ) ||
+      !Number.isFinite(
+        longitude
+      ) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new Error(
+        "Invalid Driver location coordinates."
+      );
+    }
+
+    /*
+      GeoJSON location.
+    */
+
+    this.location = {
+      type:
+        "Point",
+
+      coordinates: [
+        longitude,
+        latitude,
+      ],
+    };
+
+    /*
+      Lightweight live location.
+    */
+
+    this.lastLocation = {
+      lat:
+        latitude,
+
+      lng:
+        longitude,
+
+      eta:
+        String(
+          eta || "--"
+        ),
+
+      speed:
+        Math.max(
+          0,
+          Number(
+            speed
+          ) || 0
+        ),
+
+      heading:
+        Math.min(
+          360,
+          Math.max(
+            0,
+            Number(
+              heading
+            ) || 0
+          )
+        ),
+
+      accuracy:
+        accuracy ===
+          null ||
+        accuracy ===
+          undefined
+          ? null
+          : Math.max(
+              0,
+              Number(
+                accuracy
+              ) || 0
+            ),
+
+      updatedAt:
+        new Date(),
+    };
+  };
+
+/* =========================================================
+   STATIC — FIND BY DRIVER ID
 ========================================================= */
 
 driverSchema.statics.findByDriverId =
   function (
     driverId
   ) {
+    const normalizedDriverId =
+      String(
+        driverId || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    if (
+      !normalizedDriverId
+    ) {
+      return null;
+    }
+
     return this.findOne({
       driverId:
-        String(driverId)
-          .trim()
-          .toUpperCase(),
+        normalizedDriverId,
     });
   };
 
@@ -551,7 +969,7 @@ driverSchema.statics.findApproved =
   };
 
 /* =========================================================
-   STATIC — ONLINE APPROVED DRIVERS
+   STATIC — AVAILABLE DRIVERS
 ========================================================= */
 
 driverSchema.statics.findAvailable =
@@ -569,13 +987,43 @@ driverSchema.statics.findAvailable =
   };
 
 /* =========================================================
+   STATIC — AUTHENTICATION LOOKUP
+========================================================= */
+
+/*
+  Use this for Driver login because password has:
+
+  select: false
+*/
+
+driverSchema.statics.findForAuthentication =
+  function (
+    email
+  ) {
+    const normalizedEmail =
+      String(
+        email || ""
+      )
+        .trim()
+        .toLowerCase();
+
+    return this.findOne({
+      email:
+        normalizedEmail,
+    }).select(
+      "+password"
+    );
+  };
+
+/* =========================================================
    JSON CLEANUP
 ========================================================= */
 
 driverSchema.set(
   "toJSON",
   {
-    virtuals: true,
+    virtuals:
+      true,
 
     transform(
       doc,
@@ -596,7 +1044,8 @@ driverSchema.set(
 driverSchema.set(
   "toObject",
   {
-    virtuals: true,
+    virtuals:
+      true,
 
     transform(
       doc,
