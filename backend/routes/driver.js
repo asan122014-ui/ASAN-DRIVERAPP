@@ -10,7 +10,10 @@ import {
   driverUpload,
 } from "../config/cloudinary.js";
 
-import verifyDriver from "../middleware/verifyDriver.js";
+import verifyDriver, {
+  requireApprovedDriver,
+} from "../middleware/verifyDriver.js";
+
 import verifyParent from "../middleware/verifyParent.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
 
@@ -81,6 +84,13 @@ const getSafeDriver = (
           ...driver,
         };
 
+  /*
+    Password no longer exists in the Driver schema.
+
+    This remains temporarily so legacy MongoDB records
+    containing an old password field can never expose it.
+  */
+
   delete data.password;
   delete data.__v;
 
@@ -95,7 +105,9 @@ const getSafeDriver = (
   Supports:
 
   ASAN custom Driver ID
-      OR
+
+  OR
+
   MongoDB _id
 */
 
@@ -238,7 +250,7 @@ const hasValidLiveLocation = (
 ========================================================= */
 
 /*
-  Allows Driver route identifier to be either:
+  Allows route identifier to be either:
 
   MongoDB _id
 
@@ -346,8 +358,8 @@ const requireOwnDriverIdentifier =
 /*
   Used for Parent → Driver APIs.
 
-  Parent can only access the Driver linked
-  to their Parent account.
+  Parent may only access the Driver linked
+  to their own Parent account.
 */
 
 const requireLinkedDriver = (
@@ -366,6 +378,10 @@ const requireLinkedDriver = (
       req.parent?.driverId
     );
 
+  /* =====================================================
+     LINK REQUIRED
+  ===================================================== */
+
   if (
     !linkedDriverId
   ) {
@@ -380,6 +396,10 @@ const requireLinkedDriver = (
       });
   }
 
+  /* =====================================================
+     REQUESTED DRIVER REQUIRED
+  ===================================================== */
+
   if (
     !requestedDriverId
   ) {
@@ -393,6 +413,10 @@ const requireLinkedDriver = (
           "Driver ID is required",
       });
   }
+
+  /* =====================================================
+     OWN LINK ONLY
+  ===================================================== */
 
   if (
     requestedDriverId !==
@@ -447,8 +471,14 @@ const cleanupUploadedPhoto =
 
 /* =========================================================
    SAVE DRIVER FCM TOKEN
-   DRIVER ONLY
+   AUTHENTICATED DRIVER
 ========================================================= */
+
+/*
+  Pending, approved and rejected Drivers may save an FCM
+  token because approval/rejection notifications may need
+  to be delivered to the device.
+*/
 
 router.post(
   "/save-token",
@@ -489,6 +519,11 @@ router.post(
             fcmTokens:
               normalizedToken,
           },
+        },
+
+        {
+          runValidators:
+            true,
         }
       );
 
@@ -739,13 +774,11 @@ router.get(
 ========================================================= */
 
 /*
-  Example:
-
   GET /api/driver/location?driverId=ASAN-XXXXXX
 
-  Header:
+  Authorization:
 
-  Authorization: Bearer <ASAN_PARENT_JWT>
+  Bearer <ASAN_PARENT_JWT>
 */
 
 router.get(
@@ -760,6 +793,10 @@ router.get(
     res
   ) => {
     try {
+      /*
+        Parents can only access an approved Driver.
+      */
+
       const driver =
         await Driver.findOne({
           driverId:
@@ -788,7 +825,7 @@ router.get(
               false,
 
             message:
-              "Driver not found",
+              "Approved Driver not found",
           });
       }
 
@@ -844,13 +881,28 @@ router.get(
 
 /* =========================================================
    DRIVER DASHBOARD
-   DRIVER OWN ACCOUNT ONLY
+   APPROVED DRIVER OWN ACCOUNT ONLY
 ========================================================= */
+
+/*
+  Operational route.
+
+  Authentication:
+    verifyDriver
+
+  Approval:
+    requireApprovedDriver
+
+  Ownership:
+    requireOwnDriverIdentifier
+*/
 
 router.get(
   "/dashboard/:driverId",
 
   verifyDriver,
+
+  requireApprovedDriver,
 
   requireOwnDriverIdentifier(
     "driverId"
@@ -868,6 +920,11 @@ router.get(
         normalizeDriverId(
           driver.driverId
         );
+
+      /*
+        requireApprovedDriver already verifies this,
+        but this defensive check is retained.
+      */
 
       if (
         !driverId
@@ -988,8 +1045,16 @@ router.get(
 
 /* =========================================================
    DRIVER PROFILE
-   DRIVER OWN ACCOUNT ONLY
+   AUTHENTICATED DRIVER OWN ACCOUNT
 ========================================================= */
+
+/*
+  This route intentionally does NOT use
+  requireApprovedDriver.
+
+  A pending or rejected Driver still needs to view their
+  account/profile and application information.
+*/
 
 router.get(
   "/profile/:driverId",
@@ -1012,11 +1077,15 @@ router.get(
         0;
 
       /*
-        Pending Drivers may not have received
-        their public ASAN Driver ID yet.
+        Only approved Drivers should normally have operational
+        trip information.
+
+        The count remains zero for pending/rejected accounts.
       */
 
       if (
+        driver.status ===
+          "approved" &&
         driver.driverId
       ) {
         const {
@@ -1085,9 +1154,9 @@ router.get(
 /*
   GET /api/driver/tracking?driverId=ASAN-XXXXXX
 
-  Header:
+  Authorization:
 
-  Authorization: Bearer <ASAN_PARENT_JWT>
+  Bearer <ASAN_PARENT_JWT>
 */
 
 router.get(
@@ -1137,7 +1206,7 @@ router.get(
               false,
 
             message:
-              "Driver not found",
+              "Approved Driver not found",
           });
       }
 
@@ -1214,8 +1283,22 @@ router.get(
 
 /* =========================================================
    UPDATE DRIVER PROFILE
-   DRIVER OWN ACCOUNT ONLY
+   AUTHENTICATED DRIVER OWN ACCOUNT
 ========================================================= */
+
+/*
+  This route intentionally does NOT use
+  requireApprovedDriver.
+
+  Pending/rejected Drivers may need to correct profile
+  information.
+
+  Email cannot be edited here because email is the OTP
+  authentication identity.
+
+  A future Driver email-change endpoint should verify
+  the new email through OTP before changing it.
+*/
 
 router.put(
   "/update",
@@ -1293,17 +1376,6 @@ router.put(
       /* ===================================================
          ALLOWED PROFILE FIELDS
       =================================================== */
-
-      /*
-        IMPORTANT:
-
-        Email is intentionally NOT editable here.
-
-        Driver email is the authentication identity.
-
-        Email changes should later use a dedicated
-        verified Driver auth endpoint.
-      */
 
       const allowedFields =
         [
