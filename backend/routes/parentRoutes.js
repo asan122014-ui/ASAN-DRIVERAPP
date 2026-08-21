@@ -34,13 +34,6 @@ const getSafeParent = (
       ? parent.toObject()
       : { ...parent };
 
-  /*
-    firebaseUid is still temporarily present
-    in the MongoDB schema during migration.
-
-    Never expose it to clients.
-  */
-
   delete data.password;
   delete data.firebaseUid;
   delete data.__v;
@@ -51,17 +44,6 @@ const getSafeParent = (
 /* =========================================================
    VERIFY PARENT OWNERSHIP
 ========================================================= */
-
-/*
-  verifyParent already authenticates the ASAN Parent JWT
-  and attaches:
-
-  req.parent
-  req.parentAuth
-
-  This middleware only checks that a route parameter
-  belongs to that authenticated Parent.
-*/
 
 const requireOwnParent = (
   paramName
@@ -77,7 +59,8 @@ const requireOwnParent = (
       ];
 
     const authenticatedParentId =
-      req.parent?._id?.toString();
+      req.parent?._id
+        ?.toString();
 
     if (
       !requestedParentId ||
@@ -119,19 +102,6 @@ const requireOwnParent = (
    OPTIONAL BODY PARENT ID
 ========================================================= */
 
-/*
-  Some existing frontend requests may still send:
-
-  {
-    parentId: "..."
-  }
-
-  We do not trust that value.
-
-  If supplied, it must match the Parent identity
-  established by the verified ASAN Parent JWT.
-*/
-
 const validateBodyParentId = (
   req
 ) => {
@@ -153,6 +123,310 @@ const validateBodyParentId = (
     )
   );
 };
+
+/* =========================================================
+   BUILD PROFILE UPDATES
+========================================================= */
+
+const buildParentUpdates =
+  async (
+    req,
+    res
+  ) => {
+    const updates =
+      {};
+
+    /* =====================================================
+       NAME
+    ===================================================== */
+
+    if (
+      req.body?.name !==
+      undefined
+    ) {
+      const name =
+        String(
+          req.body.name
+        ).trim();
+
+      if (!name) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Name cannot be empty",
+          });
+
+        return null;
+      }
+
+      updates.name =
+        name;
+    }
+
+    /* =====================================================
+       ADDRESS
+    ===================================================== */
+
+    if (
+      req.body?.address !==
+      undefined
+    ) {
+      const address =
+        String(
+          req.body.address
+        ).trim();
+
+      if (!address) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Address cannot be empty",
+          });
+
+        return null;
+      }
+
+      updates.address =
+        address;
+    }
+
+    /* =====================================================
+       EMAIL
+    ===================================================== */
+
+    if (
+      req.body?.email !==
+      undefined
+    ) {
+      const email =
+        String(
+          req.body.email
+        )
+          .trim()
+          .toLowerCase();
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (
+        !emailRegex.test(
+          email
+        )
+      ) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Enter a valid email address",
+          });
+
+        return null;
+      }
+
+      const existingEmail =
+        await Parent.findOne({
+          email,
+
+          _id: {
+            $ne:
+              req.parent._id,
+          },
+        }).select(
+          "_id"
+        );
+
+      if (
+        existingEmail
+      ) {
+        res
+          .status(409)
+          .json({
+            success: false,
+
+            message:
+              "Email is already registered",
+          });
+
+        return null;
+      }
+
+      updates.email =
+        email;
+    }
+
+    /* =====================================================
+       LOCATION
+    ===================================================== */
+
+    const hasLatitude =
+      req.body
+        ?.latitude !==
+      undefined;
+
+    const hasLongitude =
+      req.body
+        ?.longitude !==
+      undefined;
+
+    if (
+      hasLatitude !==
+      hasLongitude
+    ) {
+      res
+        .status(400)
+        .json({
+          success: false,
+
+          message:
+            "Latitude and longitude must be provided together",
+        });
+
+      return null;
+    }
+
+    if (
+      hasLatitude &&
+      hasLongitude
+    ) {
+      const latitude =
+        Number(
+          req.body.latitude
+        );
+
+      const longitude =
+        Number(
+          req.body.longitude
+        );
+
+      if (
+        !Number.isFinite(
+          latitude
+        ) ||
+        !Number.isFinite(
+          longitude
+        )
+      ) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Invalid latitude or longitude",
+          });
+
+        return null;
+      }
+
+      if (
+        latitude < -90 ||
+        latitude > 90
+      ) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Latitude must be between -90 and 90",
+          });
+
+        return null;
+      }
+
+      if (
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Longitude must be between -180 and 180",
+          });
+
+        return null;
+      }
+
+      updates.homeLocation =
+        {
+          type:
+            "Point",
+
+          coordinates: [
+            longitude,
+            latitude,
+          ],
+        };
+    }
+
+    /* =====================================================
+       NO VALID FIELDS
+    ===================================================== */
+
+    if (
+      Object.keys(
+        updates
+      ).length ===
+      0
+    ) {
+      res
+        .status(400)
+        .json({
+          success: false,
+
+          message:
+            "No valid profile fields were provided",
+        });
+
+      return null;
+    }
+
+    return updates;
+  };
+
+/* =========================================================
+   DELETE PARENT DATA
+========================================================= */
+
+const deleteParentData =
+  async (
+    parentId
+  ) => {
+    await Promise.all([
+      Child.deleteMany({
+        parentId,
+      }),
+
+      Trip.deleteMany({
+        parent:
+          parentId,
+      }),
+
+      Notification.deleteMany({
+        parent:
+          parentId,
+      }),
+
+      DriverRequest.deleteMany({
+        parentId,
+      }),
+    ]);
+
+    await Parent.findByIdAndDelete(
+      parentId
+    );
+  };
 
 /* =========================================================
    GET ALL PARENTS — ADMIN ONLY
@@ -218,7 +492,9 @@ router.get(
           data:
             result,
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "GET PARENTS ERROR:",
         error
@@ -258,10 +534,6 @@ router.get(
       const parentId =
         req.parent._id;
 
-      /* ===================================================
-         RELATED DATA
-      =================================================== */
-
       const [
         children,
         trips,
@@ -293,10 +565,6 @@ router.get(
               -1,
           }),
         ]);
-
-      /* ===================================================
-         DOWNLOAD DATA
-      =================================================== */
 
       const downloadData =
         {
@@ -330,7 +598,8 @@ router.get(
             ),
 
           downloadedAt:
-            new Date().toISOString(),
+            new Date()
+              .toISOString(),
         };
 
       return res
@@ -345,7 +614,9 @@ router.get(
           data:
             downloadData,
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "DOWNLOAD DATA ERROR:",
         error
@@ -399,20 +670,12 @@ router.put(
           });
       }
 
-      /* ===================================================
-         NORMALIZE DRIVER ID
-      =================================================== */
-
       const normalizedDriverId =
         String(
           driverId
         )
           .trim()
           .toUpperCase();
-
-      /* ===================================================
-         VERIFY DRIVER
-      =================================================== */
 
       const driver =
         await Driver.findOne({
@@ -447,10 +710,6 @@ router.put(
           });
       }
 
-      /* ===================================================
-         VERIFY PARENT
-      =================================================== */
-
       const parent =
         await Parent.findById(
           parentId
@@ -483,18 +742,10 @@ router.put(
           });
       }
 
-      /* ===================================================
-         UPDATE PARENT
-      =================================================== */
-
       parent.driverId =
         driver.driverId;
 
       await parent.save();
-
-      /* ===================================================
-         UPDATE CHILDREN
-      =================================================== */
 
       await Child.updateMany(
         {
@@ -524,7 +775,9 @@ router.put(
               parent
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "ASSIGN DRIVER ERROR:",
         error
@@ -562,15 +815,6 @@ router.put(
    LOGOUT / REMOVE FCM TOKEN
 ========================================================= */
 
-/*
-  Authentication session is JWT-based.
-
-  The JWT itself is removed client-side.
-
-  Backend logout is used to remove the current
-  device's FCM token from the Parent account.
-*/
-
 router.put(
   "/logout",
 
@@ -581,10 +825,6 @@ router.put(
     res
   ) => {
     try {
-      /* ===================================================
-         OPTIONAL BODY PARENT OWNERSHIP CHECK
-      =================================================== */
-
       if (
         !validateBodyParentId(
           req
@@ -601,21 +841,13 @@ router.put(
           });
       }
 
-      /* ===================================================
-         FCM TOKEN
-      =================================================== */
-
       const fcmToken =
         typeof req.body
           ?.fcmToken ===
         "string"
-          ? req.body.fcmToken.trim()
+          ? req.body.fcmToken
+              .trim()
           : "";
-
-      /*
-        No FCM token means the session may still
-        safely be cleared client-side.
-      */
 
       if (!fcmToken) {
         return res
@@ -628,10 +860,6 @@ router.put(
               "Logout successful",
           });
       }
-
-      /* ===================================================
-         REMOVE DEVICE TOKEN
-      =================================================== */
 
       await Parent.findByIdAndUpdate(
         req.parent._id,
@@ -653,7 +881,9 @@ router.put(
           message:
             "Logout successful",
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "LOGOUT ERROR:",
         error
@@ -691,10 +921,6 @@ router.post(
       } =
         req.body || {};
 
-      /* ===================================================
-         OPTIONAL BODY PARENT ID
-      =================================================== */
-
       if (
         !validateBodyParentId(
           req
@@ -710,10 +936,6 @@ router.post(
               "You cannot link a Driver to another Parent account",
           });
       }
-
-      /* ===================================================
-         DRIVER ID
-      =================================================== */
 
       if (!driverId) {
         return res
@@ -734,10 +956,6 @@ router.post(
           .trim()
           .toUpperCase();
 
-      /* ===================================================
-         FIND DRIVER
-      =================================================== */
-
       const driver =
         await Driver.findOne({
           driverId:
@@ -756,10 +974,6 @@ router.post(
           });
       }
 
-      /* ===================================================
-         APPROVED DRIVER ONLY
-      =================================================== */
-
       if (
         driver.status !==
         "approved"
@@ -777,10 +991,6 @@ router.post(
 
       const parent =
         req.parent;
-
-      /* ===================================================
-         ALREADY LINKED
-      =================================================== */
 
       if (
         String(
@@ -807,18 +1017,10 @@ router.post(
           });
       }
 
-      /* ===================================================
-         LINK DRIVER
-      =================================================== */
-
       parent.driverId =
         driver.driverId;
 
       await parent.save();
-
-      /* ===================================================
-         UPDATE CHILDREN
-      =================================================== */
 
       await Child.updateMany(
         {
@@ -848,7 +1050,9 @@ router.post(
               parent
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "LINK DRIVER ERROR:",
         error
@@ -868,17 +1072,30 @@ router.post(
 );
 
 /* =========================================================
-   GET SINGLE PARENT — OWN ACCOUNT ONLY
+   GET CURRENT PARENT
 ========================================================= */
 
+/*
+IMPORTANT:
+
+/me must stay ABOVE /:id.
+
+Otherwise Express interprets:
+
+/parent/me
+
+as:
+
+/parent/:id
+id = "me"
+
+and requireOwnParent rejects it.
+*/
+
 router.get(
-  "/:id",
+  "/me",
 
   verifyParent,
-
-  requireOwnParent(
-    "id"
-  ),
 
   async (
     req,
@@ -896,9 +1113,11 @@ router.get(
               req.parent
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
-        "GET PARENT ERROR:",
+        "GET CURRENT PARENT ERROR:",
         error
       );
 
@@ -916,298 +1135,34 @@ router.get(
 );
 
 /* =========================================================
-   UPDATE PARENT — OWN ACCOUNT ONLY
+   UPDATE CURRENT PARENT
 ========================================================= */
 
 router.put(
-  "/:id",
+  "/me",
 
   verifyParent,
-
-  requireOwnParent(
-    "id"
-  ),
 
   async (
     req,
     res
   ) => {
     try {
+      const updates =
+        await buildParentUpdates(
+          req,
+          res
+        );
+
       /*
-        ALLOWED PROFILE FIELDS:
-
-        - name
-        - email
-        - address
-        - latitude + longitude
-
-        NOT DIRECTLY EDITABLE:
-
-        - phone
-        - driverId
-        - isActive
-        - firebaseUid
-        - fcmTokens
-        - referralCode
-        - referredBy
-
-        Phone change will later have its own
-        Phone.Email OTP verification flow.
+        buildParentUpdates has already
+        sent the response if validation
+        failed.
       */
 
-      const updates =
-        {};
-
-      /* ===================================================
-         NAME
-      =================================================== */
-
-      if (
-        req.body?.name !==
-        undefined
-      ) {
-        const name =
-          String(
-            req.body.name
-          ).trim();
-
-        if (!name) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Name cannot be empty",
-            });
-        }
-
-        updates.name =
-          name;
+      if (!updates) {
+        return;
       }
-
-      /* ===================================================
-         ADDRESS
-      =================================================== */
-
-      if (
-        req.body?.address !==
-        undefined
-      ) {
-        const address =
-          String(
-            req.body.address
-          ).trim();
-
-        if (!address) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Address cannot be empty",
-            });
-        }
-
-        updates.address =
-          address;
-      }
-
-      /* ===================================================
-         EMAIL
-      =================================================== */
-
-      if (
-        req.body?.email !==
-        undefined
-      ) {
-        const email =
-          String(
-            req.body.email
-          )
-            .trim()
-            .toLowerCase();
-
-        const emailRegex =
-          /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-        if (
-          !emailRegex.test(
-            email
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Enter a valid email address",
-            });
-        }
-
-        const existingEmail =
-          await Parent.findOne({
-            email,
-
-            _id: {
-              $ne:
-                req.parent._id,
-            },
-          }).select(
-            "_id"
-          );
-
-        if (
-          existingEmail
-        ) {
-          return res
-            .status(409)
-            .json({
-              success:
-                false,
-
-              message:
-                "Email is already registered",
-            });
-        }
-
-        updates.email =
-          email;
-      }
-
-      /* ===================================================
-         LOCATION
-      =================================================== */
-
-      const hasLatitude =
-        req.body
-          ?.latitude !==
-        undefined;
-
-      const hasLongitude =
-        req.body
-          ?.longitude !==
-        undefined;
-
-      if (
-        hasLatitude !==
-        hasLongitude
-      ) {
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-
-            message:
-              "Latitude and longitude must be provided together",
-          });
-      }
-
-      if (
-        hasLatitude &&
-        hasLongitude
-      ) {
-        const latitude =
-          Number(
-            req.body.latitude
-          );
-
-        const longitude =
-          Number(
-            req.body.longitude
-          );
-
-        if (
-          !Number.isFinite(
-            latitude
-          ) ||
-          !Number.isFinite(
-            longitude
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Invalid latitude or longitude",
-            });
-        }
-
-        if (
-          latitude < -90 ||
-          latitude > 90
-        ) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Latitude must be between -90 and 90",
-            });
-        }
-
-        if (
-          longitude < -180 ||
-          longitude > 180
-        ) {
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Longitude must be between -180 and 180",
-            });
-        }
-
-        updates.homeLocation =
-          {
-            type:
-              "Point",
-
-            coordinates: [
-              longitude,
-              latitude,
-            ],
-          };
-      }
-
-      /* ===================================================
-         NO EDITABLE FIELDS
-      =================================================== */
-
-      if (
-        Object.keys(
-          updates
-        ).length ===
-        0
-      ) {
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-
-            message:
-              "No valid profile fields were provided",
-          });
-      }
-
-      /* ===================================================
-         UPDATE
-      =================================================== */
 
       const updated =
         await Parent.findByIdAndUpdate(
@@ -1253,7 +1208,267 @@ router.put(
               updated
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
+      console.error(
+        "UPDATE CURRENT PARENT ERROR:",
+        error
+      );
+
+      if (
+        error?.code ===
+        11000
+      ) {
+        const duplicateField =
+          Object.keys(
+            error.keyPattern ||
+              {}
+          )[0];
+
+        if (
+          duplicateField ===
+          "email"
+        ) {
+          return res
+            .status(409)
+            .json({
+              success:
+                false,
+
+              message:
+                "Email is already registered",
+            });
+        }
+
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Parent information already exists",
+          });
+      }
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              error.message,
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Update failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   DELETE CURRENT PARENT
+========================================================= */
+
+router.delete(
+  "/me",
+
+  verifyParent,
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const parentId =
+        req.parent._id;
+
+      await deleteParentData(
+        parentId
+      );
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Parent and related records deleted successfully",
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "DELETE CURRENT PARENT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Delete failed",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   GET SINGLE PARENT — OWN ACCOUNT ONLY
+========================================================= */
+
+/*
+IMPORTANT:
+
+All dynamic /:id routes must remain BELOW
+specific routes such as:
+
+/me
+/logout
+/link-driver
+/assign-driver
+/download-data/:parentId
+*/
+
+router.get(
+  "/:id",
+
+  verifyParent,
+
+  requireOwnParent(
+    "id"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          data:
+            getSafeParent(
+              req.parent
+            ),
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "GET PARENT ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to fetch Parent",
+        });
+    }
+  }
+);
+
+/* =========================================================
+   UPDATE PARENT — OWN ACCOUNT ONLY
+========================================================= */
+
+router.put(
+  "/:id",
+
+  verifyParent,
+
+  requireOwnParent(
+    "id"
+  ),
+
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const updates =
+        await buildParentUpdates(
+          req,
+          res
+        );
+
+      if (!updates) {
+        return;
+      }
+
+      const updated =
+        await Parent.findByIdAndUpdate(
+          req.parent._id,
+
+          {
+            $set:
+              updates,
+          },
+
+          {
+            new:
+              true,
+
+            runValidators:
+              true,
+          }
+        );
+
+      if (!updated) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "Parent not found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Parent updated successfully",
+
+          data:
+            getSafeParent(
+              updated
+            ),
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "UPDATE PARENT ERROR:",
         error
@@ -1344,35 +1559,7 @@ router.delete(
       const parentId =
         req.parent._id;
 
-      /* ===================================================
-         DELETE RELATED DATA
-      =================================================== */
-
-      await Promise.all([
-        Child.deleteMany({
-          parentId,
-        }),
-
-        Trip.deleteMany({
-          parent:
-            parentId,
-        }),
-
-        Notification.deleteMany({
-          parent:
-            parentId,
-        }),
-
-        DriverRequest.deleteMany({
-          parentId,
-        }),
-      ]);
-
-      /* ===================================================
-         DELETE PARENT
-      =================================================== */
-
-      await Parent.findByIdAndDelete(
+      await deleteParentData(
         parentId
       );
 
@@ -1385,7 +1572,9 @@ router.delete(
           message:
             "Parent and related records deleted successfully",
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "DELETE PARENT ERROR:",
         error
