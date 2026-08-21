@@ -1,37 +1,190 @@
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
 import Driver from "../models/Driver.js";
+import Otp from "../models/Otp.js";
+
+import {
+  sendDriverOtpEmail,
+} from "../services/emailService.js";
 
 /* =========================================================
-   HELPERS
+   CONFIG
 ========================================================= */
 
+const OTP_EXPIRY_MINUTES =
+  5;
+
+const OTP_RESEND_COOLDOWN_SECONDS =
+  60;
+
+const OTP_MAX_ATTEMPTS =
+  5;
+
+const DRIVER_LOGIN_PURPOSE =
+  "driver_login";
+
 /* =========================================================
-   NORMALIZE EMAIL
+   EMAIL NORMALIZATION
 ========================================================= */
 
 const normalizeEmail = (
-  value
+  email
 ) => {
+  if (
+    !email
+  ) {
+    return "";
+  }
+
   return String(
-    value || ""
+    email
   )
     .trim()
     .toLowerCase();
 };
 
 /* =========================================================
-   VALIDATE EMAIL
+   EMAIL VALIDATION
 ========================================================= */
 
 const isValidEmail = (
-  value
+  email
 ) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    normalizeEmail(
+    email
+  );
+};
+
+/* =========================================================
+   GENERATE OTP
+========================================================= */
+
+const generateOtp =
+  () => {
+    return crypto
+      .randomInt(
+        100000,
+        1000000
+      )
+      .toString();
+  };
+
+/* =========================================================
+   HASH OTP
+========================================================= */
+
+const hashOtp = (
+  otp
+) => {
+  return crypto
+    .createHash(
+      "sha256"
+    )
+    .update(
+      String(
+        otp
+      )
+    )
+    .digest(
+      "hex"
+    );
+};
+
+/* =========================================================
+   SAFE HASH COMPARISON
+========================================================= */
+
+const compareOtpHash = (
+  suppliedOtp,
+  storedHash
+) => {
+  const suppliedHash =
+    hashOtp(
+      suppliedOtp
+    );
+
+  if (
+    !storedHash ||
+    suppliedHash.length !==
+      storedHash.length
+  ) {
+    return false;
+  }
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(
+        suppliedHash,
+        "hex"
+      ),
+
+      Buffer.from(
+        storedHash,
+        "hex"
+      )
+    );
+  } catch {
+    return false;
+  }
+};
+
+/* =========================================================
+   OTP INPUT VALIDATION
+========================================================= */
+
+const validateOtpInput = (
+  otp
+) => {
+  const value =
+    String(
+      otp || ""
+    ).trim();
+
+  if (
+    !/^\d{6}$/.test(
       value
     )
-  );
+  ) {
+    return null;
+  }
+
+  return value;
+};
+
+/* =========================================================
+   SAFE DRIVER
+========================================================= */
+
+const getSafeDriver = (
+  driver
+) => {
+  if (
+    !driver
+  ) {
+    return null;
+  }
+
+  const data =
+    typeof driver.toJSON ===
+    "function"
+      ? driver.toJSON()
+      : {
+          ...driver,
+        };
+
+  /*
+    Password is no longer part of the Driver schema.
+
+    This delete is retained temporarily so old MongoDB
+    documents containing a legacy password can never
+    accidentally expose it.
+  */
+
+  delete data.password;
+  delete data.__v;
+
+  return data;
 };
 
 /* =========================================================
@@ -39,28 +192,20 @@ const isValidEmail = (
 ========================================================= */
 
 /*
-  Driver JWT structure:
+  Driver JWT:
 
   {
     id: "<MongoDB Driver _id>",
     tokenType: "driver"
   }
-
-  IMPORTANT:
-
-  We intentionally do NOT put driverId,
-  email or approval status inside the token.
-
-  Those values may change.
-
-  MongoDB _id remains the actual account identity.
 */
 
 const createDriverToken = (
   driver
 ) => {
   if (
-    !process.env.JWT_SECRET
+    !process.env
+      .JWT_SECRET
   ) {
     throw new Error(
       "JWT_SECRET is not configured"
@@ -89,40 +234,13 @@ const createDriverToken = (
     process.env.JWT_SECRET,
 
     {
-      expiresIn:
-        "7d",
-
       algorithm:
         "HS256",
+
+      expiresIn:
+        "7d",
     }
   );
-};
-
-/* =========================================================
-   SAFE DRIVER RESPONSE
-========================================================= */
-
-const getSafeDriver = (
-  driver
-) => {
-  if (
-    !driver
-  ) {
-    return null;
-  }
-
-  const data =
-    typeof driver.toObject ===
-    "function"
-      ? driver.toObject()
-      : {
-          ...driver,
-        };
-
-  delete data.password;
-  delete data.__v;
-
-  return data;
 };
 
 /* =========================================================
@@ -152,6 +270,9 @@ const getDriverStatusInfo = (
 
       message:
         "Login successful",
+
+      rejectionReason:
+        null,
     };
   }
 
@@ -175,6 +296,9 @@ const getDriverStatusInfo = (
 
       message:
         "Your Driver application is under review",
+
+      rejectionReason:
+        null,
     };
   }
 
@@ -196,12 +320,12 @@ const getDriverStatusInfo = (
       nextStep:
         "application-rejected",
 
+      message:
+        "Your Driver application was rejected",
+
       rejectionReason:
         driver.rejectionReason ||
         null,
-
-      message:
-        "Your Driver application was rejected",
     };
   }
 
@@ -222,64 +346,411 @@ const getDriverStatusInfo = (
 
     message:
       "Driver account status could not be determined",
+
+    rejectionReason:
+      null,
   };
 };
 
 /* =========================================================
-   DRIVER LOGIN
+   CREATE AND SEND DRIVER OTP
+========================================================= */
+
+const createAndSendDriverOtp =
+  async ({
+    email,
+  }) => {
+    /* =====================================================
+       EXISTING OTP
+    ===================================================== */
+
+    const existingOtp =
+      await Otp.findOne({
+        email,
+
+        purpose:
+          DRIVER_LOGIN_PURPOSE,
+      });
+
+    /* =====================================================
+       RESEND COOLDOWN
+    ===================================================== */
+
+    if (
+      existingOtp
+        ?.lastSentAt
+    ) {
+      const millisecondsSinceLastOtp =
+        Date.now() -
+        new Date(
+          existingOtp
+            .lastSentAt
+        ).getTime();
+
+      const cooldownMilliseconds =
+        OTP_RESEND_COOLDOWN_SECONDS *
+        1000;
+
+      if (
+        millisecondsSinceLastOtp <
+        cooldownMilliseconds
+      ) {
+        const secondsRemaining =
+          Math.ceil(
+            (
+              cooldownMilliseconds -
+              millisecondsSinceLastOtp
+            ) /
+              1000
+          );
+
+        return {
+          success:
+            false,
+
+          cooldown:
+            true,
+
+          secondsRemaining,
+        };
+      }
+    }
+
+    /* =====================================================
+       GENERATE OTP
+    ===================================================== */
+
+    const otp =
+      generateOtp();
+
+    const otpHash =
+      hashOtp(
+        otp
+      );
+
+    const now =
+      new Date();
+
+    const expiresAt =
+      new Date(
+        Date.now() +
+          OTP_EXPIRY_MINUTES *
+            60 *
+            1000
+      );
+
+    /* =====================================================
+       STORE OTP HASH
+    ===================================================== */
+
+    await Otp.findOneAndUpdate(
+      {
+        email,
+
+        purpose:
+          DRIVER_LOGIN_PURPOSE,
+      },
+
+      {
+        $set: {
+          otpHash,
+
+          expiresAt,
+
+          attempts:
+            0,
+
+          maxAttempts:
+            OTP_MAX_ATTEMPTS,
+
+          used:
+            false,
+
+          lastSentAt:
+            now,
+        },
+
+        $inc: {
+          resendCount:
+            1,
+        },
+
+        $setOnInsert: {
+          email,
+
+          purpose:
+            DRIVER_LOGIN_PURPOSE,
+        },
+      },
+
+      {
+        upsert:
+          true,
+
+        new:
+          true,
+
+        runValidators:
+          true,
+      }
+    );
+
+    /* =====================================================
+       SEND EMAIL
+    ===================================================== */
+
+    try {
+      await sendDriverOtpEmail({
+        email,
+        otp,
+        purpose:
+          "login",
+      });
+    } catch (
+      error
+    ) {
+      /*
+        If sending fails, remove the OTP so an
+        unsent OTP can never remain usable.
+      */
+
+      await Otp.deleteOne({
+        email,
+
+        purpose:
+          DRIVER_LOGIN_PURPOSE,
+
+        otpHash,
+      });
+
+      throw error;
+    }
+
+    return {
+      success:
+        true,
+
+      expiresIn:
+        OTP_EXPIRY_MINUTES *
+        60,
+    };
+  };
+
+/* =========================================================
+   VERIFY STORED DRIVER OTP
+========================================================= */
+
+const verifyStoredDriverOtp =
+  async ({
+    email,
+    otp,
+  }) => {
+    /* =====================================================
+       FIND OTP
+    ===================================================== */
+
+    const storedOtp =
+      await Otp.findOne({
+        email,
+
+        purpose:
+          DRIVER_LOGIN_PURPOSE,
+
+        used:
+          false,
+      });
+
+    /* =====================================================
+       NOT FOUND
+    ===================================================== */
+
+    if (
+      !storedOtp
+    ) {
+      return {
+        valid:
+          false,
+
+        status:
+          400,
+
+        message:
+          "OTP is invalid or has expired",
+      };
+    }
+
+    /* =====================================================
+       EXPIRATION
+    ===================================================== */
+
+    if (
+      !storedOtp
+        .expiresAt ||
+      storedOtp
+        .expiresAt
+        .getTime() <=
+        Date.now()
+    ) {
+      await Otp.deleteOne({
+        _id:
+          storedOtp._id,
+      });
+
+      return {
+        valid:
+          false,
+
+        status:
+          400,
+
+        message:
+          "OTP has expired. Please request a new OTP.",
+      };
+    }
+
+    /* =====================================================
+       ATTEMPT LIMIT
+    ===================================================== */
+
+    if (
+      storedOtp.attempts >=
+      storedOtp.maxAttempts
+    ) {
+      await Otp.deleteOne({
+        _id:
+          storedOtp._id,
+      });
+
+      return {
+        valid:
+          false,
+
+        status:
+          429,
+
+        message:
+          "Too many incorrect attempts. Please request a new OTP.",
+      };
+    }
+
+    /* =====================================================
+       COMPARE OTP
+    ===================================================== */
+
+    const valid =
+      compareOtpHash(
+        otp,
+        storedOtp.otpHash
+      );
+
+    if (
+      !valid
+    ) {
+      storedOtp.attempts +=
+        1;
+
+      await storedOtp.save();
+
+      const attemptsRemaining =
+        Math.max(
+          0,
+
+          storedOtp.maxAttempts -
+            storedOtp.attempts
+        );
+
+      if (
+        attemptsRemaining ===
+        0
+      ) {
+        await Otp.deleteOne({
+          _id:
+            storedOtp._id,
+        });
+
+        return {
+          valid:
+            false,
+
+          status:
+            429,
+
+          message:
+            "Too many incorrect attempts. Please request a new OTP.",
+        };
+      }
+
+      return {
+        valid:
+          false,
+
+        status:
+          400,
+
+        message:
+          `Incorrect OTP. ${attemptsRemaining} attempt${
+            attemptsRemaining ===
+            1
+              ? ""
+              : "s"
+          } remaining.`,
+      };
+    }
+
+    /* =====================================================
+       VERIFIED — CONSUME OTP
+    ===================================================== */
+
+    /*
+      Delete immediately.
+
+      The OTP cannot be replayed after successful
+      authentication.
+    */
+
+    await Otp.deleteOne({
+      _id:
+        storedOtp._id,
+    });
+
+    return {
+      valid:
+        true,
+    };
+  };
+
+/* =========================================================
+   SEND DRIVER LOGIN OTP
 ========================================================= */
 
 /*
-  POST /api/driver-auth/login
+  POST /api/driver-auth/send-login-otp
 
   BODY:
 
   {
-    "email": "driver@example.com",
-    "password": "password123"
+    "email": "driver@example.com"
   }
 */
 
-export const loginDriver =
+export const sendLoginOtp =
   async (
     req,
     res
   ) => {
     try {
       /* ===================================================
-         INPUT
+         EMAIL
       =================================================== */
 
       const email =
         normalizeEmail(
-          req.body?.email
+          req.body
+            ?.email
         );
 
-      const password =
-        String(
-          req.body?.password ||
-            ""
-        );
-
-      /* ===================================================
-         EMAIL VALIDATION
-      =================================================== */
-
       if (
-        !email
-      ) {
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-
-            message:
-              "Email is required",
-          });
-      }
-
-      if (
+        !email ||
         !isValidEmail(
           email
         )
@@ -296,11 +767,145 @@ export const loginDriver =
       }
 
       /* ===================================================
-         PASSWORD VALIDATION
+         DRIVER ACCOUNT
+      =================================================== */
+
+      const driver =
+        await Driver.findByEmail(
+          email
+        );
+
+      if (
+        !driver
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "No Driver account found with this email. Please register first.",
+          });
+      }
+
+      /* ===================================================
+         SEND OTP
+      =================================================== */
+
+      const result =
+        await createAndSendDriverOtp({
+          email,
+        });
+
+      /* ===================================================
+         COOLDOWN
       =================================================== */
 
       if (
-        !password
+        !result.success &&
+        result.cooldown
+      ) {
+        return res
+          .status(429)
+          .json({
+            success:
+              false,
+
+            message:
+              `Please wait ${result.secondsRemaining} seconds before requesting another OTP.`,
+
+            retryAfter:
+              result.secondsRemaining,
+          });
+      }
+
+      /* ===================================================
+         RESPONSE
+      =================================================== */
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Login OTP sent successfully",
+
+          expiresIn:
+            result.expiresIn,
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "SEND DRIVER LOGIN OTP ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to send login OTP",
+        });
+    }
+  };
+
+/* =========================================================
+   VERIFY DRIVER LOGIN OTP
+========================================================= */
+
+/*
+  POST /api/driver-auth/verify-login-otp
+
+  BODY:
+
+  {
+    "email": "driver@example.com",
+    "otp": "123456"
+  }
+*/
+
+export const verifyLoginOtp =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      /* ===================================================
+         EMAIL
+      =================================================== */
+
+      const email =
+        normalizeEmail(
+          req.body
+            ?.email
+        );
+
+      /* ===================================================
+         OTP
+      =================================================== */
+
+      const otp =
+        validateOtpInput(
+          req.body
+            ?.otp
+        );
+
+      /* ===================================================
+         EMAIL VALIDATION
+      =================================================== */
+
+      if (
+        !email ||
+        !isValidEmail(
+          email
+        )
       ) {
         return res
           .status(400)
@@ -309,83 +914,87 @@ export const loginDriver =
               false,
 
             message:
-              "Password is required",
+              "Enter a valid email address",
           });
       }
 
       /* ===================================================
-         FIND DRIVER
+         OTP VALIDATION
+      =================================================== */
+
+      if (
+        !otp
+      ) {
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Enter a valid 6-digit OTP",
+          });
+      }
+
+      /* ===================================================
+         VERIFY OTP
+      =================================================== */
+
+      const verification =
+        await verifyStoredDriverOtp({
+          email,
+          otp,
+        });
+
+      if (
+        !verification.valid
+      ) {
+        return res
+          .status(
+            verification.status
+          )
+          .json({
+            success:
+              false,
+
+            message:
+              verification.message,
+          });
+      }
+
+      /* ===================================================
+         FETCH DRIVER AGAIN
       =================================================== */
 
       /*
-        Password has:
+        We fetch the Driver again after OTP verification.
 
-        select: false
-
-        in Driver.js.
-
-        Therefore we must explicitly select it.
+        This ensures that approval/rejection state is
+        always current even if Admin changed it while
+        the OTP was being entered.
       */
 
       const driver =
-        await Driver.findOne({
-          email,
-        }).select(
-          "+password"
+        await Driver.findByEmail(
+          email
         );
-
-      /*
-        IMPORTANT:
-
-        Use the same generic response for:
-
-        unknown email
-          OR
-        wrong password.
-
-        This prevents revealing whether a specific
-        Driver email exists.
-      */
 
       if (
         !driver
       ) {
         return res
-          .status(401)
+          .status(404)
           .json({
             success:
               false,
 
             message:
-              "Invalid email or password",
+              "Driver account not found",
           });
       }
 
       /* ===================================================
-         CHECK PASSWORD
-      =================================================== */
-
-      const passwordMatches =
-        await driver.comparePassword(
-          password
-        );
-
-      if (
-        !passwordMatches
-      ) {
-        return res
-          .status(401)
-          .json({
-            success:
-              false,
-
-            message:
-              "Invalid email or password",
-          });
-      }
-
-      /* ===================================================
-         CREATE JWT
+         JWT
       =================================================== */
 
       const token =
@@ -394,20 +1003,11 @@ export const loginDriver =
         );
 
       /* ===================================================
-         DRIVER STATUS
+         STATUS
       =================================================== */
 
       const statusInfo =
         getDriverStatusInfo(
-          driver
-        );
-
-      /* ===================================================
-         SAFE DRIVER DATA
-      =================================================== */
-
-      const safeDriver =
-        getSafeDriver(
           driver
         );
 
@@ -447,13 +1047,15 @@ export const loginDriver =
             null,
 
           data:
-            safeDriver,
+            getSafeDriver(
+              driver
+            ),
         });
     } catch (
       error
     ) {
       console.error(
-        "DRIVER LOGIN ERROR:",
+        "VERIFY DRIVER LOGIN OTP ERROR:",
         error
       );
 
@@ -464,7 +1066,7 @@ export const loginDriver =
             false,
 
           message:
-            "Unable to login Driver",
+            "Failed to verify login OTP",
         });
     }
   };
@@ -479,10 +1081,6 @@ export const loginDriver =
   HEADER:
 
   Authorization: Bearer <DRIVER_JWT>
-
-  Route must use:
-
-  verifyDriver
 */
 
 export const getCurrentDriver =
@@ -492,7 +1090,7 @@ export const getCurrentDriver =
   ) => {
     try {
       /* ===================================================
-         DRIVER FROM verifyDriver
+         AUTHENTICATED DRIVER
       =================================================== */
 
       if (
@@ -509,10 +1107,9 @@ export const getCurrentDriver =
           });
       }
 
-      /*
-        Reload the account so the frontend always receives
-        the latest approval status and profile information.
-      */
+      /* ===================================================
+         CURRENT DATABASE STATE
+      =================================================== */
 
       const driver =
         await Driver.findById(
@@ -537,6 +1134,10 @@ export const getCurrentDriver =
         getDriverStatusInfo(
           driver
         );
+
+      /* ===================================================
+         RESPONSE
+      =================================================== */
 
       return res
         .status(200)
@@ -600,14 +1201,9 @@ export const getCurrentDriver =
     "fcmToken": "..."
   }
 
-  JWT authentication is stateless.
+  JWT is stateless.
 
-  Therefore the frontend must delete its stored JWT
-  after this endpoint succeeds.
-
-  If an FCM token is supplied, it is removed from the
-  Driver account so that device stops receiving Driver
-  notifications after logout.
+  Frontend must delete the JWT locally after logout.
 */
 
 export const logoutDriver =
@@ -616,6 +1212,10 @@ export const logoutDriver =
     res
   ) => {
     try {
+      /* ===================================================
+         AUTHENTICATION
+      =================================================== */
+
       if (
         !req.driver
       ) {
@@ -631,14 +1231,16 @@ export const logoutDriver =
       }
 
       /* ===================================================
-         OPTIONAL FCM TOKEN
+         FCM TOKEN
       =================================================== */
 
       const fcmToken =
         typeof req.body
           ?.fcmToken ===
         "string"
-          ? req.body.fcmToken.trim()
+          ? req.body
+              .fcmToken
+              .trim()
           : "";
 
       if (
@@ -657,15 +1259,8 @@ export const logoutDriver =
       }
 
       /* ===================================================
-         ONLINE STATUS
+         OFFLINE STATUS
       =================================================== */
-
-      /*
-        Logging out should make the Driver unavailable.
-
-        If the Driver has an active trip, your Trip/socket
-        flow can later handle this differently if needed.
-      */
 
       await Driver.findByIdAndUpdate(
         req.driver._id,
@@ -680,6 +1275,10 @@ export const logoutDriver =
           },
         }
       );
+
+      /* ===================================================
+         RESPONSE
+      =================================================== */
 
       return res
         .status(200)
