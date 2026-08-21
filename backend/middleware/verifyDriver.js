@@ -10,32 +10,34 @@ import Driver from "../models/Driver.js";
 /*
   PURPOSE:
 
-  This middleware verifies that:
+  This middleware verifies:
 
-  1. A Bearer token exists
-  2. The JWT is valid
+  1. Authorization Bearer token exists
+  2. JWT is valid
   3. tokenType === "driver"
-  4. The MongoDB Driver account exists
+  4. MongoDB Driver _id is valid
+  5. Driver account still exists
 
   IMPORTANT:
 
-  This middleware DOES NOT require the Driver
-  to already be approved.
+  This middleware only verifies authentication.
+
+  It DOES NOT require approval.
 
   Therefore:
 
-  pending Driver
-      → authenticated
+  pending
+    → authenticated
 
-  approved Driver
-      → authenticated
+  approved
+    → authenticated
 
-  rejected Driver
-      → authenticated
+  rejected
+    → authenticated
 
-  Approval-based access is handled separately by:
+  Approval-based authorization is handled separately using:
 
-      requireApprovedDriver
+  requireApprovedDriver
 */
 
 const verifyDriver =
@@ -50,8 +52,7 @@ const verifyDriver =
       ===================================================== */
 
       if (
-        !process.env
-          .JWT_SECRET
+        !process.env.JWT_SECRET
       ) {
         console.error(
           "JWT_SECRET is not configured"
@@ -60,8 +61,7 @@ const verifyDriver =
         return res
           .status(500)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Server authentication configuration error",
@@ -85,8 +85,7 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Driver authentication required",
@@ -108,8 +107,7 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Driver authentication required",
@@ -123,8 +121,9 @@ const verifyDriver =
       const decoded =
         jwt.verify(
           token,
-          process.env
-            .JWT_SECRET,
+
+          process.env.JWT_SECRET,
+
           {
             algorithms: [
               "HS256",
@@ -133,22 +132,32 @@ const verifyDriver =
         );
 
       /* =====================================================
-         TOKEN STRUCTURE
+         EXPECTED DRIVER JWT
       ===================================================== */
 
       /*
-        Expected Driver JWT:
+        Driver JWT is generated after:
+
+        - Driver registration OTP verification
+        - Driver login OTP verification
+
+        Structure:
 
         {
           id: "<MongoDB Driver _id>",
           tokenType: "driver"
         }
 
-        We intentionally do NOT depend on driverId
-        being stored inside the JWT.
+        We intentionally do NOT put these inside JWT:
 
-        driverId can be assigned/changed later while
-        MongoDB _id remains the account identity.
+        driverId
+        email
+        phone
+        approval status
+
+        They may change.
+
+        MongoDB _id remains the permanent account identity.
       */
 
       if (
@@ -162,8 +171,7 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Invalid Driver token",
@@ -177,7 +185,7 @@ const verifyDriver =
       const driverMongoId =
         String(
           decoded.id
-        );
+        ).trim();
 
       if (
         !mongoose.Types.ObjectId.isValid(
@@ -187,8 +195,7 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Invalid Driver token",
@@ -198,6 +205,18 @@ const verifyDriver =
       /* =====================================================
          LOAD CURRENT DRIVER ACCOUNT
       ===================================================== */
+
+      /*
+        Always load the Driver from MongoDB.
+
+        This ensures we always use the latest:
+
+        - status
+        - driverId
+        - email
+        - rejectionReason
+        - profile information
+      */
 
       const driver =
         await Driver.findById(
@@ -210,8 +229,7 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
 
             message:
               "Driver account not found",
@@ -219,11 +237,26 @@ const verifyDriver =
       }
 
       /* =====================================================
-         ATTACH AUTHENTICATED DRIVER
+         ATTACH DRIVER
       ===================================================== */
+
+      /*
+        Full Mongoose Driver document.
+
+        Controllers can use:
+
+        req.driver._id
+        req.driver.email
+        req.driver.status
+        req.driver.driverId
+      */
 
       req.driver =
         driver;
+
+      /* =====================================================
+         ATTACH SAFE AUTH INFORMATION
+      ===================================================== */
 
       req.driverAuth = {
         id:
@@ -245,6 +278,10 @@ const verifyDriver =
           "driver",
       };
 
+      /* =====================================================
+         CONTINUE
+      ===================================================== */
+
       return next();
     } catch (
       error
@@ -260,8 +297,10 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
+
+            code:
+              "DRIVER_SESSION_EXPIRED",
 
             message:
               "Driver session expired",
@@ -281,8 +320,10 @@ const verifyDriver =
         return res
           .status(401)
           .json({
-            success:
-              false,
+            success: false,
+
+            code:
+              "INVALID_DRIVER_TOKEN",
 
             message:
               "Invalid Driver token",
@@ -301,8 +342,7 @@ const verifyDriver =
       return res
         .status(500)
         .json({
-          success:
-            false,
+          success: false,
 
           message:
             "Driver authentication failed",
@@ -325,11 +365,14 @@ const verifyDriver =
     verifyDriver,
     requireApprovedDriver,
 
-    ...
+    controller
   );
 
-  This keeps authentication separate from
-  operational authorization.
+  Authentication:
+    verifyDriver
+
+  Authorization:
+    requireApprovedDriver
 */
 
 export const requireApprovedDriver =
@@ -338,14 +381,17 @@ export const requireApprovedDriver =
     res,
     next
   ) => {
+    /* =====================================================
+       DRIVER REQUIRED
+    ===================================================== */
+
     if (
       !req.driver
     ) {
       return res
         .status(401)
         .json({
-          success:
-            false,
+          success: false,
 
           message:
             "Driver authentication required",
@@ -353,7 +399,7 @@ export const requireApprovedDriver =
     }
 
     /* =====================================================
-       APPROVED
+       APPROVED DRIVER
     ===================================================== */
 
     if (
@@ -361,8 +407,12 @@ export const requireApprovedDriver =
       "approved"
     ) {
       /*
-        Approved Drivers should normally have their
-        public ASAN Driver ID assigned.
+        Approved Drivers should have their public
+        ASAN Driver ID.
+
+        Example:
+
+        ASAN-AB12CD
       */
 
       if (
@@ -371,8 +421,10 @@ export const requireApprovedDriver =
         return res
           .status(409)
           .json({
-            success:
-              false,
+            success: false,
+
+            code:
+              "DRIVER_ID_MISSING",
 
             message:
               "Driver ID has not been assigned yet",
@@ -383,7 +435,7 @@ export const requireApprovedDriver =
     }
 
     /* =====================================================
-       PENDING
+       PENDING DRIVER
     ===================================================== */
 
     if (
@@ -393,8 +445,7 @@ export const requireApprovedDriver =
       return res
         .status(403)
         .json({
-          success:
-            false,
+          success: false,
 
           code:
             "DRIVER_PENDING",
@@ -402,13 +453,16 @@ export const requireApprovedDriver =
           status:
             "pending",
 
+          nextStep:
+            "approval-pending",
+
           message:
             "Your Driver account is awaiting approval",
         });
     }
 
     /* =====================================================
-       REJECTED
+       REJECTED DRIVER
     ===================================================== */
 
     if (
@@ -418,8 +472,7 @@ export const requireApprovedDriver =
       return res
         .status(403)
         .json({
-          success:
-            false,
+          success: false,
 
           code:
             "DRIVER_REJECTED",
@@ -427,16 +480,16 @@ export const requireApprovedDriver =
           status:
             "rejected",
 
+          nextStep:
+            "application-rejected",
+
           rejectionReason:
             req.driver
               .rejectionReason ||
             null,
 
           message:
-            req.driver
-              .rejectionReason
-              ? "Your Driver application was rejected"
-              : "Your Driver account is not approved",
+            "Your Driver application was rejected",
         });
     }
 
@@ -447,11 +500,14 @@ export const requireApprovedDriver =
     return res
       .status(403)
       .json({
-        success:
-          false,
+        success: false,
 
         code:
           "DRIVER_NOT_APPROVED",
+
+        status:
+          req.driver.status ||
+          "unknown",
 
         message:
           "Driver account is not approved",
