@@ -1,424 +1,265 @@
-import express from "express";
-
 import {
-  sendRegisterOtp,
-  verifyRegisterOtp,
-  sendLoginOtp,
-  verifyLoginOtp,
-  getCurrentDriver,
-  logoutDriver,
-} from "../controllers/driverAuthController.js";
-
-import verifyDriver from "../middleware/verifyDriver.js";
-
-import {
-  driverUpload,
-} from "../config/cloudinary.js";
-
-import {
-  driverOtpSendLimiter,
-  driverOtpVerifyLimiter,
-} from "../middleware/rateLimiters.js";
+  rateLimit,
+} from "express-rate-limit";
 
 /* =========================================================
-   ROUTER
-========================================================= */
-
-const router =
-  express.Router();
-
-/* =========================================================
-   DRIVER REGISTRATION OTP
+   DRIVER OTP SEND LIMITER
 ========================================================= */
 
 /*
-  STEP 1
-
-  POST /api/driver-auth/send-register-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com"
-  }
-
-  FLOW:
-
-  Driver enters email
-        ↓
-  Registration OTP is generated
-        ↓
-  OTP is stored as a SHA-256 hash
-        ↓
-  OTP is sent through Resend
-        ↓
-  No Driver account is created yet
-*/
-
-router.post(
-  "/send-register-otp",
-
-  driverOtpSendLimiter,
-
-  sendRegisterOtp
-);
-
-/* =========================================================
-   VERIFY REGISTRATION OTP + CREATE DRIVER
-========================================================= */
-
-/*
-  STEP 2
-
-  POST /api/driver-auth/verify-register-otp
-
-  CONTENT TYPE:
-
-  multipart/form-data
-
-
-  TEXT FIELDS:
-
-  email
-  otp
-  name
-  phone
-  address
-  latitude
-  longitude
-  vehicleNumber
-  vehicleType
-  vehicleModel
-  licenseNumber
-
-
-  REQUIRED FILE FIELDS:
-
-  licenseFront
-  licenseBack
-  rcFront
-  rcBack
-  insurance
-  idFront
-  idBack
-
-
-  OPTIONAL FILE FIELD:
-
-  profilePhoto
-
-
-  FLOW:
-
-  Driver submits OTP
-        +
-  Driver details
-        +
-  Driver documents
-        ↓
-  OTP is verified
-        ↓
-  Required details are validated
-        ↓
-  Required documents are validated
-        ↓
-  Driver account is created
-        ↓
-  Driver status = pending
-        ↓
-  Public Driver ID generated
-        ↓
-  ASAN Driver JWT issued
-*/
-
-router.post(
-  "/verify-register-otp",
-
-  driverOtpVerifyLimiter,
-
-  driverUpload.fields([
-    {
-      name:
-        "licenseFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "licenseBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "rcFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "rcBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "insurance",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "idFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "idBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "profilePhoto",
-
-      maxCount:
-        1,
-    },
-  ]),
-
-  verifyRegisterOtp
-);
-
-/* =========================================================
-   DRIVER LOGIN OTP
-========================================================= */
-
-/*
-  STEP 1
+  Used for:
 
   POST /api/driver-auth/send-login-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com"
-  }
-
-  FLOW:
-
-  Driver enters registered email
-        ↓
-  Existing Driver account is checked
-        ↓
-  6-digit OTP generated
-        ↓
-  OTP hash stored in MongoDB
-        ↓
-  OTP sent through Resend
-*/
-
-router.post(
-  "/send-login-otp",
-
-  driverOtpSendLimiter,
-
-  sendLoginOtp
-);
-
-/* =========================================================
-   VERIFY DRIVER LOGIN OTP
-========================================================= */
-
-/*
-  STEP 2
-
-  POST /api/driver-auth/verify-login-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com",
-    "otp": "123456"
-  }
-
-
-  FLOW:
-
-  Driver submits email + OTP
-        ↓
-  OTP is verified
-        ↓
-  Current Driver loaded from MongoDB
-        ↓
-  ASAN Driver JWT created
-
-
-  JWT PAYLOAD:
-
-  {
-    id: "<MongoDB Driver _id>",
-    tokenType: "driver"
-  }
-
-
-  ACCOUNT STATUS:
-
-  pending
-        ↓
-  approval-pending
-
-
-  approved
-        ↓
-  dashboard
-
-
-  rejected
-        ↓
-  application-rejected
-*/
-
-router.post(
-  "/verify-login-otp",
-
-  driverOtpVerifyLimiter,
-
-  verifyLoginOtp
-);
-
-/* =========================================================
-   CURRENT DRIVER SESSION
-========================================================= */
-
-/*
-  GET /api/driver-auth/me
-
-  HEADER:
-
-  Authorization: Bearer <DRIVER_JWT>
-
-
-  This endpoint works for:
-
-  pending
-  approved
-  rejected
-
-
-  verifyDriver only verifies authentication.
-
-  It does NOT require approval.
-*/
-
-router.get(
-  "/me",
-
-  verifyDriver,
-
-  getCurrentDriver
-);
-
-/* =========================================================
-   DRIVER LOGOUT
-========================================================= */
-
-/*
-  POST /api/driver-auth/logout
-
-  HEADER:
-
-  Authorization: Bearer <DRIVER_JWT>
-
-
-  OPTIONAL BODY:
-
-  {
-    "fcmToken": "..."
-  }
-
-
-  If fcmToken is supplied:
-
-  it is removed from the Driver account.
-
-
-  Driver is also marked:
-
-  isOnline = false
-  currentStatus = offline
-
-
-  JWT itself is stateless.
-
-  The frontend must delete the stored Driver JWT locally.
-*/
-
-router.post(
-  "/logout",
-
-  verifyDriver,
-
-  logoutDriver
-);
-
-/* =========================================================
-   FINAL DRIVER AUTH ENDPOINTS
-========================================================= */
-
-/*
-
-  REGISTRATION
-
   POST /api/driver-auth/send-register-otp
 
-  POST /api/driver-auth/verify-register-otp
+  Every successful request sends an email,
+  so this limiter is intentionally stricter.
 
-
-  LOGIN
-
-  POST /api/driver-auth/send-login-otp
-
-  POST /api/driver-auth/verify-login-otp
-
-
-  SESSION
-
-  GET /api/driver-auth/me
-
-  POST /api/driver-auth/logout
-
-
-  IMPORTANT:
-
-  Driver authentication is completely passwordless.
-
-  There is no:
-
-  /login with password
-  bcrypt password comparison
-  password field in Driver registration
-  password stored in Driver MongoDB documents
-
+  The Driver OTP controller also has a
+  60-second resend cooldown per email.
 */
 
+export const driverOtpSendLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      8,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many Driver OTP requests. Please wait and try again later.",
+    },
+  });
+
 /* =========================================================
-   EXPORT
+   DRIVER OTP VERIFY LIMITER
 ========================================================= */
 
-export default router;
+/*
+  Used for:
+
+  POST /api/driver-auth/verify-login-otp
+  POST /api/driver-auth/verify-register-otp
+
+  The OTP document already limits incorrect OTP
+  attempts to 5.
+
+  This limiter provides an additional HTTP-level
+  protection against repeated requests.
+*/
+
+export const driverOtpVerifyLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      20,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many Driver OTP verification attempts. Please try again later.",
+    },
+  });
+
+/* =========================================================
+   PARENT OTP SEND LIMITER
+========================================================= */
+
+/*
+  Used for:
+
+  POST /api/parent-auth/send-login-otp
+  POST /api/parent-auth/send-register-otp
+
+  Every successful request sends an email.
+*/
+
+export const parentOtpSendLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      8,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many OTP requests. Please wait and try again later.",
+    },
+  });
+
+/* =========================================================
+   PARENT OTP VERIFY LIMITER
+========================================================= */
+
+/*
+  Used for:
+
+  POST /api/parent-auth/verify-login-otp
+  POST /api/parent-auth/verify-register-otp
+
+  Individual OTP documents already limit incorrect
+  verification attempts.
+
+  This adds HTTP-level protection.
+*/
+
+export const parentOtpVerifyLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      20,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many OTP verification attempts. Please try again later.",
+    },
+  });
+
+/* =========================================================
+   GENERAL DRIVER AUTH LIMITER
+========================================================= */
+
+/*
+  Retained temporarily for backward compatibility.
+
+  If another Driver-related route still imports
+  loginLimiter, it will continue working.
+
+  New OTP routes should NOT use this limiter.
+*/
+
+export const loginLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      10,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    skipSuccessfulRequests:
+      true,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many login attempts. Please try again later.",
+    },
+  });
+
+/* =========================================================
+   GENERAL SIGNUP LIMITER
+========================================================= */
+
+/*
+  Retained temporarily for backward compatibility.
+
+  New Driver OTP registration does NOT need to use
+  this limiter directly.
+*/
+
+export const signupLimiter =
+  rateLimit({
+    windowMs:
+      60 * 60 * 1000,
+
+    limit:
+      10,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many signup attempts. Please try again later.",
+    },
+  });
+
+/* =========================================================
+   GENERAL PARENT AUTH LIMITER
+========================================================= */
+
+/*
+  Retained for backward compatibility.
+
+  This can later be removed after confirming
+  nothing imports it.
+*/
+
+export const parentAuthLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    limit:
+      30,
+
+    standardHeaders:
+      "draft-8",
+
+    legacyHeaders:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        "Too many authentication requests. Please try again later.",
+    },
+  });
