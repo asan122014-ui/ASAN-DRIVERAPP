@@ -1,14 +1,14 @@
 import express from "express";
 
-import verifyPhoneEmail from "../middleware/verifyPhoneEmail.js";
-
 import {
   parentAuthLimiter,
 } from "../middleware/rateLimiters.js";
 
 import {
-  loginParent,
-  registerParent,
+  sendLoginOtp,
+  verifyLoginOtp,
+  sendRegisterOtp,
+  verifyRegisterOtp,
 } from "../controllers/parentAuthController.js";
 
 /* =========================================================
@@ -21,93 +21,158 @@ const router =
 /* =========================================================
    PARENT AUTH FLOW
 
-   Phone.Email OTP Verification
-        ↓
-   userJsonUrl
-        ↓
-   verifyPhoneEmail
-        ↓
-   req.verifiedIdentity.phone
-        ↓
+   EMAIL
+     ↓
+   Resend OTP
+     ↓
+   OTP Verification
+     ↓
    MongoDB Parent
-        ↓
+     ↓
    ASAN Parent JWT
 ========================================================= */
 
 /* =========================================================
-   LOGIN EXISTING PARENT
+   SEND LOGIN OTP
 ========================================================= */
 
 /*
-POST /api/parent-auth/login
+POST /api/parent-auth/send-login-otp
 
 BODY:
 
 {
-  "userJsonUrl": "https://user.phone.email/..."
+  "email": "parent@gmail.com"
 }
 
 FLOW:
 
-Phone.Email verifies OTP
-        ↓
-Backend verifies userJsonUrl
-        ↓
-Verified phone extracted
-        ↓
-Parent searched in MongoDB
-        ↓
-ASAN Parent JWT issued
-        ↓
-Dashboard
+Email entered
+    ↓
+Parent account checked
+    ↓
+OTP generated
+    ↓
+OTP hash stored
+    ↓
+OTP sent through Resend
 */
 
 router.post(
-  "/login",
+  "/send-login-otp",
 
   parentAuthLimiter,
 
-  verifyPhoneEmail,
-
-  loginParent
+  sendLoginOtp
 );
 
 /* =========================================================
-   REGISTER NEW PARENT
+   VERIFY LOGIN OTP
 ========================================================= */
 
 /*
-POST /api/parent-auth/register
+POST /api/parent-auth/verify-login-otp
 
 BODY:
 
 {
-  "userJsonUrl": "https://user.phone.email/...",
-  "name": "Parent Name",
   "email": "parent@gmail.com",
-  "address": "Hyderabad",
-  "latitude": 17.385,
-  "longitude": 78.486
+  "otp": "123456"
 }
 
-IMPORTANT:
+FLOW:
 
-The phone number is NOT accepted as trusted identity
-from req.body.
-
-The verified phone number must come from:
-
-req.verifiedIdentity.phone
+OTP verified
+    ↓
+Existing Parent fetched
+    ↓
+ASAN Parent JWT issued
+    ↓
+Dashboard
 */
 
 router.post(
-  "/register",
+  "/verify-login-otp",
 
   parentAuthLimiter,
 
-  verifyPhoneEmail,
+  verifyLoginOtp
+);
 
-  registerParent
+/* =========================================================
+   SEND REGISTER OTP
+========================================================= */
+
+/*
+POST /api/parent-auth/send-register-otp
+
+BODY:
+
+{
+  "email": "parent@gmail.com"
+}
+
+FLOW:
+
+Email entered during registration
+    ↓
+Check that email is not already registered
+    ↓
+OTP generated
+    ↓
+OTP hash stored
+    ↓
+OTP sent through Resend
+*/
+
+router.post(
+  "/send-register-otp",
+
+  parentAuthLimiter,
+
+  sendRegisterOtp
+);
+
+/* =========================================================
+   VERIFY REGISTER OTP + CREATE PARENT
+========================================================= */
+
+/*
+POST /api/parent-auth/verify-register-otp
+
+BODY:
+
+{
+  "name": "Parent Name",
+  "email": "parent@gmail.com",
+  "phone": "8309649713",
+  "address": "Hyderabad",
+  "latitude": 17.385,
+  "longitude": 78.486,
+  "otp": "123456"
+}
+
+FLOW:
+
+Registration details entered
+    ↓
+Email OTP verified
+    ↓
+Parent created in MongoDB
+    ↓
+ASAN Parent JWT issued
+    ↓
+Add Children
+    ↓
+Driver Choice
+*/
+
+router.post(
+  "/verify-register-otp",
+
+  parentAuthLimiter,
+
+  verifyRegisterOtp
 );
 
 /* =========================================================
