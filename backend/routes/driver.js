@@ -31,6 +31,10 @@ const IST_OFFSET_MS =
    HELPERS
 ========================================================= */
 
+/* =========================================================
+   NORMALIZE DRIVER ID
+========================================================= */
+
 const normalizeDriverId = (
   driverId
 ) => {
@@ -63,7 +67,9 @@ const escapeRegex = (
 const getSafeDriver = (
   driver
 ) => {
-  if (!driver) {
+  if (
+    !driver
+  ) {
     return null;
   }
 
@@ -71,9 +77,12 @@ const getSafeDriver = (
     typeof driver.toObject ===
     "function"
       ? driver.toObject()
-      : { ...driver };
+      : {
+          ...driver,
+        };
 
   delete data.password;
+  delete data.__v;
 
   return data;
 };
@@ -82,11 +91,21 @@ const getSafeDriver = (
    FIND DRIVER
 ========================================================= */
 
+/*
+  Supports:
+
+  ASAN custom Driver ID
+      OR
+  MongoDB _id
+*/
+
 const findDriver =
   async (
     identifier
   ) => {
-    if (!identifier) {
+    if (
+      !identifier
+    ) {
       return null;
     }
 
@@ -95,7 +114,9 @@ const findDriver =
         identifier
       ).trim();
 
-    if (!value) {
+    if (
+      !value
+    ) {
       return null;
     }
 
@@ -103,6 +124,10 @@ const findDriver =
       normalizeDriverId(
         value
       );
+
+    /* =====================================================
+       CUSTOM DRIVER ID
+    ===================================================== */
 
     const driverByCustomId =
       await Driver.findOne({
@@ -115,6 +140,10 @@ const findDriver =
     ) {
       return driverByCustomId;
     }
+
+    /* =====================================================
+       MONGODB ID
+    ===================================================== */
 
     if (
       mongoose.Types.ObjectId.isValid(
@@ -188,8 +217,35 @@ const getTodayRangeIST =
   };
 
 /* =========================================================
+   CHECK LIVE LOCATION
+========================================================= */
+
+const hasValidLiveLocation = (
+  lastLocation
+) => {
+  return (
+    Number.isFinite(
+      lastLocation?.lat
+    ) &&
+    Number.isFinite(
+      lastLocation?.lng
+    )
+  );
+};
+
+/* =========================================================
    DRIVER OWNERSHIP CHECK
 ========================================================= */
+
+/*
+  Allows Driver route identifier to be either:
+
+  MongoDB _id
+
+  OR
+
+  Custom ASAN Driver ID
+*/
 
 const requireOwnDriverIdentifier =
   (
@@ -207,7 +263,9 @@ const requireOwnDriverIdentifier =
           ] || ""
         ).trim();
 
-      if (!identifier) {
+      if (
+        !identifier
+      ) {
         return res
           .status(400)
           .json({
@@ -216,6 +274,20 @@ const requireOwnDriverIdentifier =
 
             message:
               "Driver ID is required",
+          });
+      }
+
+      if (
+        !req.driver?._id
+      ) {
+        return res
+          .status(401)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver authentication required",
           });
       }
 
@@ -242,8 +314,11 @@ const requireOwnDriverIdentifier =
           authenticatedMongoId;
 
       const customIdMatch =
+        Boolean(
+          authenticatedDriverId
+        ) &&
         requestedDriverId ===
-        authenticatedDriverId;
+          authenticatedDriverId;
 
       if (
         !mongoIdMatch &&
@@ -268,6 +343,13 @@ const requireOwnDriverIdentifier =
    VERIFY LINKED DRIVER
 ========================================================= */
 
+/*
+  Used for Parent → Driver APIs.
+
+  Parent can only access the Driver linked
+  to their Parent account.
+*/
+
 const requireLinkedDriver = (
   req,
   res,
@@ -284,7 +366,9 @@ const requireLinkedDriver = (
       req.parent?.driverId
     );
 
-  if (!linkedDriverId) {
+  if (
+    !linkedDriverId
+  ) {
     return res
       .status(409)
       .json({
@@ -351,7 +435,9 @@ const cleanupUploadedPhoto =
         .destroy(
           file.filename
         );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "NEW DRIVER PHOTO CLEANUP ERROR:",
         error.message
@@ -381,7 +467,9 @@ router.post(
           ? req.body.token.trim()
           : "";
 
-      if (!normalizedToken) {
+      if (
+        !normalizedToken
+      ) {
         return res
           .status(400)
           .json({
@@ -413,7 +501,9 @@ router.post(
           message:
             "Token saved successfully",
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "SAVE DRIVER TOKEN ERROR:",
         error
@@ -450,10 +540,22 @@ router.get(
       const drivers =
         await Driver.find()
           .select(
-            "name phone email driverId vehicleNumber vehicleType status profilePhoto"
+            [
+              "name",
+              "phone",
+              "email",
+              "driverId",
+              "vehicleNumber",
+              "vehicleType",
+              "status",
+              "profilePhoto",
+              "isOnline",
+              "currentStatus",
+            ].join(" ")
           )
           .sort({
-            name: 1,
+            name:
+              1,
           })
           .lean();
 
@@ -469,7 +571,9 @@ router.get(
           data:
             drivers,
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "GET ALL DRIVERS ERROR:",
         error
@@ -509,7 +613,9 @@ router.get(
             ""
         ).trim();
 
-      if (!query) {
+      if (
+        !query
+      ) {
         return res
           .status(200)
           .json({
@@ -550,7 +656,27 @@ router.get(
             },
 
             {
+              email: {
+                $regex:
+                  safeQuery,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
               driverId: {
+                $regex:
+                  safeQuery,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              vehicleNumber: {
                 $regex:
                   safeQuery,
 
@@ -561,9 +687,20 @@ router.get(
           ],
         })
           .select(
-            "name phone email driverId vehicleNumber vehicleType status profilePhoto"
+            [
+              "name",
+              "phone",
+              "email",
+              "driverId",
+              "vehicleNumber",
+              "vehicleType",
+              "status",
+              "profilePhoto",
+            ].join(" ")
           )
-          .limit(10)
+          .limit(
+            10
+          )
           .lean();
 
       return res
@@ -575,7 +712,9 @@ router.get(
           data:
             drivers,
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "DRIVER SEARCH ERROR:",
         error
@@ -628,11 +767,20 @@ router.get(
 
           status:
             "approved",
-        }).select(
-          "driverId isOnline currentStatus lastLocation"
-        );
+        })
+          .select(
+            [
+              "driverId",
+              "isOnline",
+              "currentStatus",
+              "lastLocation",
+            ].join(" ")
+          )
+          .lean();
 
-      if (!driver) {
+      if (
+        !driver
+      ) {
         return res
           .status(404)
           .json({
@@ -643,6 +791,11 @@ router.get(
               "Driver not found",
           });
       }
+
+      const liveLocationAvailable =
+        hasValidLiveLocation(
+          driver.lastLocation
+        );
 
       return res
         .status(200)
@@ -655,17 +808,22 @@ router.get(
               driver.driverId,
 
             isOnline:
-              driver.isOnline,
+              Boolean(
+                driver.isOnline
+              ),
 
             currentStatus:
               driver.currentStatus,
 
             lastLocation:
-              driver.lastLocation ||
-              null,
+              liveLocationAvailable
+                ? driver.lastLocation
+                : null,
           },
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "GET DRIVER LOCATION ERROR:",
         error
@@ -707,7 +865,23 @@ router.get(
         req.driver;
 
       const driverId =
-        driver.driverId;
+        normalizeDriverId(
+          driver.driverId
+        );
+
+      if (
+        !driverId
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver ID has not been assigned yet",
+          });
+      }
 
       const {
         start,
@@ -754,20 +928,32 @@ router.get(
             name:
               driver.name,
 
+            profilePhoto:
+              driver.profilePhoto ||
+              driver.avatar ||
+              "",
+
             vehicleNumber:
               driver.vehicleNumber,
 
             vehicleType:
               driver.vehicleType,
 
+            vehicleModel:
+              driver.vehicleModel ||
+              "",
+
             rating:
-              driver.rating,
+              driver.rating ||
+              0,
 
             status:
               driver.status,
 
             isOnline:
-              driver.isOnline,
+              Boolean(
+                driver.isOnline
+              ),
 
             currentStatus:
               driver.currentStatus,
@@ -779,7 +965,9 @@ router.get(
             studentsAssigned,
           },
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "DRIVER DASHBOARD ERROR:",
         error
@@ -820,25 +1008,39 @@ router.get(
       const driver =
         req.driver;
 
-      const {
-        start,
-        end,
-      } =
-        getTodayRangeIST();
+      let todayTrips =
+        0;
 
-      const todayTrips =
-        await Trips.countDocuments({
-          driverId:
-            driver.driverId,
+      /*
+        Pending Drivers may not have received
+        their public ASAN Driver ID yet.
+      */
 
-          createdAt: {
-            $gte:
-              start,
+      if (
+        driver.driverId
+      ) {
+        const {
+          start,
+          end,
+        } =
+          getTodayRangeIST();
 
-            $lt:
-              end,
-          },
-        });
+        todayTrips =
+          await Trips.countDocuments({
+            driverId:
+              normalizeDriverId(
+                driver.driverId
+              ),
+
+            createdAt: {
+              $gte:
+                start,
+
+              $lt:
+                end,
+            },
+          });
+      }
 
       return res
         .status(200)
@@ -854,7 +1056,9 @@ router.get(
             todayTrips,
           },
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "DRIVER PROFILE ERROR:",
         error
@@ -905,11 +1109,27 @@ router.get(
 
           status:
             "approved",
-        }).select(
-          "driverId name phone vehicleNumber vehicleType isOnline currentStatus location lastLocation profilePhoto"
-        );
+        })
+          .select(
+            [
+              "driverId",
+              "name",
+              "phone",
+              "vehicleNumber",
+              "vehicleType",
+              "isOnline",
+              "currentStatus",
+              "location",
+              "lastLocation",
+              "profilePhoto",
+              "avatar",
+            ].join(" ")
+          )
+          .lean();
 
-      if (!driver) {
+      if (
+        !driver
+      ) {
         return res
           .status(404)
           .json({
@@ -920,6 +1140,11 @@ router.get(
               "Driver not found",
           });
       }
+
+      const liveLocationAvailable =
+        hasValidLiveLocation(
+          driver.lastLocation
+        );
 
       return res
         .status(200)
@@ -938,7 +1163,9 @@ router.get(
               driver.phone,
 
             profilePhoto:
-              driver.profilePhoto,
+              driver.profilePhoto ||
+              driver.avatar ||
+              "",
 
             vehicleNumber:
               driver.vehicleNumber,
@@ -947,16 +1174,21 @@ router.get(
               driver.vehicleType,
 
             isOnline:
-              driver.isOnline,
+              Boolean(
+                driver.isOnline
+              ),
 
             currentStatus:
               driver.currentStatus,
 
             location:
-              driver.location,
+              driver.location ||
+              null,
 
             lastLocation:
-              driver.lastLocation,
+              liveLocationAvailable
+                ? driver.lastLocation
+                : null,
           },
         });
     } catch (
@@ -1062,10 +1294,20 @@ router.put(
          ALLOWED PROFILE FIELDS
       =================================================== */
 
+      /*
+        IMPORTANT:
+
+        Email is intentionally NOT editable here.
+
+        Driver email is the authentication identity.
+
+        Email changes should later use a dedicated
+        verified Driver auth endpoint.
+      */
+
       const allowedFields =
         [
           "name",
-          "email",
           "address",
           "vehicleNumber",
           "vehicleType",
@@ -1090,7 +1332,9 @@ router.put(
           continue;
         }
 
-        updates[field] =
+        updates[
+          field
+        ] =
           typeof req.body[
             field
           ] ===
@@ -1152,78 +1396,6 @@ router.put(
       }
 
       /* ===================================================
-         EMAIL
-      =================================================== */
-
-      if (
-        updates.email !==
-        undefined
-      ) {
-        const email =
-          String(
-            updates.email
-          )
-            .trim()
-            .toLowerCase();
-
-        const emailRegex =
-          /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-        if (
-          !emailRegex.test(
-            email
-          )
-        ) {
-          await cleanupUploadedPhoto(
-            req.file
-          );
-
-          return res
-            .status(400)
-            .json({
-              success:
-                false,
-
-              message:
-                "Enter a valid email address",
-            });
-        }
-
-        const duplicateEmail =
-          await Driver.findOne({
-            email,
-
-            _id: {
-              $ne:
-                driver._id,
-            },
-          }).select(
-            "_id"
-          );
-
-        if (
-          duplicateEmail
-        ) {
-          await cleanupUploadedPhoto(
-            req.file
-          );
-
-          return res
-            .status(409)
-            .json({
-              success:
-                false,
-
-              message:
-                "Email is already registered",
-            });
-        }
-
-        updates.email =
-          email;
-      }
-
-      /* ===================================================
          VEHICLE NUMBER
       =================================================== */
 
@@ -1236,7 +1408,11 @@ router.put(
             updates.vehicleNumber
           )
             .trim()
-            .toUpperCase();
+            .toUpperCase()
+            .replace(
+              /\s+/g,
+              ""
+            );
 
         if (
           !updates.vehicleNumber
@@ -1255,6 +1431,30 @@ router.put(
                 "Vehicle number cannot be empty",
             });
         }
+      }
+
+      /* ===================================================
+         VEHICLE TYPE
+      =================================================== */
+
+      if (
+        updates.vehicleType !==
+          undefined &&
+        !updates.vehicleType
+      ) {
+        await cleanupUploadedPhoto(
+          req.file
+        );
+
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
+
+            message:
+              "Vehicle type cannot be empty",
+          });
       }
 
       /* ===================================================
@@ -1304,7 +1504,9 @@ router.put(
           updates
         )
       ) {
-        driver[field] =
+        driver[
+          field
+        ] =
           value;
       }
 
@@ -1334,7 +1536,9 @@ router.put(
             .destroy(
               oldPhotoPublicId
             );
-        } catch (error) {
+        } catch (
+          error
+        ) {
           console.error(
             "OLD DRIVER PHOTO DELETE ERROR:",
             error.message
@@ -1356,7 +1560,9 @@ router.put(
               driver
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       if (
         req.file &&
         !newPhotoSaved
@@ -1370,6 +1576,10 @@ router.put(
         "DRIVER UPDATE ERROR:",
         error
       );
+
+      /* ===================================================
+         DUPLICATE VALUE
+      =================================================== */
 
       if (
         error?.code ===
@@ -1386,10 +1596,22 @@ router.put(
           });
       }
 
+      /* ===================================================
+         MONGOOSE VALIDATION
+      =================================================== */
+
       if (
         error?.name ===
         "ValidationError"
       ) {
+        const validationMessage =
+          Object.values(
+            error.errors ||
+              {}
+          )?.[0]
+            ?.message ||
+          error.message;
+
         return res
           .status(400)
           .json({
@@ -1397,7 +1619,7 @@ router.put(
               false,
 
             message:
-              error.message,
+              validationMessage,
           });
       }
 
@@ -1417,12 +1639,12 @@ router.put(
 /* =========================================================
    GET DRIVER BY ID
    ADMIN ONLY
-========================================================= */
 
-/*
-  Keep LAST because /:id could otherwise
-  match named routes.
-*/
+   IMPORTANT:
+   KEEP THIS ROUTE LAST.
+
+   "/:id" could otherwise catch named routes.
+========================================================= */
 
 router.get(
   "/:id",
@@ -1439,7 +1661,9 @@ router.get(
           req.params.id
         );
 
-      if (!driver) {
+      if (
+        !driver
+      ) {
         return res
           .status(404)
           .json({
@@ -1462,7 +1686,9 @@ router.get(
               driver
             ),
         });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "GET DRIVER ERROR:",
         error
