@@ -43,6 +43,7 @@ const otpSchema =
 
          Driver:
            driver_login
+           driver_register
       ===================================================== */
 
       purpose: {
@@ -52,6 +53,7 @@ const otpSchema =
           "login",
           "register",
           "driver_login",
+          "driver_register",
         ],
 
         required: true,
@@ -80,9 +82,6 @@ const otpSchema =
 
       /* =====================================================
          MAXIMUM ATTEMPTS
-
-         After this many incorrect OTP attempts,
-         the OTP becomes unusable.
       ===================================================== */
 
       maxAttempts: {
@@ -93,8 +92,6 @@ const otpSchema =
 
       /* =====================================================
          USED
-
-         OTP becomes unusable after successful verification.
       ===================================================== */
 
       used: {
@@ -115,8 +112,6 @@ const otpSchema =
 
       /* =====================================================
          LAST SENT AT
-
-         Used for resend cooldown.
       ===================================================== */
 
       lastSentAt: {
@@ -137,13 +132,13 @@ const otpSchema =
 
    email + purpose
 
-   Example:
+   Examples:
 
    parent@gmail.com + login
    parent@gmail.com + register
-   driver@gmail.com + driver_login
 
-   These remain separate.
+   driver@gmail.com + driver_login
+   driver@gmail.com + driver_register
 ========================================================= */
 
 otpSchema.index(
@@ -162,9 +157,8 @@ otpSchema.index(
 
    MongoDB removes expired OTP documents automatically.
 
-   Important:
-   TTL cleanup is not instantaneous, so controller code
-   must still check expiresAt before accepting an OTP.
+   TTL deletion is not immediate, therefore the controller
+   must still manually validate expiresAt.
 ========================================================= */
 
 otpSchema.index(
