@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 
 /* =========================================================
    REUSABLE GEO POINT SCHEMA
@@ -17,15 +16,6 @@ const geoPointSchema =
       coordinates: {
         type: [Number],
         required: true,
-
-        /*
-          GeoJSON format:
-
-          [
-            longitude,
-            latitude
-          ]
-        */
 
         validate: {
           validator(
@@ -171,29 +161,20 @@ const driverSchema =
       ===================================================== */
 
       /*
-        Driver authentication:
+        Driver authentication is OTP-only.
+
+        Login flow:
 
         Email
-          +
-        Password
+          ↓
+        Email OTP
+          ↓
+        OTP verification
+          ↓
+        ASAN Driver JWT
 
-        Password is never returned by normal queries.
-        Login controller must explicitly use:
-
-        .select("+password")
+        No password is stored in the Driver collection.
       */
-
-      password: {
-        type: String,
-        required: true,
-
-        minlength: [
-          6,
-          "Password must contain at least 6 characters",
-        ],
-
-        select: false,
-      },
 
       address: {
         type: String,
@@ -209,25 +190,6 @@ const driverSchema =
       /* =====================================================
          HOME LOCATION
       ===================================================== */
-
-      /*
-        Driver's registered home/base location.
-
-        GeoJSON:
-
-        {
-          type: "Point",
-          coordinates: [
-            longitude,
-            latitude
-          ]
-        }
-
-        Do NOT default this to [0, 0].
-
-        [0, 0] is a real geographic position and would
-        incorrectly make an unknown Driver appear there.
-      */
 
       homeLocation: {
         type:
@@ -353,14 +315,6 @@ const driverSchema =
         trim: true,
       },
 
-      /*
-        Retained for compatibility with existing
-        frontend/backend code.
-
-        Later, if avatar and profilePhoto serve the
-        same purpose, we can migrate to one field.
-      */
-
       avatar: {
         type: String,
         default: "",
@@ -370,20 +324,6 @@ const driverSchema =
       /* =====================================================
          PUBLIC DRIVER IDENTIFIER
       ===================================================== */
-
-      /*
-        This is the Driver ID given to Parents.
-
-        Example:
-
-        ASAN-D00123
-
-        Parent onboarding uses this value instead of
-        MongoDB's _id.
-
-        A pending Driver may not have a Driver ID yet,
-        therefore sparse is retained.
-      */
 
       driverId: {
         type: String,
@@ -445,15 +385,6 @@ const driverSchema =
       /* =====================================================
          FCM TOKENS
       ===================================================== */
-
-      /*
-        Driver may use multiple devices/sessions.
-
-        Store Web/Android FCM registration tokens here.
-
-        Firebase Authentication is NOT being used.
-        Firebase remains only for Messaging / FCM.
-      */
 
       fcmTokens: {
         type: [
@@ -525,28 +456,6 @@ const driverSchema =
          CURRENT GEO LOCATION
       ===================================================== */
 
-      /*
-        Driver's current operational location.
-
-        Used for:
-
-        - nearby Driver queries
-        - live trip operations
-        - geospatial lookup
-
-        GeoJSON:
-
-        {
-          type: "Point",
-          coordinates: [
-            longitude,
-            latitude
-          ]
-        }
-
-        No [0, 0] default is used.
-      */
-
       location: {
         type:
           geoPointSchema,
@@ -558,17 +467,6 @@ const driverSchema =
       /* =====================================================
          LAST LIVE LOCATION
       ===================================================== */
-
-      /*
-        Lightweight representation of the latest
-        Driver location.
-
-        This can be updated from:
-
-        socket.emit("send_location")
-
-        and used by Parent live tracking.
-      */
 
       lastLocation: {
         lat: {
@@ -667,35 +565,15 @@ const driverSchema =
    INDEXES
 ========================================================= */
 
-/*
-  Current Driver location.
-*/
-
 driverSchema.index({
   location:
     "2dsphere",
 });
 
-/*
-  Registered Driver home location.
-*/
-
 driverSchema.index({
   homeLocation:
     "2dsphere",
 });
-
-/*
-  Operational Driver lookup.
-
-  Useful for queries such as:
-
-  approved
-  +
-  online
-  +
-  idle
-*/
 
 driverSchema.index({
   status:
@@ -707,67 +585,6 @@ driverSchema.index({
   currentStatus:
     1,
 });
-
-/* =========================================================
-   PASSWORD HASHING
-========================================================= */
-
-driverSchema.pre(
-  "save",
-  async function () {
-    /*
-      Do not hash password again when some unrelated
-      Driver field is updated.
-    */
-
-    if (
-      !this.isModified(
-        "password"
-      )
-    ) {
-      return;
-    }
-
-    /*
-      bcrypt cost factor 12 provides a reasonable
-      security/performance balance for this application.
-    */
-
-    const salt =
-      await bcrypt.genSalt(
-        12
-      );
-
-    this.password =
-      await bcrypt.hash(
-        this.password,
-        salt
-      );
-  }
-);
-
-/* =========================================================
-   COMPARE PASSWORD
-========================================================= */
-
-driverSchema.methods.comparePassword =
-  async function (
-    enteredPassword
-  ) {
-    if (
-      !enteredPassword ||
-      !this.password
-    ) {
-      return false;
-    }
-
-    return bcrypt.compare(
-      String(
-        enteredPassword
-      ),
-      this.password
-    );
-  };
 
 /* =========================================================
    ADD FCM TOKEN
@@ -862,10 +679,6 @@ driverSchema.methods.updateLiveLocation =
       );
     }
 
-    /*
-      GeoJSON location.
-    */
-
     this.location = {
       type:
         "Point",
@@ -875,10 +688,6 @@ driverSchema.methods.updateLiveLocation =
         latitude,
       ],
     };
-
-    /*
-      Lightweight live location.
-    */
 
     this.lastLocation = {
       lat:
@@ -957,6 +766,39 @@ driverSchema.statics.findByDriverId =
   };
 
 /* =========================================================
+   STATIC — FIND BY EMAIL
+========================================================= */
+
+/*
+  Used by OTP authentication.
+
+  No password needs to be selected.
+*/
+
+driverSchema.statics.findByEmail =
+  function (
+    email
+  ) {
+    const normalizedEmail =
+      String(
+        email || ""
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      !normalizedEmail
+    ) {
+      return null;
+    }
+
+    return this.findOne({
+      email:
+        normalizedEmail,
+    });
+  };
+
+/* =========================================================
    STATIC — APPROVED DRIVERS
 ========================================================= */
 
@@ -987,35 +829,6 @@ driverSchema.statics.findAvailable =
   };
 
 /* =========================================================
-   STATIC — AUTHENTICATION LOOKUP
-========================================================= */
-
-/*
-  Use this for Driver login because password has:
-
-  select: false
-*/
-
-driverSchema.statics.findForAuthentication =
-  function (
-    email
-  ) {
-    const normalizedEmail =
-      String(
-        email || ""
-      )
-        .trim()
-        .toLowerCase();
-
-    return this.findOne({
-      email:
-        normalizedEmail,
-    }).select(
-      "+password"
-    );
-  };
-
-/* =========================================================
    JSON CLEANUP
 ========================================================= */
 
@@ -1029,7 +842,6 @@ driverSchema.set(
       doc,
       ret
     ) {
-      delete ret.password;
       delete ret.__v;
 
       return ret;
@@ -1051,7 +863,6 @@ driverSchema.set(
       doc,
       ret
     ) {
-      delete ret.password;
       delete ret.__v;
 
       return ret;
