@@ -17,6 +17,20 @@ const parentSchema =
         trim: true,
       },
 
+      /* =====================================================
+         AUTHENTICATION EMAIL
+
+         Parent authentication is now based on:
+
+         Email
+           ↓
+         Resend OTP
+           ↓
+         ASAN Parent JWT
+
+         Email is therefore the primary login identity.
+      ===================================================== */
+
       email: {
         type: String,
         required: true,
@@ -25,15 +39,13 @@ const parentSchema =
         trim: true,
       },
 
-      /*
-        Parent phone numbers may exist as:
+      /* =====================================================
+         PHONE
 
-        8309649713
-        918309649713
-        +918309649713
+         Phone is profile/contact information only.
 
-        Phone helpers below handle these variants.
-      */
+         It is NOT used for Parent authentication.
+      ===================================================== */
 
       phone: {
         type: String,
@@ -55,34 +67,61 @@ const parentSchema =
       homeLocation: {
         type: {
           type: String,
-          enum: ["Point"],
-          default: "Point",
+          enum: [
+            "Point",
+          ],
+          default:
+            "Point",
         },
 
         coordinates: {
-          type: [Number],
-          required: true,
-          default: [0, 0],
+          type: [
+            Number,
+          ],
+
+          required:
+            true,
+
+          default: [
+            0,
+            0,
+          ],
 
           validate: {
-            validator(value) {
+            validator(
+              value
+            ) {
               if (
-                !Array.isArray(value) ||
-                value.length !== 2
+                !Array.isArray(
+                  value
+                ) ||
+                value.length !==
+                  2
               ) {
                 return false;
               }
 
-              const [lng, lat] =
+              const [
+                lng,
+                lat,
+              ] =
                 value;
 
               return (
-                Number.isFinite(lng) &&
-                Number.isFinite(lat) &&
-                lng >= -180 &&
-                lng <= 180 &&
-                lat >= -90 &&
-                lat <= 90
+                Number.isFinite(
+                  lng
+                ) &&
+                Number.isFinite(
+                  lat
+                ) &&
+                lng >=
+                  -180 &&
+                lng <=
+                  180 &&
+                lat >=
+                  -90 &&
+                lat <=
+                  90
               );
             },
 
@@ -109,8 +148,12 @@ const parentSchema =
       ===================================================== */
 
       fcmTokens: {
-        type: [String],
-        default: [],
+        type: [
+          String,
+        ],
+
+        default:
+          [],
       },
 
       /* =====================================================
@@ -145,24 +188,31 @@ const parentSchema =
 
       referredBy: {
         type:
-          mongoose.Schema.Types
+          mongoose
+            .Schema
+            .Types
             .ObjectId,
 
-        ref: "Parent",
+        ref:
+          "Parent",
 
-        default: null,
+        default:
+          null,
       },
     },
 
     {
-      timestamps: true,
+      timestamps:
+        true,
 
       toJSON: {
-        virtuals: true,
+        virtuals:
+          true,
       },
 
       toObject: {
-        virtuals: true,
+        virtuals:
+          true,
       },
     }
   );
@@ -172,22 +222,106 @@ const parentSchema =
 ========================================================= */
 
 parentSchema.index({
-  homeLocation: "2dsphere",
+  homeLocation:
+    "2dsphere",
 });
 
 /* =========================================================
+   EMAIL NORMALIZER
+========================================================= */
+
+parentSchema.statics.normalizeEmail =
+  function (
+    email
+  ) {
+    if (!email) {
+      return "";
+    }
+
+    return String(
+      email
+    )
+      .trim()
+      .toLowerCase();
+  };
+
+/* =========================================================
+   FIND BY EMAIL
+========================================================= */
+
+parentSchema.statics.findByEmail =
+  function (
+    email
+  ) {
+    const normalizedEmail =
+      this.normalizeEmail(
+        email
+      );
+
+    if (
+      !normalizedEmail
+    ) {
+      return null;
+    }
+
+    return this.findOne({
+      email:
+        normalizedEmail,
+    });
+  };
+
+/* =========================================================
+   EMAIL EXISTS
+========================================================= */
+
+parentSchema.statics.emailExists =
+  async function (
+    email
+  ) {
+    const normalizedEmail =
+      this.normalizeEmail(
+        email
+      );
+
+    if (
+      !normalizedEmail
+    ) {
+      return false;
+    }
+
+    const count =
+      await this.countDocuments({
+        email:
+          normalizedEmail,
+      });
+
+    return count >
+      0;
+  };
+
+/* =========================================================
    PHONE HELPERS
+
+   Phone is no longer an authentication identity.
+
+   These helpers remain useful for:
+   - duplicate checking
+   - profile matching
+   - admin workflows
 ========================================================= */
 
 parentSchema.statics.getPhoneVariants =
-  function (phone) {
+  function (
+    phone
+  ) {
     if (!phone) {
       return [];
     }
 
     const raw =
-      String(phone)
-        .trim();
+      String(
+        phone
+      ).trim();
 
     const digits =
       raw.replace(
@@ -198,27 +332,33 @@ parentSchema.statics.getPhoneVariants =
     const variants =
       new Set();
 
-    variants.add(raw);
+    variants.add(
+      raw
+    );
 
-    if (digits) {
+    if (
+      digits
+    ) {
       variants.add(
         digits
       );
     }
 
-    /*
-      Indian E.164 / country-code format:
-
-      +91XXXXXXXXXX
-      91XXXXXXXXXX
-    */
+    /* =====================================================
+       INDIAN COUNTRY CODE FORMAT
+    ===================================================== */
 
     if (
-      digits.length === 12 &&
-      digits.startsWith("91")
+      digits.length ===
+        12 &&
+      digits.startsWith(
+        "91"
+      )
     ) {
       const nationalNumber =
-        digits.slice(2);
+        digits.slice(
+          2
+        );
 
       variants.add(
         nationalNumber
@@ -233,12 +373,13 @@ parentSchema.statics.getPhoneVariants =
       );
     }
 
-    /*
-      Existing 10-digit Indian number.
-    */
+    /* =====================================================
+       10-DIGIT INDIAN NUMBER
+    ===================================================== */
 
     if (
-      digits.length === 10
+      digits.length ===
+      10
     ) {
       variants.add(
         digits
@@ -259,29 +400,13 @@ parentSchema.statics.getPhoneVariants =
   };
 
 /* =========================================================
-   FIND BY EMAIL
-========================================================= */
-
-parentSchema.statics.findByEmail =
-  function (email) {
-    if (!email) {
-      return null;
-    }
-
-    return this.findOne({
-      email:
-        String(email)
-          .trim()
-          .toLowerCase(),
-    });
-  };
-
-/* =========================================================
    FIND BY PHONE
 ========================================================= */
 
 parentSchema.statics.findByPhone =
-  function (phone) {
+  function (
+    phone
+  ) {
     const variants =
       this.getPhoneVariants(
         phone
@@ -296,30 +421,10 @@ parentSchema.statics.findByPhone =
 
     return this.findOne({
       phone: {
-        $in: variants,
+        $in:
+          variants,
       },
     });
-  };
-
-/* =========================================================
-   EMAIL EXISTS
-========================================================= */
-
-parentSchema.statics.emailExists =
-  async function (email) {
-    if (!email) {
-      return false;
-    }
-
-    const count =
-      await this.countDocuments({
-        email:
-          String(email)
-            .trim()
-            .toLowerCase(),
-      });
-
-    return count > 0;
   };
 
 /* =========================================================
@@ -327,7 +432,9 @@ parentSchema.statics.emailExists =
 ========================================================= */
 
 parentSchema.statics.phoneExists =
-  async function (phone) {
+  async function (
+    phone
+  ) {
     const variants =
       this.getPhoneVariants(
         phone
@@ -348,7 +455,8 @@ parentSchema.statics.phoneExists =
         },
       });
 
-    return count > 0;
+    return count >
+      0;
   };
 
 /* =========================================================
@@ -358,7 +466,8 @@ parentSchema.statics.phoneExists =
 parentSchema.virtual(
   "children",
   {
-    ref: "Child",
+    ref:
+      "Child",
 
     localField:
       "_id",
@@ -375,7 +484,8 @@ parentSchema.virtual(
 parentSchema.virtual(
   "trips",
   {
-    ref: "Trip",
+    ref:
+      "Trip",
 
     localField:
       "_id",
@@ -410,7 +520,8 @@ parentSchema.virtual(
 parentSchema.virtual(
   "driver",
   {
-    ref: "Driver",
+    ref:
+      "Driver",
 
     localField:
       "driverId",
@@ -418,7 +529,8 @@ parentSchema.virtual(
     foreignField:
       "driverId",
 
-    justOne: true,
+    justOne:
+      true,
   }
 );
 
@@ -438,7 +550,8 @@ const cleanParent = (
 parentSchema.set(
   "toJSON",
   {
-    virtuals: true,
+    virtuals:
+      true,
 
     transform:
       cleanParent,
@@ -448,7 +561,8 @@ parentSchema.set(
 parentSchema.set(
   "toObject",
   {
-    virtuals: true,
+    virtuals:
+      true,
 
     transform:
       cleanParent,
@@ -460,7 +574,8 @@ parentSchema.set(
 ========================================================= */
 
 const Parent =
-  mongoose.models.Parent ||
+  mongoose.models
+    .Parent ||
   mongoose.model(
     "Parent",
     parentSchema
