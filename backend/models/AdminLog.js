@@ -12,12 +12,11 @@ const adminLogSchema =
       ===================================================== */
 
       /*
-        The authenticated Admin who performed
-        the action.
+        Admin who performed the action.
 
-        This will be supplied using:
+        This will normally come from:
 
-        req.admin.id
+        req.admin._id
       */
 
       adminId: {
@@ -28,6 +27,8 @@ const adminLogSchema =
         ref: "Admin",
 
         required: true,
+
+        index: true,
       },
 
       /* =====================================================
@@ -39,17 +40,28 @@ const adminLogSchema =
 
         DRIVER_APPROVED
         DRIVER_REJECTED
-
-        Kept as String instead of an enum so future
-        Admin operations can add new audit actions
-        without requiring a schema migration.
+        DRIVER_UPDATED
+        ADMIN_LOGIN
+        ADMIN_LOGOUT
+        STUDENT_CREATED
+        STUDENT_UPDATED
+        TRIP_UPDATED
       */
 
       action: {
         type: String,
+
         required: true,
+
         trim: true,
+
         uppercase: true,
+
+        minlength: 3,
+
+        maxlength: 100,
+
+        index: true,
       },
 
       /* =====================================================
@@ -64,6 +76,8 @@ const adminLogSchema =
         ref: "Driver",
 
         default: null,
+
+        index: true,
       },
 
       /* =====================================================
@@ -72,20 +86,37 @@ const adminLogSchema =
 
       message: {
         type: String,
+
         trim: true,
+
         default: "",
+
+        maxlength: 1000,
       },
 
       /* =====================================================
          EXTRA AUDIT DATA
       ===================================================== */
 
+      /*
+        This can later store:
+
+        {
+          previousStatus: "pending",
+          newStatus: "approved",
+          rejectionReason: "...",
+          ipAddress: "...",
+          userAgent: "..."
+        }
+      */
+
       metadata: {
         type:
           mongoose.Schema.Types
             .Mixed,
 
-        default: () => ({}),
+        default:
+          () => ({}),
       },
     },
 
@@ -94,10 +125,28 @@ const adminLogSchema =
 
       toJSON: {
         virtuals: true,
+
+        transform(
+          doc,
+          ret
+        ) {
+          delete ret.__v;
+
+          return ret;
+        },
       },
 
       toObject: {
         virtuals: true,
+
+        transform(
+          doc,
+          ret
+        ) {
+          delete ret.__v;
+
+          return ret;
+        },
       },
     }
   );
@@ -107,7 +156,7 @@ const adminLogSchema =
 ========================================================= */
 
 /*
-  Admin activity history.
+  Recent activity performed by an Admin.
 */
 
 adminLogSchema.index({
@@ -116,7 +165,7 @@ adminLogSchema.index({
 });
 
 /*
-  Actions performed on a particular Driver.
+  Complete audit history for a Driver.
 */
 
 adminLogSchema.index({
@@ -133,18 +182,32 @@ adminLogSchema.index({
   createdAt: -1,
 });
 
+/*
+  Global latest Admin activity.
+*/
+
+adminLogSchema.index({
+  createdAt: -1,
+});
+
 /* =========================================================
    STATIC — ADMIN ACTIVITY
 ========================================================= */
 
 adminLogSchema.statics.findForAdmin =
-  function (adminId) {
+  function (
+    adminId
+  ) {
     return this.find({
       adminId,
     })
       .populate(
+        "adminId",
+        "email role isActive"
+      )
+      .populate(
         "driverId",
-        "name driverId"
+        "name driverId email status"
       )
       .sort({
         createdAt: -1,
@@ -156,13 +219,19 @@ adminLogSchema.statics.findForAdmin =
 ========================================================= */
 
 adminLogSchema.statics.findForDriver =
-  function (driverId) {
+  function (
+    driverId
+  ) {
     return this.find({
       driverId,
     })
       .populate(
         "adminId",
-        "username role"
+        "email role"
+      )
+      .populate(
+        "driverId",
+        "name driverId email status"
       )
       .sort({
         createdAt: -1,
@@ -170,24 +239,39 @@ adminLogSchema.statics.findForDriver =
   };
 
 /* =========================================================
-   JSON CLEANUP
+   STATIC — RECENT ACTIVITY
 ========================================================= */
 
-adminLogSchema.set(
-  "toJSON",
-  {
-    virtuals: true,
+adminLogSchema.statics.findRecent =
+  function (
+    limit = 50
+  ) {
+    const safeLimit =
+      Math.min(
+        Math.max(
+          Number(limit) ||
+            50,
+          1
+        ),
+        200
+      );
 
-    transform(
-      doc,
-      ret
-    ) {
-      delete ret.__v;
-
-      return ret;
-    },
-  }
-);
+    return this.find()
+      .populate(
+        "adminId",
+        "email role"
+      )
+      .populate(
+        "driverId",
+        "name driverId email status"
+      )
+      .sort({
+        createdAt: -1,
+      })
+      .limit(
+        safeLimit
+      );
+  };
 
 /* =========================================================
    MODEL
