@@ -9,10 +9,6 @@ import AdminLog from "../models/AdminLog.js";
    HELPERS
 ========================================================= */
 
-/* =========================================================
-   VALID OBJECT ID
-========================================================= */
-
 const isValidObjectId = (id) =>
   mongoose.Types.ObjectId.isValid(
     String(id || "")
@@ -39,9 +35,13 @@ const createAdminLog = async ({
     }
 
     const logData = {
-      adminId: req.admin._id,
+      adminId:
+        req.admin._id,
+
       action,
+
       message,
+
       metadata,
     };
 
@@ -54,11 +54,6 @@ const createAdminLog = async ({
       logData
     );
   } catch (error) {
-    /*
-      Audit logging must never crash
-      the main Admin operation.
-    */
-
     console.warn(
       "AdminLog failed:",
       error?.message
@@ -85,15 +80,18 @@ export const getDashboardStats =
           Driver.countDocuments(),
 
           Driver.countDocuments({
-            status: "pending",
+            status:
+              "pending",
           }),
 
           Driver.countDocuments({
-            status: "approved",
+            status:
+              "approved",
           }),
 
           Driver.countDocuments({
-            status: "rejected",
+            status:
+              "rejected",
           }),
 
           Students.countDocuments(),
@@ -109,7 +107,6 @@ export const getDashboardStats =
           pendingDrivers,
           approvedDrivers,
           rejectedDrivers,
-
           totalStudents,
           totalTrips,
         },
@@ -183,36 +180,51 @@ export const getDrivers =
         query.$or = [
           {
             name: {
-              $regex: term,
-              $options: "i",
+              $regex:
+                term,
+
+              $options:
+                "i",
             },
           },
 
           {
             email: {
-              $regex: term,
-              $options: "i",
+              $regex:
+                term,
+
+              $options:
+                "i",
             },
           },
 
           {
             phone: {
-              $regex: term,
-              $options: "i",
+              $regex:
+                term,
+
+              $options:
+                "i",
             },
           },
 
           {
             driverId: {
-              $regex: term,
-              $options: "i",
+              $regex:
+                term,
+
+              $options:
+                "i",
             },
           },
 
           {
             vehicleNumber: {
-              $regex: term,
-              $options: "i",
+              $regex:
+                term,
+
+              $options:
+                "i",
             },
           },
         ];
@@ -221,9 +233,15 @@ export const getDrivers =
       const drivers =
         await Driver.find(
           query
-        ).sort({
-          createdAt: -1,
-        });
+        )
+          .populate(
+            "reviewedBy",
+            "email role"
+          )
+          .sort({
+            createdAt:
+              -1,
+          });
 
       return res.status(200).json({
         success: true,
@@ -276,6 +294,9 @@ export const getDriverById =
       const driver =
         await Driver.findById(
           id
+        ).populate(
+          "reviewedBy",
+          "email role"
         );
 
       if (
@@ -412,6 +433,9 @@ export const approveDriver =
       const previousStatus =
         driver.status;
 
+      const approvedAt =
+        new Date();
+
       /* =====================================================
          APPROVE
       ===================================================== */
@@ -422,35 +446,14 @@ export const approveDriver =
       driver.rejectionReason =
         null;
 
-      /*
-        These assignments are safe only if you add
-        these fields to Driver.js:
+      driver.approvedAt =
+        approvedAt;
 
-        approvedAt
-        rejectedAt
-        reviewedBy
-      */
+      driver.rejectedAt =
+        null;
 
-      if (
-        "approvedAt" in driver
-      ) {
-        driver.approvedAt =
-          new Date();
-      }
-
-      if (
-        "rejectedAt" in driver
-      ) {
-        driver.rejectedAt =
-          null;
-      }
-
-      if (
-        "reviewedBy" in driver
-      ) {
-        driver.reviewedBy =
-          req.admin._id;
-      }
+      driver.reviewedBy =
+        req.admin._id;
 
       await driver.save();
 
@@ -478,6 +481,9 @@ export const approveDriver =
           newStatus:
             "approved",
 
+          approvedAt:
+            approvedAt.toISOString(),
+
           reviewedBy:
             String(
               req.admin._id
@@ -486,7 +492,7 @@ export const approveDriver =
       });
 
       /* =====================================================
-         SOCKET EVENT
+         SOCKET EVENTS
       ===================================================== */
 
       const io =
@@ -495,36 +501,34 @@ export const approveDriver =
         );
 
       if (
-        io &&
-        driver.driverId
+        io
       ) {
-        io.to(
-          String(
-            driver.driverId
-          )
-        ).emit(
-          "driver_approved",
-          {
-            driverId:
-              driver.driverId,
+        if (
+          driver.driverId
+        ) {
+          io.to(
+            String(
+              driver.driverId
+            )
+          ).emit(
+            "driver_approved",
+            {
+              driverId:
+                driver.driverId,
 
-            driverMongoId:
-              String(
-                driver._id
-              ),
+              driverMongoId:
+                String(
+                  driver._id
+                ),
 
-            status:
-              driver.status,
+              status:
+                driver.status,
 
-            approvedAt:
-              new Date().toISOString(),
-          }
-        );
-
-        /*
-          Admin dashboards listening to the Admin room
-          can refresh immediately.
-        */
+              approvedAt:
+                approvedAt.toISOString(),
+            }
+          );
+        }
 
         io.to(
           "admin"
@@ -537,10 +541,14 @@ export const approveDriver =
               ),
 
             driverId:
-              driver.driverId,
+              driver.driverId ||
+              null,
 
             status:
               "approved",
+
+            approvedAt:
+              approvedAt.toISOString(),
           }
         );
       }
@@ -702,13 +710,6 @@ export const rejectDriver =
          APPROVED DRIVER
       ===================================================== */
 
-      /*
-        Rejecting an onboarding application and
-        suspending an approved Driver are separate actions.
-
-        A future Admin endpoint should handle suspension.
-      */
-
       if (
         driver.status ===
         "approved"
@@ -740,6 +741,9 @@ export const rejectDriver =
       const previousStatus =
         driver.status;
 
+      const rejectedAt =
+        new Date();
+
       /* =====================================================
          REJECT
       ===================================================== */
@@ -750,32 +754,20 @@ export const rejectDriver =
       driver.rejectionReason =
         rejectionReason;
 
+      driver.rejectedAt =
+        rejectedAt;
+
+      driver.approvedAt =
+        null;
+
+      driver.reviewedBy =
+        req.admin._id;
+
       driver.isOnline =
         false;
 
       driver.currentStatus =
         "offline";
-
-      if (
-        "rejectedAt" in driver
-      ) {
-        driver.rejectedAt =
-          new Date();
-      }
-
-      if (
-        "approvedAt" in driver
-      ) {
-        driver.approvedAt =
-          null;
-      }
-
-      if (
-        "reviewedBy" in driver
-      ) {
-        driver.reviewedBy =
-          req.admin._id;
-      }
 
       await driver.save();
 
@@ -805,6 +797,9 @@ export const rejectDriver =
 
           rejectionReason,
 
+          rejectedAt:
+            rejectedAt.toISOString(),
+
           reviewedBy:
             String(
               req.admin._id
@@ -813,7 +808,7 @@ export const rejectDriver =
       });
 
       /* =====================================================
-         SOCKET EVENT
+         SOCKET EVENTS
       ===================================================== */
 
       const io =
@@ -822,34 +817,37 @@ export const rejectDriver =
         );
 
       if (
-        io &&
-        driver.driverId
+        io
       ) {
-        io.to(
-          String(
-            driver.driverId
-          )
-        ).emit(
-          "driver_rejected",
-          {
-            driverId:
-              driver.driverId,
+        if (
+          driver.driverId
+        ) {
+          io.to(
+            String(
+              driver.driverId
+            )
+          ).emit(
+            "driver_rejected",
+            {
+              driverId:
+                driver.driverId,
 
-            driverMongoId:
-              String(
-                driver._id
-              ),
+              driverMongoId:
+                String(
+                  driver._id
+                ),
 
-            status:
-              driver.status,
+              status:
+                driver.status,
 
-            reason:
-              rejectionReason,
+              reason:
+                rejectionReason,
 
-            rejectedAt:
-              new Date().toISOString(),
-          }
-        );
+              rejectedAt:
+                rejectedAt.toISOString(),
+            }
+          );
+        }
 
         io.to(
           "admin"
@@ -862,10 +860,17 @@ export const rejectDriver =
               ),
 
             driverId:
-              driver.driverId,
+              driver.driverId ||
+              null,
 
             status:
               "rejected",
+
+            reason:
+              rejectionReason,
+
+            rejectedAt:
+              rejectedAt.toISOString(),
           }
         );
       }
@@ -925,7 +930,8 @@ export const getLogs =
             "name driverId email status"
           )
           .sort({
-            createdAt: -1,
+            createdAt:
+              -1,
           });
 
       return res.status(200).json({
@@ -1035,14 +1041,16 @@ export const getAnalytics =
               },
 
               count: {
-                $sum: 1,
+                $sum:
+                  1,
               },
             },
           },
 
           {
             $sort: {
-              _id: 1,
+              _id:
+                1,
             },
           },
         ]);
@@ -1051,145 +1059,91 @@ export const getAnalytics =
          APPROVALS
       ===================================================== */
 
-      /*
-        If Driver.js contains approvedAt,
-        use it for exact analytics.
+      const approvals =
+        await Driver.aggregate([
+          {
+            $match: {
+              status:
+                "approved",
 
-        Otherwise fall back to updatedAt.
-      */
-
-      const approvalDateField =
-        "$approvedAt";
-
-      let approvals;
-
-      try {
-        approvals =
-          await Driver.aggregate([
-            {
-              $match: {
-                status:
-                  "approved",
-
-                approvedAt: {
-                  $gte:
-                    last7Days,
-                },
+              approvedAt: {
+                $gte:
+                  last7Days,
               },
             },
+          },
 
-            {
-              $group: {
-                _id: {
-                  $dateToString: {
-                    format:
-                      "%Y-%m-%d",
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format:
+                    "%Y-%m-%d",
 
-                    date:
-                      approvalDateField,
-                  },
+                  date:
+                    "$approvedAt",
                 },
+              },
 
-                count: {
-                  $sum: 1,
-                },
+              count: {
+                $sum:
+                  1,
               },
             },
+          },
 
-            {
-              $sort: {
-                _id: 1,
+          {
+            $sort: {
+              _id:
+                1,
+            },
+          },
+        ]);
+
+      /* =====================================================
+         REJECTIONS
+      ===================================================== */
+
+      const rejections =
+        await Driver.aggregate([
+          {
+            $match: {
+              status:
+                "rejected",
+
+              rejectedAt: {
+                $gte:
+                  last7Days,
               },
             },
-          ]);
+          },
 
-        /*
-          Existing records may not yet have approvedAt.
-        */
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format:
+                    "%Y-%m-%d",
 
-        if (
-          approvals.length ===
-          0
-        ) {
-          approvals =
-            await Driver.aggregate([
-              {
-                $match: {
-                  status:
-                    "approved",
-
-                  updatedAt: {
-                    $gte:
-                      last7Days,
-                  },
+                  date:
+                    "$rejectedAt",
                 },
               },
 
-              {
-                $group: {
-                  _id: {
-                    $dateToString: {
-                      format:
-                        "%Y-%m-%d",
-
-                      date:
-                        "$updatedAt",
-                    },
-                  },
-
-                  count: {
-                    $sum: 1,
-                  },
-                },
-              },
-
-              {
-                $sort: {
-                  _id: 1,
-                },
-              },
-            ]);
-        }
-      } catch {
-        approvals =
-          await Driver.aggregate([
-            {
-              $match: {
-                status:
-                  "approved",
-
-                updatedAt: {
-                  $gte:
-                    last7Days,
-                },
+              count: {
+                $sum:
+                  1,
               },
             },
+          },
 
-            {
-              $group: {
-                _id: {
-                  $dateToString: {
-                    format:
-                      "%Y-%m-%d",
-
-                    date:
-                      "$updatedAt",
-                  },
-                },
-
-                count: {
-                  $sum: 1,
-                },
-              },
+          {
+            $sort: {
+              _id:
+                1,
             },
-
-            {
-              $sort: {
-                _id: 1,
-              },
-            },
-          ]);
-      }
+          },
+        ]);
 
       return res.status(200).json({
         success: true,
@@ -1205,6 +1159,8 @@ export const getAnalytics =
           registrations,
 
           approvals,
+
+          rejections,
         },
       });
     } catch (error) {
