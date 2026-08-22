@@ -18,15 +18,10 @@ const geoPointSchema =
         required: true,
 
         validate: {
-          validator(
-            coordinates
-          ) {
+          validator(coordinates) {
             if (
-              !Array.isArray(
-                coordinates
-              ) ||
-              coordinates.length !==
-                2
+              !Array.isArray(coordinates) ||
+              coordinates.length !== 2
             ) {
               return false;
             }
@@ -46,14 +41,10 @@ const geoPointSchema =
               Number.isFinite(
                 latitude
               ) &&
-              longitude >=
-                -180 &&
-              longitude <=
-                180 &&
-              latitude >=
-                -90 &&
-              latitude <=
-                90
+              longitude >= -180 &&
+              longitude <= 180 &&
+              latitude >= -90 &&
+              latitude <= 90
             );
           },
 
@@ -100,9 +91,7 @@ const driverSchema =
         unique: true,
         trim: true,
 
-        set(
-          value
-        ) {
+        set(value) {
           return String(
             value || ""
           ).replace(
@@ -112,9 +101,7 @@ const driverSchema =
         },
 
         validate: {
-          validator(
-            value
-          ) {
+          validator(value) {
             return /^[6-9]\d{9}$/.test(
               value
             );
@@ -132,9 +119,7 @@ const driverSchema =
         lowercase: true,
         trim: true,
 
-        set(
-          value
-        ) {
+        set(value) {
           return String(
             value || ""
           )
@@ -143,9 +128,7 @@ const driverSchema =
         },
 
         validate: {
-          validator(
-            value
-          ) {
+          validator(value) {
             return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
               value
             );
@@ -163,17 +146,15 @@ const driverSchema =
       /*
         Driver authentication is OTP-only.
 
-        Login flow:
-
         Email
           ↓
-        Email OTP
+        OTP
           ↓
         OTP verification
           ↓
-        ASAN Driver JWT
+        Driver JWT
 
-        No password is stored in the Driver collection.
+        No password is stored in this collection.
       */
 
       address: {
@@ -209,9 +190,7 @@ const driverSchema =
         trim: true,
         uppercase: true,
 
-        set(
-          value
-        ) {
+        set(value) {
           return String(
             value || ""
           )
@@ -236,9 +215,7 @@ const driverSchema =
         trim: true,
         uppercase: true,
 
-        set(
-          value
-        ) {
+        set(value) {
           return String(
             value || ""
           )
@@ -332,18 +309,13 @@ const driverSchema =
         uppercase: true,
         sparse: true,
 
-        set(
-          value
-        ) {
+        set(value) {
           if (
-            value ===
-              null ||
-            value ===
-              undefined ||
+            value === null ||
+            value === undefined ||
             String(
               value
-            ).trim() ===
-              ""
+            ).trim() === ""
           ) {
             return undefined;
           }
@@ -357,7 +329,7 @@ const driverSchema =
       },
 
       /* =====================================================
-         APPROVAL STATUS
+         APPROVAL / VERIFICATION STATUS
       ===================================================== */
 
       status: {
@@ -376,10 +348,86 @@ const driverSchema =
           true,
       },
 
+      /* =====================================================
+         REJECTION REASON
+      ===================================================== */
+
       rejectionReason: {
         type: String,
-        default: null,
-        trim: true,
+
+        default:
+          null,
+
+        trim:
+          true,
+
+        maxlength: [
+          500,
+          "Rejection reason must not exceed 500 characters",
+        ],
+      },
+
+      /* =====================================================
+         APPROVED AT
+      ===================================================== */
+
+      /*
+        Exact approval timestamp.
+
+        This should be used for Admin analytics
+        instead of updatedAt.
+      */
+
+      approvedAt: {
+        type: Date,
+
+        default:
+          null,
+
+        index:
+          true,
+      },
+
+      /* =====================================================
+         REJECTED AT
+      ===================================================== */
+
+      /*
+        Exact rejection timestamp.
+      */
+
+      rejectedAt: {
+        type: Date,
+
+        default:
+          null,
+
+        index:
+          true,
+      },
+
+      /* =====================================================
+         REVIEWED BY
+      ===================================================== */
+
+      /*
+        Admin who made the latest approval
+        or rejection decision.
+      */
+
+      reviewedBy: {
+        type:
+          mongoose.Schema.Types
+            .ObjectId,
+
+        ref:
+          "Admin",
+
+        default:
+          null,
+
+        index:
+          true,
       },
 
       /* =====================================================
@@ -393,9 +441,7 @@ const driverSchema =
 
         default: [],
 
-        set(
-          tokens
-        ) {
+        set(tokens) {
           if (
             !Array.isArray(
               tokens
@@ -408,9 +454,7 @@ const driverSchema =
             ...new Set(
               tokens
                 .map(
-                  (
-                    token
-                  ) =>
+                  (token) =>
                     String(
                       token || ""
                     ).trim()
@@ -583,6 +627,45 @@ driverSchema.index({
     1,
 
   currentStatus:
+    1,
+});
+
+/* =========================================================
+   ADMIN REVIEW INDEX
+========================================================= */
+
+driverSchema.index({
+  reviewedBy:
+    1,
+
+  status:
+    1,
+
+  createdAt:
+    -1,
+});
+
+/* =========================================================
+   APPROVAL ANALYTICS INDEX
+========================================================= */
+
+driverSchema.index({
+  approvedAt:
+    -1,
+
+  status:
+    1,
+});
+
+/* =========================================================
+   REJECTION ANALYTICS INDEX
+========================================================= */
+
+driverSchema.index({
+  rejectedAt:
+    -1,
+
+  status:
     1,
 });
 
