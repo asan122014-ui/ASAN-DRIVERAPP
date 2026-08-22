@@ -52,6 +52,8 @@ import driverAuthRoutes from "./routes/driverAuthRoutes.js";
 
 import parentAuthRoutes from "./routes/parentAuthRoutes.js";
 
+import adminAuthRoutes from "./routes/adminAuthRoutes.js";
+
 import parentRoutes from "./routes/parentRoutes.js";
 
 import driverRoutes from "./routes/driver.js";
@@ -141,9 +143,7 @@ const ALLOWED_ORIGINS =
     )
       .split(",")
       .map(
-        (
-          origin
-        ) =>
+        (origin) =>
           origin.trim()
       )
       .filter(
@@ -191,7 +191,7 @@ const corsOriginValidator = (
   callback
 ) => {
   /*
-    Native mobile applications,
+    Native mobile apps,
     Postman,
     curl,
     server-to-server requests
@@ -264,7 +264,7 @@ app.use(
 );
 
 /* =========================================================
-   JSON BODY
+   BODY PARSERS
 ========================================================= */
 
 app.use(
@@ -273,10 +273,6 @@ app.use(
       "10mb",
   })
 );
-
-/* =========================================================
-   URL ENCODED BODY
-========================================================= */
 
 app.use(
   express.urlencoded({
@@ -311,17 +307,10 @@ if (
 ========================================================= */
 
 /*
-  /api/auth is retained only for existing compatibility
-  endpoints such as:
+  Existing compatibility routes such as:
 
   POST /api/auth/save-token
   GET  /api/auth/by-id/:driverId
-
-  Driver registration and Driver login are NOT handled here.
-
-  Driver authentication now belongs completely to:
-
-  /api/driver-auth
 */
 
 app.use(
@@ -334,151 +323,21 @@ app.use(
 ========================================================= */
 
 /*
-  Driver authentication is completely passwordless.
-
-  No password is stored in Driver documents.
-  No bcrypt password verification is used.
-
-  =======================================================
-  DRIVER REGISTRATION
-  =======================================================
-
-  STEP 1
-
   POST /api/driver-auth/send-register-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com"
-  }
-
-          ↓
-
-  6-digit OTP sent through Resend
-
-          ↓
-
-  STEP 2
-
   POST /api/driver-auth/verify-register-otp
 
-  multipart/form-data
-
-  Includes:
-
-  email
-  otp
-  name
-  phone
-  address
-  latitude
-  longitude
-  vehicleNumber
-  vehicleType
-  vehicleModel
-  licenseNumber
-
-  Driver documents:
-
-  licenseFront
-  licenseBack
-  rcFront
-  rcBack
-  insurance
-  idFront
-  idBack
-  profilePhoto
-
-          ↓
-
-  OTP verified
-
-          ↓
-
-  Driver created in MongoDB
-
-          ↓
-
-  status = pending
-
-          ↓
-
-  ASAN Driver JWT issued
-
-
-  =======================================================
-  DRIVER LOGIN
-  =======================================================
-
-  STEP 1
-
   POST /api/driver-auth/send-login-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com"
-  }
-
-          ↓
-
-  Login OTP sent through Resend
-
-          ↓
-
-  STEP 2
-
   POST /api/driver-auth/verify-login-otp
 
-  BODY:
+  GET  /api/driver-auth/me
+  POST /api/driver-auth/logout
 
-  {
-    "email": "driver@example.com",
-    "otp": "123456"
-  }
-
-          ↓
-
-  OTP verified
-
-          ↓
-
-  Current Driver loaded from MongoDB
-
-          ↓
-
-  ASAN Driver JWT issued
-
-
-  =======================================================
-  DRIVER JWT
-  =======================================================
+  JWT:
 
   {
     id: "<MongoDB Driver _id>",
     tokenType: "driver"
   }
-
-  We intentionally do NOT put:
-
-  driverId
-  email
-  phone
-  approval status
-
-  inside the token.
-
-  Those values are always loaded fresh from MongoDB.
-
-
-  =======================================================
-  DRIVER SESSION
-  =======================================================
-
-  GET  /api/driver-auth/me
-
-  POST /api/driver-auth/logout
 */
 
 app.use(
@@ -491,17 +350,7 @@ app.use(
 ========================================================= */
 
 /*
-  Parent authentication:
-
-  Email OTP
-      ↓
-  OTP verification
-      ↓
-  Parent MongoDB account
-      ↓
-  ASAN Parent JWT
-
-  JWT:
+  Parent JWT:
 
   {
     id: "<MongoDB Parent _id>",
@@ -512,6 +361,62 @@ app.use(
 app.use(
   "/api/parent-auth",
   parentAuthRoutes
+);
+
+/* =========================================================
+   ADMIN AUTH
+========================================================= */
+
+/*
+  ADMIN LOGIN
+
+  POST /api/admin-auth/login
+
+  BODY:
+
+  {
+    "email": "admin@example.com",
+    "password": "password"
+  }
+
+  ---------------------------------------------------------
+
+  CURRENT ADMIN
+
+  GET /api/admin-auth/me
+
+  Authorization:
+
+  Bearer <admin-token>
+
+  ---------------------------------------------------------
+
+  LOGOUT
+
+  POST /api/admin-auth/logout
+
+  ---------------------------------------------------------
+
+  CREATE ADMIN
+
+  POST /api/admin-auth/create
+
+  Superadmin only.
+
+  ---------------------------------------------------------
+
+  ADMIN JWT:
+
+  {
+    id: "<MongoDB Admin _id>",
+    tokenType: "admin",
+    role: "superadmin" | "reviewer"
+  }
+*/
+
+app.use(
+  "/api/admin-auth",
+  adminAuthRoutes
 );
 
 /* =========================================================
@@ -551,7 +456,7 @@ app.use(
 );
 
 /* =========================================================
-   STUDENT COMPATIBILITY
+   STUDENT ROUTES
 ========================================================= */
 
 app.use(
@@ -560,8 +465,19 @@ app.use(
 );
 
 /* =========================================================
-   ADMIN
+   ADMIN OPERATIONAL ROUTES
 ========================================================= */
+
+/*
+  Admin Dashboard
+  Driver approval
+  Driver rejection
+  Analytics
+  Admin logs
+  etc.
+
+  adminRoutes.js should use verifyAdmin.
+*/
 
 app.use(
   "/api/admin",
@@ -599,7 +515,7 @@ app.use(
 );
 
 /* =========================================================
-   DRIVER REQUEST
+   DRIVER REQUESTS
 ========================================================= */
 
 app.use(
@@ -746,33 +662,6 @@ const removeConnection = (
    DRIVER SOCKET AUTH
 ========================================================= */
 
-/*
-  Driver Socket.IO authentication uses the same JWT
-  created by OTP registration/login.
-
-  Driver JWT:
-
-  {
-    id: "<MongoDB Driver _id>",
-    tokenType: "driver"
-  }
-
-  IMPORTANT:
-
-  OTP is only used to issue the JWT.
-
-  Socket.IO does NOT verify OTP again.
-
-  It verifies the existing Driver JWT and loads
-  the current Driver from MongoDB.
-
-  Pending and rejected Drivers can authenticate
-  through the HTTP OTP flow to view their status.
-
-  Only APPROVED Drivers may establish an
-  operational Driver socket connection.
-*/
-
 const authenticateDriverSocket =
   async (
     token
@@ -826,7 +715,7 @@ const authenticateDriverSocket =
     }
 
     /* =====================================================
-       MONGODB ID
+       OBJECT ID
     ===================================================== */
 
     const driverMongoId =
@@ -928,6 +817,10 @@ const authenticateAdminSocket =
   async (
     token
   ) => {
+    /* =====================================================
+       JWT SECRET
+    ===================================================== */
+
     if (
       !process.env
         .JWT_SECRET
@@ -963,11 +856,9 @@ const authenticateAdminSocket =
       !decoded ||
       typeof decoded !==
         "object" ||
-      !decoded.id ||
-      !decoded.role ||
-      !ADMIN_ROLES.has(
-        decoded.role
-      )
+      decoded.tokenType !==
+        "admin" ||
+      !decoded.id
     ) {
       throw new Error(
         "Invalid Admin token"
@@ -975,7 +866,22 @@ const authenticateAdminSocket =
     }
 
     /* =====================================================
-       MONGODB ID
+       TOKEN ROLE
+    ===================================================== */
+
+    if (
+      decoded.role &&
+      !ADMIN_ROLES.has(
+        decoded.role
+      )
+    ) {
+      throw new Error(
+        "Invalid Admin role"
+      );
+    }
+
+    /* =====================================================
+       OBJECT ID
     ===================================================== */
 
     if (
@@ -998,7 +904,7 @@ const authenticateAdminSocket =
       await Admin.findById(
         decoded.id
       ).select(
-        "_id email role"
+        "_id email role isActive"
       );
 
     if (
@@ -1010,7 +916,20 @@ const authenticateAdminSocket =
     }
 
     /* =====================================================
-       ROLE CHECK
+       ACTIVE ACCOUNT
+    ===================================================== */
+
+    if (
+      admin.isActive ===
+      false
+    ) {
+      throw new Error(
+        "Admin account is disabled"
+      );
+    }
+
+    /* =====================================================
+       CURRENT ROLE
     ===================================================== */
 
     if (
@@ -1047,15 +966,6 @@ const authenticateAdminSocket =
 /* =========================================================
    PARENT SOCKET AUTH
 ========================================================= */
-
-/*
-  Parent JWT:
-
-  {
-    id: "<MongoDB Parent _id>",
-    tokenType: "parent"
-  }
-*/
 
 const authenticateParentSocket =
   async (
@@ -1193,24 +1103,27 @@ const authenticateParentSocket =
 ========================================================= */
 
 /*
-  Client:
+  Driver:
 
-  io(URL, {
-    auth: {
-      token: "<ASAN JWT>"
-    }
-  })
+  {
+    id,
+    tokenType: "driver"
+  }
 
-  Routing:
+  Parent:
 
-  Driver
-      tokenType = driver
+  {
+    id,
+    tokenType: "parent"
+  }
 
-  Parent
-      tokenType = parent
+  Admin:
 
-  Admin
-      role = superadmin / reviewer
+  {
+    id,
+    tokenType: "admin",
+    role
+  }
 */
 
 io.use(
@@ -1251,13 +1164,11 @@ io.use(
       =================================================== */
 
       /*
-        jwt.decode is only used to decide which
-        authentication handler should verify the token.
+        jwt.decode is used only to determine
+        which verification function should handle
+        the token.
 
-        The token is fully cryptographically verified inside
-        authenticateDriverSocket(),
-        authenticateParentSocket(),
-        or authenticateAdminSocket().
+        Every handler still uses jwt.verify().
       */
 
       let tokenHint =
@@ -1273,6 +1184,16 @@ io.use(
           null;
       }
 
+      if (
+        !tokenHint ||
+        typeof tokenHint !==
+          "object"
+      ) {
+        throw new Error(
+          "Invalid authentication token"
+        );
+      }
+
       let user =
         null;
 
@@ -1281,32 +1202,11 @@ io.use(
       =================================================== */
 
       if (
-        tokenHint &&
-        typeof tokenHint ===
-          "object" &&
         tokenHint.tokenType ===
-          "driver"
+        "driver"
       ) {
         user =
           await authenticateDriverSocket(
-            token
-          );
-      }
-
-      /* ===================================================
-         ADMIN
-      =================================================== */
-
-      else if (
-        tokenHint &&
-        typeof tokenHint ===
-          "object" &&
-        ADMIN_ROLES.has(
-          tokenHint.role
-        )
-      ) {
-        user =
-          await authenticateAdminSocket(
             token
           );
       }
@@ -1316,14 +1216,25 @@ io.use(
       =================================================== */
 
       else if (
-        tokenHint &&
-        typeof tokenHint ===
-          "object" &&
         tokenHint.tokenType ===
-          "parent"
+        "parent"
       ) {
         user =
           await authenticateParentSocket(
+            token
+          );
+      }
+
+      /* ===================================================
+         ADMIN
+      =================================================== */
+
+      else if (
+        tokenHint.tokenType ===
+        "admin"
+      ) {
+        user =
+          await authenticateAdminSocket(
             token
           );
       }
@@ -1371,20 +1282,12 @@ const verifyParentDriverLink =
     socket,
     requestedDriverId
   ) => {
-    /* =====================================================
-       REQUIRE PARENT
-    ===================================================== */
-
     if (
       socket.user?.role !==
       "parent"
     ) {
       return null;
     }
-
-    /* =====================================================
-       CURRENT PARENT
-    ===================================================== */
 
     const parent =
       await Parent.findById(
@@ -1400,10 +1303,6 @@ const verifyParentDriverLink =
     ) {
       return null;
     }
-
-    /* =====================================================
-       DRIVER IDS
-    ===================================================== */
 
     const linkedDriverId =
       normalizeDriverId(
@@ -1423,10 +1322,6 @@ const verifyParentDriverLink =
     ) {
       return null;
     }
-
-    /* =====================================================
-       DRIVER MUST STILL BE APPROVED
-    ===================================================== */
 
     const driverExists =
       await Driver.exists({
@@ -1453,9 +1348,7 @@ const verifyParentDriverLink =
 io.on(
   "connection",
 
-  (
-    socket
-  ) => {
+  (socket) => {
     const user =
       socket.user;
 
@@ -1466,11 +1359,7 @@ io.on(
     );
 
     /* =====================================================
-       AUTOMATIC ROOMS
-    ===================================================== */
-
-    /* =====================================================
-       PARENT
+       AUTOMATIC PARENT ROOM
     ===================================================== */
 
     if (
@@ -1492,7 +1381,7 @@ io.on(
     }
 
     /* =====================================================
-       DRIVER
+       AUTOMATIC DRIVER ROOM
     ===================================================== */
 
     if (
@@ -1514,7 +1403,7 @@ io.on(
     }
 
     /* =====================================================
-       ADMIN
+       AUTOMATIC ADMIN ROOM
     ===================================================== */
 
     if (
@@ -1523,6 +1412,14 @@ io.on(
     ) {
       socket.join(
         "admin"
+      );
+
+      socket.join(
+        `admin:${user.id}`
+      );
+
+      socket.join(
+        `admin-role:${user.adminRole}`
       );
     }
 
@@ -2132,10 +2029,6 @@ io.on(
           } =
             data;
 
-          /* ===============================================
-             LOCATION REQUIRED
-          =============================================== */
-
           if (
             lat ===
               undefined ||
@@ -2154,10 +2047,6 @@ io.on(
             Number(
               lng
             );
-
-          /* ===============================================
-             COORDINATE VALIDATION
-          =============================================== */
 
           if (
             !Number.isFinite(
@@ -2259,7 +2148,7 @@ io.on(
             new Date();
 
           /* ===============================================
-             LOAD APPROVED DRIVER
+             LOAD DRIVER
           =============================================== */
 
           const driver =
@@ -2278,7 +2167,7 @@ io.on(
           }
 
           /* ===============================================
-             UPDATE LIVE LOCATION
+             UPDATE LOCATION
           =============================================== */
 
           driver.updateLiveLocation({
@@ -2300,10 +2189,6 @@ io.on(
             accuracy:
               safeAccuracy,
           });
-
-          /* ===============================================
-             ONLINE STATUS
-          =============================================== */
 
           driver.isOnline =
             true;
@@ -2440,11 +2325,6 @@ io.on(
               user.driverId,
               socket.id
             );
-
-          /*
-            Only mark Driver offline when all socket
-            connections for this Driver are gone.
-          */
 
           if (
             remainingConnections ===
@@ -2707,6 +2587,26 @@ connectDB()
           );
 
           console.log(
+            "Admin Auth: /api/admin-auth"
+          );
+
+          console.log(
+            "Admin Login: /api/admin-auth/login"
+          );
+
+          console.log(
+            "Admin Session: /api/admin-auth/me"
+          );
+
+          console.log(
+            "Admin Logout: /api/admin-auth/logout"
+          );
+
+          console.log(
+            "Create Admin: /api/admin-auth/create"
+          );
+
+          console.log(
             "Driver Register OTP: /api/driver-auth/send-register-otp"
           );
 
@@ -2727,7 +2627,7 @@ connectDB()
           );
 
           console.log(
-            "Admin: /api/admin"
+            "Admin APIs: /api/admin"
           );
         }
       );
