@@ -1,1004 +1,204 @@
 import express from "express";
-import mongoose from "mongoose";
-import jwt from "jsonwebtoken";
 
 import {
-  loginLimiter,
-} from "../middleware/rateLimiters.js";
+  getDashboardStats,
+  getDrivers,
+  getDriverById,
+  approveDriver,
+  rejectDriver,
+  getLogs,
+  getAnalytics,
+} from "../controllers/adminController.js";
 
-import Admin from "../models/Admin.js";
-import Driver from "../models/Driver.js";
-import AdminLog from "../models/AdminLog.js";
-
-import verifyAdmin from "../middleware/verifyAdmin.js";
-
-const router = express.Router();
+import verifyAdmin, {
+  requireReviewer,
+  requireSuperAdmin,
+} from "../middleware/verifyAdmin.js";
 
 /* =========================================================
-   HELPERS
+   ROUTER
 ========================================================= */
 
-const isValidObjectId = (value) => {
-  return mongoose.Types.ObjectId.isValid(
-    String(value || "")
-  );
-};
+const router =
+  express.Router();
 
 /* =========================================================
-   ADMIN LOGIN
+   PROTECT ALL ADMIN ROUTES
 ========================================================= */
 
 /*
-  ADMIN AUTHENTICATION:
+  Every route below requires:
 
-  Email + Password
-        ↓
-  bcrypt verification
-        ↓
-  JWT
+  Authorization:
+  Bearer <admin-token>
 
-  No OTP.
-  No Firebase.
-  No Twilio.
+  Admin JWT:
+
+  {
+    id: "<MongoDB Admin _id>",
+    tokenType: "admin",
+    role: "superadmin" | "reviewer"
+  }
 */
 
-router.post(
-  "/login",
+router.use(
+  verifyAdmin
+);
 
-  async (req, res) => {
-    try {
-      const {
-        email,
-        password,
-      } = req.body || {};
+/* =========================================================
+   DASHBOARD
+========================================================= */
 
-      /* ===================================================
-         NORMALIZE EMAIL
-      =================================================== */
+/*
+  GET /api/admin/dashboard
 
-      const normalizedEmail =
-        typeof email === "string"
-          ? email.trim().toLowerCase()
-          : "";
+  Available to:
 
-      /* ===================================================
-         REQUIRED FIELDS
-      =================================================== */
+  superadmin
+  reviewer
+*/
 
-      if (
-        !normalizedEmail ||
-        !password
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Email and password are required",
-        });
-      }
-
-      /* ===================================================
-         EMAIL VALIDATION
-      =================================================== */
-
-      const emailRegex =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (
-        !emailRegex.test(
-          normalizedEmail
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Enter a valid email address",
-        });
-      }
-
-      /* ===================================================
-         JWT CONFIGURATION
-      =================================================== */
-
-      if (!process.env.JWT_SECRET) {
-        console.error(
-          "JWT_SECRET is not configured"
-        );
-
-        return res.status(500).json({
-          success: false,
-          message:
-            "Server authentication configuration error",
-        });
-      }
-
-      /* ===================================================
-         FIND ADMIN
-      =================================================== */
-
-      const admin =
-        await Admin.findOne({
-          email:
-            normalizedEmail,
-        }).select(
-          "+password"
-        );
-
-      /*
-        Do not reveal whether the Admin
-        email exists.
-      */
-
-      if (!admin) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Invalid email or password",
-        });
-      }
-
-      /* ===================================================
-         VERIFY PASSWORD
-      =================================================== */
-
-      const isMatch =
-        await admin.comparePassword(
-          String(password)
-        );
-
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Invalid email or password",
-        });
-      }
-
-      /* ===================================================
-         VALID ROLE
-      =================================================== */
-
-      if (
-        ![
-          "superadmin",
-          "reviewer",
-        ].includes(
-          admin.role
-        )
-      ) {
-        return res.status(403).json({
-          success: false,
-          message:
-            "Admin access denied",
-        });
-      }
-
-      /* ===================================================
-         GENERATE JWT
-      =================================================== */
-
-      const token =
-        jwt.sign(
-          {
-            id:
-              String(
-                admin._id
-              ),
-
-            role:
-              admin.role,
-          },
-
-          process.env.JWT_SECRET,
-
-          {
-            expiresIn:
-              "7d",
-
-            algorithm:
-              "HS256",
-          }
-        );
-
-      /* ===================================================
-         RESPONSE
-      =================================================== */
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Admin login successful",
-
-        token,
-
-        admin: {
-          id:
-            admin._id,
-
-          email:
-            admin.email,
-
-          role:
-            admin.role,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN LOGIN ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Login failed",
-      });
-    }
-  }
+router.get(
+  "/dashboard",
+  requireReviewer,
+  getDashboardStats
 );
 
 /* =========================================================
    ANALYTICS
 ========================================================= */
 
+/*
+  GET /api/admin/analytics
+
+  Available to:
+
+  superadmin
+  reviewer
+*/
+
 router.get(
   "/analytics",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const [
-        total,
-        pending,
-        approved,
-        rejected,
-      ] =
-        await Promise.all([
-          Driver.countDocuments(),
-
-          Driver.countDocuments({
-            status:
-              "pending",
-          }),
-
-          Driver.countDocuments({
-            status:
-              "approved",
-          }),
-
-          Driver.countDocuments({
-            status:
-              "rejected",
-          }),
-        ]);
-
-      return res.status(200).json({
-        success: true,
-
-        data: {
-          summary: {
-            total,
-            pending,
-            approved,
-            rejected,
-          },
-        },
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN ANALYTICS ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Analytics failed",
-      });
-    }
-  }
+  requireReviewer,
+  getAnalytics
 );
 
 /* =========================================================
    GET ALL DRIVERS
 ========================================================= */
 
+/*
+  GET /api/admin/drivers
+
+  Optional filters:
+
+  ?status=pending
+
+  ?status=approved
+
+  ?status=rejected
+
+  ?search=sai
+
+  Examples:
+
+  GET /api/admin/drivers?status=pending
+
+  GET /api/admin/drivers?search=ASAN-001
+
+  GET /api/admin/drivers?status=approved&search=sai
+*/
+
 router.get(
   "/drivers",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const drivers =
-        await Driver.find()
-          .select(
-            "-password"
-          )
-          .sort({
-            createdAt:
-              -1,
-          });
-
-      return res.status(200).json({
-        success: true,
-
-        count:
-          drivers.length,
-
-        data:
-          drivers,
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN DRIVERS FETCH ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to fetch drivers",
-      });
-    }
-  }
+  requireReviewer,
+  getDrivers
 );
 
 /* =========================================================
    GET DRIVER DETAILS
 ========================================================= */
 
+/*
+  GET /api/admin/drivers/:id
+
+  IMPORTANT:
+
+  :id is the MongoDB Driver _id,
+  not the public ASAN driverId.
+*/
+
 router.get(
   "/drivers/:id",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const {
-        id,
-      } = req.params;
-
-      /* ===================================================
-         VALIDATE DRIVER ID
-      =================================================== */
-
-      if (
-        !isValidObjectId(
-          id
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid Driver ID",
-        });
-      }
-
-      /* ===================================================
-         FIND DRIVER
-      =================================================== */
-
-      const driver =
-        await Driver.findById(
-          id
-        ).select(
-          "-password"
-        );
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Driver not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        data:
-          driver,
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN DRIVER FETCH ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to fetch driver",
-      });
-    }
-  }
+  requireReviewer,
+  getDriverById
 );
 
 /* =========================================================
    APPROVE DRIVER
 ========================================================= */
 
+/*
+  PUT /api/admin/drivers/:id/approve
+
+  Available to:
+
+  superadmin
+  reviewer
+
+  Driver must normally be:
+
+  status = pending
+*/
+
 router.put(
   "/drivers/:id/approve",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const {
-        id,
-      } = req.params;
-
-      /* ===================================================
-         VALIDATE ID
-      =================================================== */
-
-      if (
-        !isValidObjectId(
-          id
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid Driver ID",
-        });
-      }
-
-      /* ===================================================
-         FIND DRIVER
-      =================================================== */
-
-      const driver =
-        await Driver.findById(
-          id
-        );
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Driver not found",
-        });
-      }
-
-      /* ===================================================
-         ALREADY APPROVED
-      =================================================== */
-
-      if (
-        driver.status ===
-        "approved"
-      ) {
-        return res.status(200).json({
-          success: true,
-
-          message:
-            "Driver is already approved",
-
-          data: {
-            _id:
-              driver._id,
-
-            driverId:
-              driver.driverId,
-
-            status:
-              driver.status,
-          },
-        });
-      }
-
-      /* ===================================================
-         REJECTED APPLICATION
-      =================================================== */
-
-      /*
-        Rejected → Approved should not happen through
-        the normal onboarding review endpoint.
-
-        A future resubmission/review flow can handle it.
-      */
-
-      if (
-        driver.status ===
-        "rejected"
-      ) {
-        return res.status(409).json({
-          success: false,
-
-          message:
-            "Rejected Driver application cannot be approved directly",
-        });
-      }
-
-      /* ===================================================
-         EXPECT PENDING APPLICATION
-      =================================================== */
-
-      if (
-        driver.status !==
-        "pending"
-      ) {
-        return res.status(409).json({
-          success: false,
-
-          message:
-            "Driver is not awaiting approval",
-        });
-      }
-
-      /* ===================================================
-         APPROVE DRIVER
-      =================================================== */
-
-      driver.status =
-        "approved";
-
-      driver.rejectionReason =
-        null;
-
-      await driver.save();
-
-      /* ===================================================
-         ADMIN AUDIT LOG
-      =================================================== */
-
-      try {
-        await AdminLog.create({
-          adminId:
-            req.admin.id,
-
-          action:
-            "DRIVER_APPROVED",
-
-          driverId:
-            driver._id,
-
-          message:
-            `Driver ${driver.name} approved`,
-
-          metadata: {
-            driverId:
-              driver.driverId,
-
-            previousStatus:
-              "pending",
-
-            newStatus:
-              "approved",
-          },
-        });
-      } catch (logError) {
-        console.error(
-          "ADMIN APPROVAL LOG ERROR:",
-          logError.message
-        );
-      }
-
-      /* ===================================================
-         SOCKET — DRIVER ROOM ONLY
-      =================================================== */
-
-      const io =
-        req.app.get(
-          "io"
-        );
-
-      if (io) {
-        io.to(
-          String(
-            driver.driverId
-          )
-        ).emit(
-          "driver_approved",
-          {
-            driverId:
-              driver.driverId,
-
-            driverMongoId:
-              String(
-                driver._id
-              ),
-
-            status:
-              driver.status,
-
-            date:
-              new Date()
-                .toISOString()
-                .split(
-                  "T"
-                )[0],
-          }
-        );
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Driver approved successfully",
-
-        data: {
-          _id:
-            driver._id,
-
-          driverId:
-            driver.driverId,
-
-          status:
-            driver.status,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "APPROVE DRIVER ERROR:",
-        error
-      );
-
-      if (
-        error?.name ===
-        "ValidationError"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            error.message,
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Approval failed",
-      });
-    }
-  }
+  requireReviewer,
+  approveDriver
 );
 
 /* =========================================================
    REJECT DRIVER
 ========================================================= */
 
+/*
+  PUT /api/admin/drivers/:id/reject
+
+  Available to:
+
+  superadmin
+  reviewer
+
+  Body:
+
+  {
+    "reason": "Driving license document is unclear"
+  }
+*/
+
 router.put(
   "/drivers/:id/reject",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const {
-        id,
-      } = req.params;
-
-      const {
-        reason,
-      } =
-        req.body || {};
-
-      /* ===================================================
-         VALIDATE ID
-      =================================================== */
-
-      if (
-        !isValidObjectId(
-          id
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid Driver ID",
-        });
-      }
-
-      /* ===================================================
-         REJECTION REASON
-      =================================================== */
-
-      const rejectionReason =
-        typeof reason ===
-        "string"
-          ? reason.trim()
-          : "";
-
-      if (
-        !rejectionReason
-      ) {
-        return res.status(400).json({
-          success: false,
-
-          message:
-            "Rejection reason is required",
-        });
-      }
-
-      if (
-        rejectionReason.length >
-        500
-      ) {
-        return res.status(400).json({
-          success: false,
-
-          message:
-            "Rejection reason must not exceed 500 characters",
-        });
-      }
-
-      /* ===================================================
-         FIND DRIVER
-      =================================================== */
-
-      const driver =
-        await Driver.findById(
-          id
-        );
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Driver not found",
-        });
-      }
-
-      /* ===================================================
-         ALREADY REJECTED
-      =================================================== */
-
-      if (
-        driver.status ===
-        "rejected"
-      ) {
-        return res.status(200).json({
-          success: true,
-
-          message:
-            "Driver is already rejected",
-
-          data: {
-            _id:
-              driver._id,
-
-            driverId:
-              driver.driverId,
-
-            status:
-              driver.status,
-
-            rejectionReason:
-              driver.rejectionReason,
-          },
-        });
-      }
-
-      /* ===================================================
-         APPROVED DRIVER
-      =================================================== */
-
-      /*
-        Approval review and account suspension are
-        different operations.
-
-        Do not use application rejection to disable an
-        already-approved Driver.
-      */
-
-      if (
-        driver.status ===
-        "approved"
-      ) {
-        return res.status(409).json({
-          success: false,
-
-          message:
-            "Approved Driver cannot be rejected through the application review endpoint",
-        });
-      }
-
-      /* ===================================================
-         EXPECT PENDING APPLICATION
-      =================================================== */
-
-      if (
-        driver.status !==
-        "pending"
-      ) {
-        return res.status(409).json({
-          success: false,
-
-          message:
-            "Driver is not awaiting review",
-        });
-      }
-
-      /* ===================================================
-         REJECT DRIVER
-      =================================================== */
-
-      driver.status =
-        "rejected";
-
-      driver.rejectionReason =
-        rejectionReason;
-
-      driver.isOnline =
-        false;
-
-      driver.currentStatus =
-        "offline";
-
-      await driver.save();
-
-      /* ===================================================
-         ADMIN AUDIT LOG
-      =================================================== */
-
-      try {
-        await AdminLog.create({
-          adminId:
-            req.admin.id,
-
-          action:
-            "DRIVER_REJECTED",
-
-          driverId:
-            driver._id,
-
-          message:
-            `Driver ${driver.name} rejected: ${rejectionReason}`,
-
-          metadata: {
-            driverId:
-              driver.driverId,
-
-            rejectionReason,
-
-            previousStatus:
-              "pending",
-
-            newStatus:
-              "rejected",
-          },
-        });
-      } catch (logError) {
-        console.error(
-          "ADMIN REJECTION LOG ERROR:",
-          logError.message
-        );
-      }
-
-      /* ===================================================
-         SOCKET — DRIVER ROOM ONLY
-      =================================================== */
-
-      const io =
-        req.app.get(
-          "io"
-        );
-
-      if (io) {
-        io.to(
-          String(
-            driver.driverId
-          )
-        ).emit(
-          "driver_rejected",
-          {
-            driverId:
-              driver.driverId,
-
-            driverMongoId:
-              String(
-                driver._id
-              ),
-
-            status:
-              driver.status,
-
-            reason:
-              rejectionReason,
-          }
-        );
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Driver rejected successfully",
-
-        data: {
-          _id:
-            driver._id,
-
-          driverId:
-            driver.driverId,
-
-          status:
-            driver.status,
-
-          rejectionReason:
-            driver.rejectionReason,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "REJECT DRIVER ERROR:",
-        error
-      );
-
-      if (
-        error?.name ===
-        "ValidationError"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            error.message,
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Rejection failed",
-      });
-    }
-  }
+  requireReviewer,
+  rejectDriver
 );
 
 /* =========================================================
-   ADMIN LOGS
+   ADMIN AUDIT LOGS
 ========================================================= */
+
+/*
+  GET /api/admin/logs
+
+  Recommended:
+
+  Only superadmin should see the complete
+  Admin audit history.
+*/
 
 router.get(
   "/logs",
-
-  verifyAdmin,
-
-  async (req, res) => {
-    try {
-      const logs =
-        await AdminLog.find()
-          .populate(
-            "adminId",
-            "email role"
-          )
-          .populate(
-            "driverId",
-            "name driverId"
-          )
-          .sort({
-            createdAt:
-              -1,
-          });
-
-      return res.status(200).json({
-        success: true,
-
-        count:
-          logs.length,
-
-        data:
-          logs,
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN LOGS ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-
-        message:
-          "Failed to fetch logs",
-      });
-    }
-  }
+  requireSuperAdmin,
+  getLogs
 );
 
 /* =========================================================
