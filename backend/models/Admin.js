@@ -19,6 +19,10 @@ const adminSchema =
         trim: true,
         lowercase: true,
         index: true,
+        match: [
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+          "Enter a valid email address",
+        ],
       },
 
       /* =====================================================
@@ -28,7 +32,7 @@ const adminSchema =
       password: {
         type: String,
         required: true,
-        minlength: 6,
+        minlength: 8,
         select: false,
       },
 
@@ -45,6 +49,27 @@ const adminSchema =
         ],
 
         default: "reviewer",
+
+        index: true,
+      },
+
+      /* =====================================================
+         ACCOUNT STATUS
+      ===================================================== */
+
+      isActive: {
+        type: Boolean,
+        default: true,
+        index: true,
+      },
+
+      /* =====================================================
+         LAST LOGIN
+      ===================================================== */
+
+      lastLoginAt: {
+        type: Date,
+        default: null,
       },
     },
 
@@ -53,10 +78,30 @@ const adminSchema =
 
       toJSON: {
         virtuals: true,
+
+        transform(
+          doc,
+          ret
+        ) {
+          delete ret.password;
+          delete ret.__v;
+
+          return ret;
+        },
       },
 
       toObject: {
         virtuals: true,
+
+        transform(
+          doc,
+          ret
+        ) {
+          delete ret.password;
+          delete ret.__v;
+
+          return ret;
+        },
       },
     }
   );
@@ -78,7 +123,7 @@ adminSchema.pre(
 
     const salt =
       await bcrypt.genSalt(
-        10
+        12
       );
 
     this.password =
@@ -94,7 +139,7 @@ adminSchema.pre(
 ========================================================= */
 
 adminSchema.methods.comparePassword =
-  function (
+  async function (
     enteredPassword
   ) {
     return bcrypt.compare(
@@ -104,46 +149,25 @@ adminSchema.methods.comparePassword =
   };
 
 /* =========================================================
-   JSON CLEANUP
+   FIND FOR LOGIN
 ========================================================= */
 
-adminSchema.set(
-  "toJSON",
-  {
-    virtuals: true,
+adminSchema.statics.findForAuthentication =
+  function (
+    email
+  ) {
+    return this.findOne({
+      email: String(
+        email || ""
+      )
+        .trim()
+        .toLowerCase(),
 
-    transform(
-      doc,
-      ret
-    ) {
-      delete ret.password;
-      delete ret.__v;
-
-      return ret;
-    },
-  }
-);
-
-/* =========================================================
-   OBJECT CLEANUP
-========================================================= */
-
-adminSchema.set(
-  "toObject",
-  {
-    virtuals: true,
-
-    transform(
-      doc,
-      ret
-    ) {
-      delete ret.password;
-      delete ret.__v;
-
-      return ret;
-    },
-  }
-);
+      isActive: true,
+    }).select(
+      "+password"
+    );
+  };
 
 /* =========================================================
    MODEL
