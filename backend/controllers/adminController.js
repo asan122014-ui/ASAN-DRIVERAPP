@@ -27,25 +27,23 @@ const createAdminLog = async ({
   action,
   driver = null,
   message,
+  metadata = {},
 }) => {
   try {
-    const logData = {
-      action,
-      message,
-    };
+    if (!req?.admin?._id) {
+      console.warn(
+        "AdminLog skipped: authenticated Admin missing"
+      );
 
-    /* =====================================================
-       ADMIN
-    ===================================================== */
-
-    if (req?.admin?._id) {
-      logData.adminId =
-        req.admin._id;
+      return;
     }
 
-    /* =====================================================
-       DRIVER
-    ===================================================== */
+    const logData = {
+      adminId: req.admin._id,
+      action,
+      message,
+      metadata,
+    };
 
     if (driver?._id) {
       logData.driverId =
@@ -57,8 +55,8 @@ const createAdminLog = async ({
     );
   } catch (error) {
     /*
-      Logging should never crash the
-      actual Admin operation.
+      Audit logging must never crash
+      the main Admin operation.
     */
 
     console.warn(
@@ -262,10 +260,6 @@ export const getDriverById =
         id,
       } = req.params;
 
-      /* =====================================================
-         VALIDATE ID
-      ===================================================== */
-
       if (
         !isValidObjectId(
           id
@@ -384,7 +378,42 @@ export const approveDriver =
       }
 
       /* =====================================================
-         UPDATE
+         REJECTED DRIVER
+      ===================================================== */
+
+      if (
+        driver.status ===
+        "rejected"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Rejected Driver application cannot be approved directly",
+        });
+      }
+
+      /* =====================================================
+         EXPECT PENDING
+      ===================================================== */
+
+      if (
+        driver.status !==
+        "pending"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Driver is not awaiting approval",
+        });
+      }
+
+      const previousStatus =
+        driver.status;
+
+      /* =====================================================
+         APPROVE
       ===================================================== */
 
       driver.status =
@@ -393,10 +422,40 @@ export const approveDriver =
       driver.rejectionReason =
         null;
 
+      /*
+        These assignments are safe only if you add
+        these fields to Driver.js:
+
+        approvedAt
+        rejectedAt
+        reviewedBy
+      */
+
+      if (
+        "approvedAt" in driver
+      ) {
+        driver.approvedAt =
+          new Date();
+      }
+
+      if (
+        "rejectedAt" in driver
+      ) {
+        driver.rejectedAt =
+          null;
+      }
+
+      if (
+        "reviewedBy" in driver
+      ) {
+        driver.reviewedBy =
+          req.admin._id;
+      }
+
       await driver.save();
 
       /* =====================================================
-         LOG
+         AUDIT LOG
       ===================================================== */
 
       await createAdminLog({
@@ -409,7 +468,82 @@ export const approveDriver =
 
         message:
           `Driver ${driver.name} approved`,
+
+        metadata: {
+          driverId:
+            driver.driverId,
+
+          previousStatus,
+
+          newStatus:
+            "approved",
+
+          reviewedBy:
+            String(
+              req.admin._id
+            ),
+        },
       });
+
+      /* =====================================================
+         SOCKET EVENT
+      ===================================================== */
+
+      const io =
+        req.app.get(
+          "io"
+        );
+
+      if (
+        io &&
+        driver.driverId
+      ) {
+        io.to(
+          String(
+            driver.driverId
+          )
+        ).emit(
+          "driver_approved",
+          {
+            driverId:
+              driver.driverId,
+
+            driverMongoId:
+              String(
+                driver._id
+              ),
+
+            status:
+              driver.status,
+
+            approvedAt:
+              new Date().toISOString(),
+          }
+        );
+
+        /*
+          Admin dashboards listening to the Admin room
+          can refresh immediately.
+        */
+
+        io.to(
+          "admin"
+        ).emit(
+          "driver_status_changed",
+          {
+            driverMongoId:
+              String(
+                driver._id
+              ),
+
+            driverId:
+              driver.driverId,
+
+            status:
+              "approved",
+          }
+        );
+      }
 
       return res.status(200).json({
         success: true,
@@ -425,6 +559,18 @@ export const approveDriver =
         "Approve Driver Error:",
         error
       );
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message,
+        });
+      }
 
       return res.status(500).json({
         success: false,
@@ -449,7 +595,8 @@ export const rejectDriver =
 
       const {
         reason,
-      } = req.body;
+      } =
+        req.body || {};
 
       /* =====================================================
          VALIDATE ID
@@ -469,7 +616,7 @@ export const rejectDriver =
       }
 
       /* =====================================================
-         VALIDATE REASON
+         REJECTION REASON
       ===================================================== */
 
       const rejectionReason =
@@ -508,7 +655,7 @@ export const rejectDriver =
           success: false,
 
           message:
-            "Rejection reason is too long",
+            "Rejection reason must not exceed 500 characters",
         });
       }
 
@@ -533,7 +680,68 @@ export const rejectDriver =
       }
 
       /* =====================================================
-         UPDATE DRIVER
+         ALREADY REJECTED
+      ===================================================== */
+
+      if (
+        driver.status ===
+        "rejected"
+      ) {
+        return res.status(200).json({
+          success: true,
+
+          message:
+            "Driver is already rejected",
+
+          data:
+            driver,
+        });
+      }
+
+      /* =====================================================
+         APPROVED DRIVER
+      ===================================================== */
+
+      /*
+        Rejecting an onboarding application and
+        suspending an approved Driver are separate actions.
+
+        A future Admin endpoint should handle suspension.
+      */
+
+      if (
+        driver.status ===
+        "approved"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Approved Driver cannot be rejected through the application review endpoint",
+        });
+      }
+
+      /* =====================================================
+         EXPECT PENDING
+      ===================================================== */
+
+      if (
+        driver.status !==
+        "pending"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Driver is not awaiting review",
+        });
+      }
+
+      const previousStatus =
+        driver.status;
+
+      /* =====================================================
+         REJECT
       ===================================================== */
 
       driver.status =
@@ -542,10 +750,37 @@ export const rejectDriver =
       driver.rejectionReason =
         rejectionReason;
 
+      driver.isOnline =
+        false;
+
+      driver.currentStatus =
+        "offline";
+
+      if (
+        "rejectedAt" in driver
+      ) {
+        driver.rejectedAt =
+          new Date();
+      }
+
+      if (
+        "approvedAt" in driver
+      ) {
+        driver.approvedAt =
+          null;
+      }
+
+      if (
+        "reviewedBy" in driver
+      ) {
+        driver.reviewedBy =
+          req.admin._id;
+      }
+
       await driver.save();
 
       /* =====================================================
-         LOG
+         AUDIT LOG
       ===================================================== */
 
       await createAdminLog({
@@ -558,7 +793,82 @@ export const rejectDriver =
 
         message:
           `Driver ${driver.name} rejected: ${rejectionReason}`,
+
+        metadata: {
+          driverId:
+            driver.driverId,
+
+          previousStatus,
+
+          newStatus:
+            "rejected",
+
+          rejectionReason,
+
+          reviewedBy:
+            String(
+              req.admin._id
+            ),
+        },
       });
+
+      /* =====================================================
+         SOCKET EVENT
+      ===================================================== */
+
+      const io =
+        req.app.get(
+          "io"
+        );
+
+      if (
+        io &&
+        driver.driverId
+      ) {
+        io.to(
+          String(
+            driver.driverId
+          )
+        ).emit(
+          "driver_rejected",
+          {
+            driverId:
+              driver.driverId,
+
+            driverMongoId:
+              String(
+                driver._id
+              ),
+
+            status:
+              driver.status,
+
+            reason:
+              rejectionReason,
+
+            rejectedAt:
+              new Date().toISOString(),
+          }
+        );
+
+        io.to(
+          "admin"
+        ).emit(
+          "driver_status_changed",
+          {
+            driverMongoId:
+              String(
+                driver._id
+              ),
+
+            driverId:
+              driver.driverId,
+
+            status:
+              "rejected",
+          }
+        );
+      }
 
       return res.status(200).json({
         success: true,
@@ -574,6 +884,18 @@ export const rejectDriver =
         "Reject Driver Error:",
         error
       );
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message,
+        });
+      }
 
       return res.status(500).json({
         success: false,
@@ -670,20 +992,23 @@ export const getAnalytics =
           Driver.countDocuments(),
 
           Driver.countDocuments({
-            status: "approved",
+            status:
+              "approved",
           }),
 
           Driver.countDocuments({
-            status: "pending",
+            status:
+              "pending",
           }),
 
           Driver.countDocuments({
-            status: "rejected",
+            status:
+              "rejected",
           }),
         ]);
 
       /* =====================================================
-         REGISTRATION ANALYTICS
+         REGISTRATIONS
       ===================================================== */
 
       const registrations =
@@ -723,61 +1048,148 @@ export const getAnalytics =
         ]);
 
       /* =====================================================
-         APPROVAL ANALYTICS
+         APPROVALS
       ===================================================== */
 
       /*
-        At the moment Driver does not have an approvedAt field.
+        If Driver.js contains approvedAt,
+        use it for exact analytics.
 
-        Therefore updatedAt is being used as the closest
-        available timestamp for approved records.
-
-        Later we can add:
-          approvedAt
-          rejectedAt
-          reviewedBy
-
-        to Driver.js for exact analytics.
+        Otherwise fall back to updatedAt.
       */
 
-      const approvals =
-        await Driver.aggregate([
-          {
-            $match: {
-              status:
-                "approved",
+      const approvalDateField =
+        "$approvedAt";
 
-              updatedAt: {
-                $gte:
-                  last7Days,
+      let approvals;
+
+      try {
+        approvals =
+          await Driver.aggregate([
+            {
+              $match: {
+                status:
+                  "approved",
+
+                approvedAt: {
+                  $gte:
+                    last7Days,
+                },
               },
             },
-          },
 
-          {
-            $group: {
-              _id: {
-                $dateToString: {
-                  format:
-                    "%Y-%m-%d",
+            {
+              $group: {
+                _id: {
+                  $dateToString: {
+                    format:
+                      "%Y-%m-%d",
 
-                  date:
-                    "$updatedAt",
+                    date:
+                      approvalDateField,
+                  },
+                },
+
+                count: {
+                  $sum: 1,
+                },
+              },
+            },
+
+            {
+              $sort: {
+                _id: 1,
+              },
+            },
+          ]);
+
+        /*
+          Existing records may not yet have approvedAt.
+        */
+
+        if (
+          approvals.length ===
+          0
+        ) {
+          approvals =
+            await Driver.aggregate([
+              {
+                $match: {
+                  status:
+                    "approved",
+
+                  updatedAt: {
+                    $gte:
+                      last7Days,
+                  },
                 },
               },
 
-              count: {
-                $sum: 1,
+              {
+                $group: {
+                  _id: {
+                    $dateToString: {
+                      format:
+                        "%Y-%m-%d",
+
+                      date:
+                        "$updatedAt",
+                    },
+                  },
+
+                  count: {
+                    $sum: 1,
+                  },
+                },
+              },
+
+              {
+                $sort: {
+                  _id: 1,
+                },
+              },
+            ]);
+        }
+      } catch {
+        approvals =
+          await Driver.aggregate([
+            {
+              $match: {
+                status:
+                  "approved",
+
+                updatedAt: {
+                  $gte:
+                    last7Days,
+                },
               },
             },
-          },
 
-          {
-            $sort: {
-              _id: 1,
+            {
+              $group: {
+                _id: {
+                  $dateToString: {
+                    format:
+                      "%Y-%m-%d",
+
+                    date:
+                      "$updatedAt",
+                  },
+                },
+
+                count: {
+                  $sum: 1,
+                },
+              },
             },
-          },
-        ]);
+
+            {
+              $sort: {
+                _id: 1,
+              },
+            },
+          ]);
+      }
 
       return res.status(200).json({
         success: true,
