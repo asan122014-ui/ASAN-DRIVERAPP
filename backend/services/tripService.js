@@ -25,14 +25,25 @@ const PAYMENT_METHODS = Object.freeze([
 
 const IST_OFFSET_MINUTES = 330;
 
+/*
+  Maximum allowed duration for one active duty.
+
+  3 hours
+*/
+
+const MAX_TRIP_DURATION_MS =
+  3 * 60 * 60 * 1000;
+
 /* =========================================================
    EVENTS
 ========================================================= */
 
 export const EVENTS = Object.freeze({
-  TRIP_STARTED: "trip_started",
+  TRIP_STARTED:
+    "trip_started",
 
-  TRIP_ENDED: "trip_ended",
+  TRIP_ENDED:
+    "trip_ended",
 
   STUDENT_PICKED_UP:
     "student_picked_up",
@@ -85,7 +96,8 @@ export class NotFoundError extends Error {
     this.name =
       "NotFoundError";
 
-    this.statusCode = 404;
+    this.statusCode =
+      404;
   }
 }
 
@@ -96,7 +108,8 @@ export class ValidationError extends Error {
     this.name =
       "ValidationError";
 
-    this.statusCode = 400;
+    this.statusCode =
+      400;
   }
 }
 
@@ -107,7 +120,8 @@ export class ConflictError extends Error {
     this.name =
       "ConflictError";
 
-    this.statusCode = 409;
+    this.statusCode =
+      409;
   }
 }
 
@@ -122,7 +136,9 @@ const normalizeDriverId = (
     return "";
   }
 
-  return String(driverId)
+  return String(
+    driverId
+  )
     .trim()
     .toUpperCase();
 };
@@ -134,7 +150,9 @@ const normalizeTripType = (
     return "";
   }
 
-  return String(tripType)
+  return String(
+    tripType
+  )
     .trim()
     .toLowerCase();
 };
@@ -146,7 +164,9 @@ const normalizePaymentMethod = (
     return "";
   }
 
-  return String(method)
+  return String(
+    method
+  )
     .trim()
     .toLowerCase();
 };
@@ -186,27 +206,15 @@ const getISTDateParts = (
    CURRENT IST HOUR
 ========================================================= */
 
-const getCurrentHourInIST = () => {
-  return getISTDateParts()
-    .hour;
-};
+const getCurrentHourInIST =
+  () => {
+    return getISTDateParts()
+      .hour;
+  };
 
 /* =========================================================
    IST DAY RANGE
 ========================================================= */
-
-/*
-  Converts an India calendar date into
-  the exact UTC MongoDB query range.
-
-  Example:
-
-  India:
-  2026-08-17 00:00
-
-  UTC:
-  2026-08-16 18:30
-*/
 
 const getISTDayRange = (
   input = new Date()
@@ -216,7 +224,8 @@ const getISTDayRange = (
   let day;
 
   if (
-    typeof input === "string"
+    typeof input ===
+    "string"
   ) {
     const match =
       /^(\d{4})-(\d{2})-(\d{2})$/.exec(
@@ -230,13 +239,19 @@ const getISTDayRange = (
     }
 
     year =
-      Number(match[1]);
+      Number(
+        match[1]
+      );
 
     month =
-      Number(match[2]);
+      Number(
+        match[2]
+      );
 
     day =
-      Number(match[3]);
+      Number(
+        match[3]
+      );
 
     const validationDate =
       new Date(
@@ -313,19 +328,6 @@ const getISTDayRange = (
    NOTIFICATION HELPER
 ========================================================= */
 
-/*
-  Notification failures should NOT cause:
-
-  pickup
-  drop
-  trip start
-  trip end
-  payment
-
-  to fail after the database has already
-  been updated.
-*/
-
 const notifyDriver = async (
   driverId,
   {
@@ -362,7 +364,9 @@ const notifyDriver = async (
   ) {
     try {
       io.to(
-        String(driverId)
+        String(
+          driverId
+        )
       ).emit(
         event,
         payload
@@ -394,6 +398,89 @@ const ensureTripInTransit = (
 };
 
 /* =========================================================
+   MAXIMUM TRIP DURATION
+========================================================= */
+
+/*
+  Returns true only when the backend itself confirms
+  that the duty has been active for 3 hours or more.
+
+  Client-provided values are NEVER trusted for this.
+*/
+
+const hasReachedMaximumTripDuration = (
+  trips,
+  now = new Date()
+) => {
+  if (
+    !Array.isArray(
+      trips
+    ) ||
+    trips.length ===
+      0
+  ) {
+    return false;
+  }
+
+  const startTimes =
+    trips
+      .map(
+        (trip) => {
+          if (
+            !trip?.startTime
+          ) {
+            return null;
+          }
+
+          const value =
+            new Date(
+              trip.startTime
+            ).getTime();
+
+          return Number.isFinite(
+            value
+          )
+            ? value
+            : null;
+        }
+      )
+      .filter(
+        (
+          value
+        ) =>
+          value !==
+          null
+      );
+
+  if (
+    startTimes.length ===
+    0
+  ) {
+    return false;
+  }
+
+  /*
+    All child Trip documents are created together,
+    but taking the earliest start time makes the
+    duty-level check more robust.
+  */
+
+  const dutyStartTime =
+    Math.min(
+      ...startTimes
+    );
+
+  const elapsed =
+    now.getTime() -
+    dutyStartTime;
+
+  return (
+    elapsed >=
+    MAX_TRIP_DURATION_MS
+  );
+};
+
+/* =========================================================
    PHOTO METADATA
 ========================================================= */
 
@@ -402,15 +489,20 @@ const normalizeOptionalNumber = (
   label
 ) => {
   if (
-    value === undefined ||
-    value === null ||
-    value === ""
+    value ===
+      undefined ||
+    value ===
+      null ||
+    value ===
+      ""
   ) {
     return null;
   }
 
   const number =
-    Number(value);
+    Number(
+      value
+    );
 
   if (
     !Number.isFinite(
@@ -445,8 +537,10 @@ const normalizePhotoMetadata = (
     );
 
   if (
-    (latitude === null) !==
-    (longitude === null)
+    (latitude ===
+      null) !==
+    (longitude ===
+      null)
   ) {
     throw new ValidationError(
       "Latitude and longitude must be provided together"
@@ -454,10 +548,13 @@ const normalizePhotoMetadata = (
   }
 
   if (
-    latitude !== null &&
+    latitude !==
+      null &&
     (
-      latitude < -90 ||
-      latitude > 90
+      latitude <
+        -90 ||
+      latitude >
+        90
     )
   ) {
     throw new ValidationError(
@@ -466,10 +563,13 @@ const normalizePhotoMetadata = (
   }
 
   if (
-    longitude !== null &&
+    longitude !==
+      null &&
     (
-      longitude < -180 ||
-      longitude > 180
+      longitude <
+        -180 ||
+      longitude >
+        180
     )
   ) {
     throw new ValidationError(
@@ -498,7 +598,8 @@ const normalizePhotoMetadata = (
   if (
     distanceInMeters !==
       null &&
-    distanceInMeters < 0
+    distanceInMeters <
+      0
   ) {
     throw new ValidationError(
       "Distance cannot be negative"
@@ -506,8 +607,10 @@ const normalizePhotoMetadata = (
   }
 
   if (
-    width !== null &&
-    width < 0
+    width !==
+      null &&
+    width <
+      0
   ) {
     throw new ValidationError(
       "Width cannot be negative"
@@ -515,8 +618,10 @@ const normalizePhotoMetadata = (
   }
 
   if (
-    height !== null &&
-    height < 0
+    height !==
+      null &&
+    height <
+      0
   ) {
     throw new ValidationError(
       "Height cannot be negative"
@@ -624,23 +729,49 @@ export const startTripService =
       const hour =
         getCurrentHourInIST();
 
+      /*
+        Morning remains available until 11:59 AM.
+        At 12:00 PM it becomes unavailable.
+      */
+
       if (
         tripType ===
           "morning" &&
-        hour >= 12
+        hour >=
+          12
       ) {
         throw new ValidationError(
           "Morning trip is no longer available."
         );
       }
 
+      /*
+        Afternoon starts from 12:00 PM.
+      */
+
       if (
         tripType ===
           "afternoon" &&
-        hour < 12
+        hour <
+          12
       ) {
         throw new ValidationError(
           "Afternoon trip has not started yet."
+        );
+      }
+
+      /*
+        Afternoon trip expires at 6:00 PM.
+      */
+
+      if (
+        tripType ===
+          "afternoon" &&
+        hour >=
+          18
+      ) {
+        throw new ValidationError(
+          "Afternoon trip is no longer available."
         );
       }
 
@@ -649,9 +780,11 @@ export const startTripService =
       =================================================== */
 
       const {
-        start: todayStart,
+        start:
+          todayStart,
 
-        end: todayEnd,
+        end:
+          todayEnd,
       } =
         getISTDayRange();
 
@@ -702,7 +835,9 @@ export const startTripService =
           session
         );
 
-      if (!driver) {
+      if (
+        !driver
+      ) {
         throw new NotFoundError(
           "Driver not found"
         );
@@ -760,7 +895,9 @@ export const startTripService =
 
       const validChildren =
         children.filter(
-          (child) =>
+          (
+            child
+          ) =>
             Boolean(
               child.parentId
             )
@@ -815,7 +952,9 @@ export const startTripService =
 
       const studentIds =
         validChildren.map(
-          (child) =>
+          (
+            child
+          ) =>
             child._id
         );
 
@@ -824,7 +963,9 @@ export const startTripService =
 
       const tripDocs =
         validChildren.map(
-          (child) => {
+          (
+            child
+          ) => {
             const morning =
               tripType ===
               "morning";
@@ -913,7 +1054,9 @@ export const startTripService =
       );
 
       return createdTrips;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       if (
         session.inTransaction()
       ) {
@@ -933,20 +1076,36 @@ export const startTripService =
 
 /* =========================================================
    END TRIP
+
+   NORMAL END:
+   - photos required
+   - pickup required
+   - drop required
+
+   AUTOMATIC END:
+   - backend checks elapsed time
+   - if >= 3 hours, ALL validation is bypassed
+   - no frontend flag can fake the 3-hour condition
 ========================================================= */
 
 export const endTripService =
   async (
     driverId,
-    io
+    io,
+    options = {}
   ) => {
+    const session =
+      await mongoose.startSession();
+
     try {
       driverId =
         normalizeDriverId(
           driverId
         );
 
-      if (!driverId) {
+      if (
+        !driverId
+      ) {
         throw new ValidationError(
           "Driver ID is required"
         );
@@ -962,10 +1121,11 @@ export const endTripService =
 
           status:
             "in_transit",
-        }).populate(
-          "child",
-          "name status"
-        );
+        })
+          .populate(
+            "child",
+            "name status"
+          );
 
       if (
         !trips.length
@@ -984,82 +1144,150 @@ export const endTripService =
           driverId,
         });
 
-      if (!driver) {
+      if (
+        !driver
+      ) {
         throw new NotFoundError(
           "Driver not found"
         );
       }
 
       /* ===================================================
-         VALIDATE CHILD TRIPS
+         SERVER-SIDE 3-HOUR CHECK
       =================================================== */
 
-      for (
-        const trip of trips
+      const now =
+        new Date();
+
+      const maximumDurationReached =
+        hasReachedMaximumTripDuration(
+          trips,
+          now
+        );
+
+      /*
+        This is intentionally based ONLY on server time.
+
+        options.autoEnded is informational only.
+        It CANNOT enable the override.
+      */
+
+      const forceEnd =
+        maximumDurationReached;
+
+      const requestedAutoEnd =
+        Boolean(
+          options?.autoEnded
+        );
+
+      if (
+        requestedAutoEnd &&
+        !maximumDurationReached
       ) {
-        /*
-          Absent children do not require
-          pickup/drop/photo validation.
-        */
+        console.warn(
+          `Auto-end requested for ${driverId}, but 3-hour limit has not been reached. Normal validation will apply.`
+        );
+      }
 
-        if (
-          trip.child
-            ?.status ===
-          "absent"
-        ) {
-          continue;
-        }
+      if (
+        forceEnd
+      ) {
+        console.log(
+          `⏰ Maximum trip duration reached for ${driverId}. Force-ending active duty.`
+        );
+      }
 
-        if (
-          trip.tripType ===
-            "morning" &&
-          !trip.morningDrop
-            ?.imageUrl
-        ) {
-          throw new ValidationError(
-            `Drop photo missing for ${trip.childName}`
-          );
-        }
+      /* ===================================================
+         NORMAL VALIDATION
 
-        if (
-          trip.tripType ===
-            "afternoon" &&
-          !trip
-            .afternoonPickup
-            ?.imageUrl
-        ) {
-          throw new ValidationError(
-            `Pickup photo missing for ${trip.childName}`
-          );
-        }
+         Completely skipped after 3 hours.
+      =================================================== */
 
-        if (
-          !trip.pickupStatus
+      if (
+        !forceEnd
+      ) {
+        for (
+          const trip of
+          trips
         ) {
-          throw new ValidationError(
-            `${trip.childName} was not picked up`
-          );
-        }
+          /*
+            Absent children do not require
+            pickup/drop/photo validation.
+          */
 
-        if (
-          !trip.dropStatus
-        ) {
-          throw new ValidationError(
-            `${trip.childName} was not dropped`
-          );
+          if (
+            trip.child
+              ?.status ===
+            "absent"
+          ) {
+            continue;
+          }
+
+          if (
+            trip.tripType ===
+              "morning" &&
+            !trip.morningDrop
+              ?.imageUrl
+          ) {
+            throw new ValidationError(
+              `Drop photo missing for ${trip.childName}`
+            );
+          }
+
+          if (
+            trip.tripType ===
+              "afternoon" &&
+            !trip
+              .afternoonPickup
+              ?.imageUrl
+          ) {
+            throw new ValidationError(
+              `Pickup photo missing for ${trip.childName}`
+            );
+          }
+
+          if (
+            !trip.pickupStatus
+          ) {
+            throw new ValidationError(
+              `${trip.childName} was not picked up`
+            );
+          }
+
+          if (
+            !trip.dropStatus
+          ) {
+            throw new ValidationError(
+              `${trip.childName} was not dropped`
+            );
+          }
         }
       }
 
       /* ===================================================
-         COMPLETE TRIPS
+         TRANSACTION
+      =================================================== */
+
+      session.startTransaction();
+
+      /* ===================================================
+         COMPLETE ALL ACTIVE TRIPS
       =================================================== */
 
       const endTime =
-        new Date();
+        now;
 
       for (
-        const trip of trips
+        const trip of
+        trips
       ) {
+        /*
+          The normal creation path always has startTime.
+
+          This fallback prevents a malformed old record
+          from blocking the forced shutdown.
+        */
+
         if (
           !trip.startTime
         ) {
@@ -1070,16 +1298,22 @@ export const endTripService =
         trip.endTime =
           endTime;
 
-        const durationMs =
-          endTime.getTime() -
+        const startMs =
           new Date(
             trip.startTime
           ).getTime();
 
+        const durationMs =
+          Number.isFinite(
+            startMs
+          )
+            ? endTime.getTime() -
+              startMs
+            : 0;
+
         trip.duration =
           Math.max(
             1,
-
             Math.round(
               durationMs /
                 60000
@@ -1089,11 +1323,16 @@ export const endTripService =
         trip.status =
           "completed";
 
-        await trip.save();
+        await trip.save({
+          session,
+        });
       }
 
       /* ===================================================
          RESET CHILDREN
+
+         This also handles automatic end where a child may
+         still be waiting/onboard.
       =================================================== */
 
       await Child.updateMany(
@@ -1106,6 +1345,10 @@ export const endTripService =
             status:
               "waiting",
           },
+        },
+
+        {
+          session,
         }
       );
 
@@ -1119,7 +1362,46 @@ export const endTripService =
       driver.isOnline =
         false;
 
-      await driver.save();
+      await driver.save({
+        session,
+      });
+
+      await session.commitTransaction();
+
+      /* ===================================================
+         RESPONSE METADATA
+
+         Do not rely on schema fields for this.
+         We attach metadata to the returned array.
+      =================================================== */
+
+      const result =
+        trips.map(
+          (
+            trip
+          ) => {
+            const object =
+              typeof trip.toObject ===
+              "function"
+                ? trip.toObject()
+                : trip;
+
+            return {
+              ...object,
+
+              autoEnded:
+                forceEnd,
+
+              endReason:
+                forceEnd
+                  ? "maximum_duration_reached"
+                  : "manual",
+
+              maximumDurationMinutes:
+                180,
+            };
+          }
+        );
 
       /* ===================================================
          NOTIFICATION
@@ -1135,7 +1417,7 @@ export const endTripService =
             EVENTS.TRIP_ENDED,
 
           payload:
-            trips,
+            result,
 
           priority:
             "low",
@@ -1144,14 +1426,24 @@ export const endTripService =
         }
       );
 
-      return trips;
-    } catch (error) {
+      return result;
+    } catch (
+      error
+    ) {
+      if (
+        session.inTransaction()
+      ) {
+        await session.abortTransaction();
+      }
+
       console.error(
         "endTripService error:",
         error.message
       );
 
       throw error;
+    } finally {
+      session.endSession();
     }
   };
 
@@ -1169,7 +1461,9 @@ export const getActiveTripsService =
           driverId
         );
 
-      if (!driverId) {
+      if (
+        !driverId
+      ) {
         throw new ValidationError(
           "driverId is required"
         );
@@ -1193,10 +1487,13 @@ export const getActiveTripsService =
           "name"
         )
         .sort({
-          createdAt: -1,
+          createdAt:
+            -1,
         })
         .lean();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getActiveTripsService error:",
         error
@@ -1210,20 +1507,14 @@ export const getActiveTripsService =
    GET TRIP BY ID
 ========================================================= */
 
-/*
-  Kept function name for compatibility with
-  tripController.js.
-
-  It retrieves ANY Trip by ID, not only
-  active trips.
-*/
-
 export const getActiveTripService =
   async (
     tripId
   ) => {
     try {
-      if (!tripId) {
+      if (
+        !tripId
+      ) {
         throw new ValidationError(
           "tripId is required"
         );
@@ -1253,14 +1544,18 @@ export const getActiveTripService =
           )
           .lean();
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
       }
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getActiveTripService error:",
         error
@@ -1284,7 +1579,9 @@ export const getDriverTripsService =
           driverId
         );
 
-      if (!driverId) {
+      if (
+        !driverId
+      ) {
         throw new ValidationError(
           "driverId is required"
         );
@@ -1297,7 +1594,8 @@ export const getDriverTripsService =
           "-morningDrop -afternoonPickup"
         )
         .sort({
-          createdAt: -1,
+          createdAt:
+            -1,
         })
         .populate(
           "child",
@@ -1308,7 +1606,9 @@ export const getDriverTripsService =
           "name"
         )
         .lean();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getDriverTripsService error:",
         error
@@ -1327,7 +1627,9 @@ export const getParentTripsService =
     parentId
   ) => {
     try {
-      if (!parentId) {
+      if (
+        !parentId
+      ) {
         throw new ValidationError(
           "parentId is required"
         );
@@ -1348,14 +1650,17 @@ export const getParentTripsService =
           parentId,
       })
         .sort({
-          createdAt: -1,
+          createdAt:
+            -1,
         })
         .populate(
           "child",
           "name status pickupLocation dropoffLocation school grade"
         )
         .lean();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getParentTripsService error:",
         error
@@ -1419,9 +1724,11 @@ export const getTripDetailsService =
         tripType,
 
         createdAt: {
-          $gte: start,
+          $gte:
+            start,
 
-          $lt: end,
+          $lt:
+            end,
         },
       })
         .select(
@@ -1432,10 +1739,13 @@ export const getTripDetailsService =
           "name"
         )
         .sort({
-          createdAt: 1,
+          createdAt:
+            1,
         })
         .lean();
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getTripDetailsService error:",
         error
@@ -1459,7 +1769,9 @@ export const getTodayTripStatusService =
           driverId
         );
 
-      if (!driverId) {
+      if (
+        !driverId
+      ) {
         throw new ValidationError(
           "driverId is required"
         );
@@ -1488,9 +1800,11 @@ export const getTodayTripStatusService =
           "tripType status"
         ).lean();
 
-      let morningTrips = 0;
+      let morningTrips =
+        0;
 
-      let afternoonTrips = 0;
+      let afternoonTrips =
+        0;
 
       let morningCompleted =
         true;
@@ -1499,7 +1813,8 @@ export const getTodayTripStatusService =
         true;
 
       for (
-        const trip of trips
+        const trip of
+        trips
       ) {
         if (
           trip.tripType ===
@@ -1533,11 +1848,13 @@ export const getTodayTripStatusService =
       }
 
       morningCompleted =
-        morningTrips > 0 &&
+        morningTrips >
+          0 &&
         morningCompleted;
 
       afternoonCompleted =
-        afternoonTrips > 0 &&
+        afternoonTrips >
+          0 &&
         afternoonCompleted;
 
       return {
@@ -1549,7 +1866,9 @@ export const getTodayTripStatusService =
 
         afternoonCompleted,
       };
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getTodayTripStatusService error:",
         error
@@ -1600,7 +1919,9 @@ export const pickupStudentService =
             session
           );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -1610,7 +1931,9 @@ export const pickupStudentService =
         trip
       );
 
-      if (!trip.child) {
+      if (
+        !trip.child
+      ) {
         throw new NotFoundError(
           "Child not found"
         );
@@ -1641,10 +1964,6 @@ export const pickupStudentService =
           "Student is not waiting for pickup"
         );
       }
-
-      /* ===================================================
-         AFTERNOON PHOTO REQUIRED BEFORE PICKUP
-      =================================================== */
 
       if (
         trip.tripType ===
@@ -1680,7 +1999,9 @@ export const pickupStudentService =
 
         {
           session,
-          runValidators: true,
+
+          runValidators:
+            true,
         }
       );
 
@@ -1712,7 +2033,9 @@ export const pickupStudentService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       if (
         session.inTransaction()
       ) {
@@ -1771,7 +2094,9 @@ export const dropStudentService =
             session
           );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -1781,7 +2106,9 @@ export const dropStudentService =
         trip
       );
 
-      if (!trip.child) {
+      if (
+        !trip.child
+      ) {
         throw new NotFoundError(
           "Child not found"
         );
@@ -1804,14 +2131,6 @@ export const dropStudentService =
         );
       }
 
-      /*
-        Prevent:
-
-        waiting -> dropped
-
-        Student must first be picked up.
-      */
-
       if (
         !trip.pickupStatus
       ) {
@@ -1828,10 +2147,6 @@ export const dropStudentService =
           "Student is not onboard"
         );
       }
-
-      /* ===================================================
-         MORNING DROP PHOTO REQUIRED
-      =================================================== */
 
       if (
         trip.tripType ===
@@ -1866,7 +2181,9 @@ export const dropStudentService =
 
         {
           session,
-          runValidators: true,
+
+          runValidators:
+            true,
         }
       );
 
@@ -1898,7 +2215,9 @@ export const dropStudentService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       if (
         session.inTransaction()
       ) {
@@ -1930,7 +2249,9 @@ export const getTripProgressService =
           driverId
         );
 
-      if (!driverId) {
+      if (
+        !driverId
+      ) {
         throw new ValidationError(
           "driverId is required"
         );
@@ -1992,7 +2313,9 @@ export const getTripProgressService =
 
         remainingStudents,
       };
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "getTripProgressService:",
         error
@@ -2028,7 +2351,9 @@ export const receivePaymentService =
           paymentMethod
         );
 
-      if (!paymentMethod) {
+      if (
+        !paymentMethod
+      ) {
         throw new ValidationError(
           "Payment method is required"
         );
@@ -2057,7 +2382,9 @@ export const receivePaymentService =
             "name"
           );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2108,7 +2435,9 @@ export const receivePaymentService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "receivePaymentService:",
         error
@@ -2143,7 +2472,9 @@ export const verifyMorningDropPhotoService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2176,8 +2507,8 @@ export const verifyMorningDropPhotoService =
         );
       }
 
-      trip.morningDrop
-        .verified = true;
+      trip.morningDrop.verified =
+        true;
 
       await trip.save();
 
@@ -2202,7 +2533,9 @@ export const verifyMorningDropPhotoService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "verifyMorningDropPhotoService:",
         error
@@ -2237,7 +2570,9 @@ export const verifyAfternoonPickupPhotoService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2274,7 +2609,8 @@ export const verifyAfternoonPickupPhotoService =
 
       trip
         .afternoonPickup
-        .verified = true;
+        .verified =
+        true;
 
       await trip.save();
 
@@ -2299,7 +2635,9 @@ export const verifyAfternoonPickupPhotoService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "verifyAfternoonPickupPhotoService:",
         error
@@ -2345,7 +2683,9 @@ export const uploadMorningDropPhotoService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2425,7 +2765,9 @@ export const uploadMorningDropPhotoService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "uploadMorningDropPhotoService error:",
         error.message
@@ -2471,7 +2813,9 @@ export const uploadAfternoonPickupPhotoService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2552,7 +2896,9 @@ export const uploadAfternoonPickupPhotoService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "uploadAfternoonPickupPhotoService error:",
         error.message
@@ -2577,7 +2923,9 @@ export const driverArrivedPickupService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2608,7 +2956,9 @@ export const driverArrivedPickupService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "driverArrivedPickupService:",
         error
@@ -2633,7 +2983,9 @@ export const approachingSchoolService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2664,7 +3016,9 @@ export const approachingSchoolService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "approachingSchoolService:",
         error
@@ -2689,7 +3043,9 @@ export const driverArrivedSchoolService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2720,7 +3076,9 @@ export const driverArrivedSchoolService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "driverArrivedSchoolService:",
         error
@@ -2745,7 +3103,9 @@ export const approachingHomeService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2776,7 +3136,9 @@ export const approachingHomeService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "approachingHomeService:",
         error
@@ -2801,7 +3163,9 @@ export const tripDelayedService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2832,7 +3196,9 @@ export const tripDelayedService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "tripDelayedService:",
         error
@@ -2867,7 +3233,9 @@ export const tripCancelledService =
           tripId
         );
 
-      if (!trip) {
+      if (
+        !trip
+      ) {
         throw new NotFoundError(
           "Trip not found"
         );
@@ -2953,7 +3321,9 @@ export const tripCancelledService =
             "in_transit",
         });
 
-      if (!remaining) {
+      if (
+        !remaining
+      ) {
         await Driver.findOneAndUpdate(
           {
             driverId:
@@ -2997,7 +3367,9 @@ export const tripCancelledService =
       );
 
       return trip;
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "tripCancelledService:",
         error
