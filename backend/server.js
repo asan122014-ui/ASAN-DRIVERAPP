@@ -47,60 +47,43 @@ import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
 ========================================================= */
 
 import authRoutes from "./routes/authRoutes.js";
-
 import driverAuthRoutes from "./routes/driverAuthRoutes.js";
-
 import parentAuthRoutes from "./routes/parentAuthRoutes.js";
-
 import adminAuthRoutes from "./routes/adminAuthRoutes.js";
 
 import parentRoutes from "./routes/parentRoutes.js";
-
 import driverRoutes from "./routes/driver.js";
-
 import tripRoutes from "./routes/trip.js";
-
 import notificationRoutes from "./routes/notificationRoutes.js";
-
 import studentRoutes from "./routes/student.js";
-
 import adminRoutes from "./routes/adminRoutes.js";
-
 import childRoutes from "./routes/child.js";
-
 import billingRoutes from "./routes/billingRoutes.js";
-
 import invoiceRoutes from "./routes/invoiceRoutes.js";
-
 import driverRequestRoutes from "./routes/driverRequest.js";
 
 /* =========================================================
    CONSTANTS
 ========================================================= */
 
-const ADMIN_ROLES =
-  new Set([
-    "superadmin",
-    "reviewer",
-  ]);
+const ADMIN_ROLES = new Set([
+  "superadmin",
+  "reviewer",
+]);
 
 /* =========================================================
-   EXPRESS
+   EXPRESS APP
 ========================================================= */
 
-const app =
-  express();
+const app = express();
 
 /* =========================================================
    TRUST PROXY
 ========================================================= */
 
-const trustProxyHops =
-  Number(
-    process.env
-      .TRUST_PROXY_HOPS ||
-      1
-  );
+const trustProxyHops = Number(
+  process.env.TRUST_PROXY_HOPS || 1
+);
 
 app.set(
   "trust proxy",
@@ -111,10 +94,9 @@ app.set(
    HTTP SERVER
 ========================================================= */
 
-const server =
-  http.createServer(
-    app
-  );
+const server = http.createServer(
+  app
+);
 
 /* =========================================================
    DRIVER ID NORMALIZER
@@ -132,107 +114,54 @@ const normalizeDriverId = (
 
 /* =========================================================
    CORS CONFIGURATION
+
+   ALL ORIGINS ARE ALLOWED
+
+   Works with:
+
+   - localhost
+   - Android APK
+   - Capacitor
+   - capacitor://localhost
+   - http://localhost
+   - https://localhost
+   - Vercel
+   - Render
+   - Postman
+   - Browser applications
 ========================================================= */
 
-const ALLOWED_ORIGINS =
-  new Set(
-    String(
-      process.env
-        .ALLOWED_ORIGINS ||
-        ""
-    )
-      .split(",")
-      .map(
-        (origin) =>
-          origin.trim()
-      )
-      .filter(
-        Boolean
-      )
-  );
+const corsOptions = {
+  origin: "*",
 
-/* =========================================================
-   DEVELOPMENT ORIGIN
-========================================================= */
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+    "HEAD",
+  ],
 
-const isDevelopmentOrigin = (
-  origin
-) => {
-  if (
-    process.env.NODE_ENV ===
-    "production"
-  ) {
-    return false;
-  }
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+  ],
 
-  try {
-    const url =
-      new URL(
-        origin
-      );
+  exposedHeaders: [
+    "Content-Length",
+    "Content-Type",
+  ],
 
-    return (
-      url.hostname ===
-        "localhost" ||
-      url.hostname ===
-        "127.0.0.1"
-    );
-  } catch {
-    return false;
-  }
-};
+  credentials: false,
 
-/* =========================================================
-   CORS ORIGIN VALIDATOR
-========================================================= */
+  optionsSuccessStatus: 204,
 
-const corsOriginValidator = (
-  origin,
-  callback
-) => {
-  /*
-    Native mobile apps,
-    Postman,
-    curl,
-    server-to-server requests
-
-    may not include an Origin header.
-  */
-
-  if (
-    !origin
-  ) {
-    return callback(
-      null,
-      true
-    );
-  }
-
-  if (
-    ALLOWED_ORIGINS.has(
-      origin
-    ) ||
-    isDevelopmentOrigin(
-      origin
-    )
-  ) {
-    return callback(
-      null,
-      true
-    );
-  }
-
-  const error =
-    new Error(
-      "Origin not allowed"
-    );
-
-  error.statusCode =
-    403;
-
-  return callback(
-    error
-  );
+  maxAge: 86400,
 };
 
 /* =========================================================
@@ -240,28 +169,21 @@ const corsOriginValidator = (
 ========================================================= */
 
 app.use(
-  cors({
-    origin:
-      corsOriginValidator,
-
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "PATCH",
-      "DELETE",
-      "OPTIONS",
-    ],
-
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-    ],
-
-    credentials:
-      false,
-  })
+  cors(corsOptions)
 );
+
+/*
+  IMPORTANT:
+
+  We intentionally do NOT use:
+
+  app.options("*", ...)
+
+  because some recent Express / path-to-regexp versions
+  can throw a PathError for "*".
+
+  app.use(cors(...)) already handles CORS preflight.
+*/
 
 /* =========================================================
    BODY PARSERS
@@ -269,18 +191,14 @@ app.use(
 
 app.use(
   express.json({
-    limit:
-      "10mb",
+    limit: "10mb",
   })
 );
 
 app.use(
   express.urlencoded({
-    extended:
-      true,
-
-    limit:
-      "10mb",
+    extended: true,
+    limit: "10mb",
   })
 );
 
@@ -289,8 +207,7 @@ app.use(
 ========================================================= */
 
 if (
-  process.env
-    .ENABLE_LOCAL_UPLOADS ===
+  process.env.ENABLE_LOCAL_UPLOADS ===
   "true"
 ) {
   app.use(
@@ -306,13 +223,6 @@ if (
    COMPATIBILITY AUTH ROUTES
 ========================================================= */
 
-/*
-  Existing compatibility routes such as:
-
-  POST /api/auth/save-token
-  GET  /api/auth/by-id/:driverId
-*/
-
 app.use(
   "/api/auth",
   authRoutes
@@ -321,24 +231,6 @@ app.use(
 /* =========================================================
    DRIVER AUTH
 ========================================================= */
-
-/*
-  POST /api/driver-auth/send-register-otp
-  POST /api/driver-auth/verify-register-otp
-
-  POST /api/driver-auth/send-login-otp
-  POST /api/driver-auth/verify-login-otp
-
-  GET  /api/driver-auth/me
-  POST /api/driver-auth/logout
-
-  JWT:
-
-  {
-    id: "<MongoDB Driver _id>",
-    tokenType: "driver"
-  }
-*/
 
 app.use(
   "/api/driver-auth",
@@ -349,15 +241,6 @@ app.use(
    PARENT AUTH
 ========================================================= */
 
-/*
-  Parent JWT:
-
-  {
-    id: "<MongoDB Parent _id>",
-    tokenType: "parent"
-  }
-*/
-
 app.use(
   "/api/parent-auth",
   parentAuthRoutes
@@ -366,53 +249,6 @@ app.use(
 /* =========================================================
    ADMIN AUTH
 ========================================================= */
-
-/*
-  ADMIN LOGIN
-
-  POST /api/admin-auth/login
-
-  BODY:
-
-  {
-    "email": "admin@example.com",
-    "password": "password"
-  }
-
-  ---------------------------------------------------------
-
-  CURRENT ADMIN
-
-  GET /api/admin-auth/me
-
-  Authorization:
-
-  Bearer <admin-token>
-
-  ---------------------------------------------------------
-
-  LOGOUT
-
-  POST /api/admin-auth/logout
-
-  ---------------------------------------------------------
-
-  CREATE ADMIN
-
-  POST /api/admin-auth/create
-
-  Superadmin only.
-
-  ---------------------------------------------------------
-
-  ADMIN JWT:
-
-  {
-    id: "<MongoDB Admin _id>",
-    tokenType: "admin",
-    role: "superadmin" | "reviewer"
-  }
-*/
 
 app.use(
   "/api/admin-auth",
@@ -465,19 +301,8 @@ app.use(
 );
 
 /* =========================================================
-   ADMIN OPERATIONAL ROUTES
+   ADMIN ROUTES
 ========================================================= */
-
-/*
-  Admin Dashboard
-  Driver approval
-  Driver rejection
-  Analytics
-  Admin logs
-  etc.
-
-  adminRoutes.js should use verifyAdmin.
-*/
 
 app.use(
   "/api/admin",
@@ -525,23 +350,40 @@ app.use(
 
 /* =========================================================
    SOCKET.IO
+
+   IMPORTANT:
+   Socket.IO has its own separate CORS configuration.
+
+   All origins are allowed here too.
 ========================================================= */
 
-const io =
-  new Server(
-    server,
-    {
-      cors: {
-        origin:
-          corsOriginValidator,
+const io = new Server(
+  server,
+  {
+    cors: {
+      origin: "*",
 
-        methods: [
-          "GET",
-          "POST",
-        ],
-      },
-    }
-  );
+      methods: [
+        "GET",
+        "POST",
+      ],
+
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+      ],
+
+      credentials: false,
+    },
+
+    transports: [
+      "websocket",
+      "polling",
+    ],
+  }
+);
 
 app.set(
   "io",
@@ -666,10 +508,6 @@ const authenticateDriverSocket =
   async (
     token
   ) => {
-    /* =====================================================
-       JWT SECRET
-    ===================================================== */
-
     if (
       !process.env
         .JWT_SECRET
@@ -678,10 +516,6 @@ const authenticateDriverSocket =
         "JWT_SECRET is not configured"
       );
     }
-
-    /* =====================================================
-       VERIFY JWT
-    ===================================================== */
 
     const decoded =
       jwt.verify(
@@ -697,10 +531,6 @@ const authenticateDriverSocket =
         }
       );
 
-    /* =====================================================
-       TOKEN TYPE
-    ===================================================== */
-
     if (
       !decoded ||
       typeof decoded !==
@@ -713,10 +543,6 @@ const authenticateDriverSocket =
         "Invalid Driver token"
       );
     }
-
-    /* =====================================================
-       OBJECT ID
-    ===================================================== */
 
     const driverMongoId =
       String(
@@ -732,10 +558,6 @@ const authenticateDriverSocket =
         "Invalid Driver token"
       );
     }
-
-    /* =====================================================
-       CURRENT DRIVER
-    ===================================================== */
 
     const driver =
       await Driver.findById(
@@ -759,10 +581,6 @@ const authenticateDriverSocket =
       );
     }
 
-    /* =====================================================
-       APPROVAL
-    ===================================================== */
-
     if (
       driver.status !==
       "approved"
@@ -771,10 +589,6 @@ const authenticateDriverSocket =
         "Driver account is not approved"
       );
     }
-
-    /* =====================================================
-       PUBLIC DRIVER ID
-    ===================================================== */
 
     const driverId =
       normalizeDriverId(
@@ -788,10 +602,6 @@ const authenticateDriverSocket =
         "Driver ID has not been assigned"
       );
     }
-
-    /* =====================================================
-       AUTHENTICATED DRIVER
-    ===================================================== */
 
     return {
       role:
@@ -817,10 +627,6 @@ const authenticateAdminSocket =
   async (
     token
   ) => {
-    /* =====================================================
-       JWT SECRET
-    ===================================================== */
-
     if (
       !process.env
         .JWT_SECRET
@@ -829,10 +635,6 @@ const authenticateAdminSocket =
         "JWT_SECRET is not configured"
       );
     }
-
-    /* =====================================================
-       VERIFY JWT
-    ===================================================== */
 
     const decoded =
       jwt.verify(
@@ -848,10 +650,6 @@ const authenticateAdminSocket =
         }
       );
 
-    /* =====================================================
-       TOKEN STRUCTURE
-    ===================================================== */
-
     if (
       !decoded ||
       typeof decoded !==
@@ -865,10 +663,6 @@ const authenticateAdminSocket =
       );
     }
 
-    /* =====================================================
-       TOKEN ROLE
-    ===================================================== */
-
     if (
       decoded.role &&
       !ADMIN_ROLES.has(
@@ -879,10 +673,6 @@ const authenticateAdminSocket =
         "Invalid Admin role"
       );
     }
-
-    /* =====================================================
-       OBJECT ID
-    ===================================================== */
 
     if (
       !mongoose.Types.ObjectId.isValid(
@@ -895,10 +685,6 @@ const authenticateAdminSocket =
         "Invalid Admin token"
       );
     }
-
-    /* =====================================================
-       CURRENT ADMIN
-    ===================================================== */
 
     const admin =
       await Admin.findById(
@@ -915,10 +701,6 @@ const authenticateAdminSocket =
       );
     }
 
-    /* =====================================================
-       ACTIVE ACCOUNT
-    ===================================================== */
-
     if (
       admin.isActive ===
       false
@@ -927,10 +709,6 @@ const authenticateAdminSocket =
         "Admin account is disabled"
       );
     }
-
-    /* =====================================================
-       CURRENT ROLE
-    ===================================================== */
 
     if (
       !ADMIN_ROLES.has(
@@ -941,10 +719,6 @@ const authenticateAdminSocket =
         "Admin access denied"
       );
     }
-
-    /* =====================================================
-       AUTHENTICATED ADMIN
-    ===================================================== */
 
     return {
       role:
@@ -971,10 +745,6 @@ const authenticateParentSocket =
   async (
     token
   ) => {
-    /* =====================================================
-       JWT SECRET
-    ===================================================== */
-
     if (
       !process.env
         .JWT_SECRET
@@ -983,10 +753,6 @@ const authenticateParentSocket =
         "JWT_SECRET is not configured"
       );
     }
-
-    /* =====================================================
-       VERIFY JWT
-    ===================================================== */
 
     const decoded =
       jwt.verify(
@@ -1002,10 +768,6 @@ const authenticateParentSocket =
         }
       );
 
-    /* =====================================================
-       TOKEN TYPE
-    ===================================================== */
-
     if (
       !decoded ||
       typeof decoded !==
@@ -1019,10 +781,6 @@ const authenticateParentSocket =
       );
     }
 
-    /* =====================================================
-       OBJECT ID
-    ===================================================== */
-
     if (
       !mongoose.Types.ObjectId.isValid(
         String(
@@ -1034,10 +792,6 @@ const authenticateParentSocket =
         "Invalid Parent token"
       );
     }
-
-    /* =====================================================
-       CURRENT PARENT
-    ===================================================== */
 
     const parent =
       await Parent.findById(
@@ -1060,10 +814,6 @@ const authenticateParentSocket =
       );
     }
 
-    /* =====================================================
-       ACTIVE CHECK
-    ===================================================== */
-
     if (
       parent.isActive ===
       false
@@ -1072,10 +822,6 @@ const authenticateParentSocket =
         "Parent account is inactive"
       );
     }
-
-    /* =====================================================
-       AUTHENTICATED PARENT
-    ===================================================== */
 
     return {
       role:
@@ -1102,40 +848,12 @@ const authenticateParentSocket =
    SOCKET AUTHENTICATION
 ========================================================= */
 
-/*
-  Driver:
-
-  {
-    id,
-    tokenType: "driver"
-  }
-
-  Parent:
-
-  {
-    id,
-    tokenType: "parent"
-  }
-
-  Admin:
-
-  {
-    id,
-    tokenType: "admin",
-    role
-  }
-*/
-
 io.use(
   async (
     socket,
     next
   ) => {
     try {
-      /* ===================================================
-         TOKEN
-      =================================================== */
-
       const token =
         typeof socket
           .handshake
@@ -1158,18 +876,6 @@ io.use(
           )
         );
       }
-
-      /* ===================================================
-         TOKEN HINT
-      =================================================== */
-
-      /*
-        jwt.decode is used only to determine
-        which verification function should handle
-        the token.
-
-        Every handler still uses jwt.verify().
-      */
 
       let tokenHint =
         null;
@@ -1197,10 +903,6 @@ io.use(
       let user =
         null;
 
-      /* ===================================================
-         DRIVER
-      =================================================== */
-
       if (
         tokenHint.tokenType ===
         "driver"
@@ -1209,13 +911,7 @@ io.use(
           await authenticateDriverSocket(
             token
           );
-      }
-
-      /* ===================================================
-         PARENT
-      =================================================== */
-
-      else if (
+      } else if (
         tokenHint.tokenType ===
         "parent"
       ) {
@@ -1223,13 +919,7 @@ io.use(
           await authenticateParentSocket(
             token
           );
-      }
-
-      /* ===================================================
-         ADMIN
-      =================================================== */
-
-      else if (
+      } else if (
         tokenHint.tokenType ===
         "admin"
       ) {
@@ -1237,13 +927,7 @@ io.use(
           await authenticateAdminSocket(
             token
           );
-      }
-
-      /* ===================================================
-         UNKNOWN
-      =================================================== */
-
-      else {
+      } else {
         throw new Error(
           "Unsupported authentication token"
         );
@@ -1348,7 +1032,9 @@ const verifyParentDriverLink =
 io.on(
   "connection",
 
-  (socket) => {
+  (
+    socket
+  ) => {
     const user =
       socket.user;
 
@@ -1438,8 +1124,7 @@ io.on(
             typeof data ===
             "string"
               ? data
-              : data
-                  ?.driverId;
+              : data?.driverId;
 
           const requestedDriverId =
             normalizeDriverId(
@@ -1451,10 +1136,6 @@ io.on(
           ) {
             return;
           }
-
-          /* ===============================================
-             DRIVER
-          =============================================== */
 
           if (
             user.role ===
@@ -1473,10 +1154,6 @@ io.on(
 
             return;
           }
-
-          /* ===============================================
-             PARENT
-          =============================================== */
 
           if (
             user.role ===
@@ -1548,8 +1225,7 @@ io.on(
         typeof parentData ===
         "object"
           ? String(
-              parentData
-                ?.parentId ||
+              parentData?.parentId ||
                 ""
             )
           : String(
@@ -1582,7 +1258,7 @@ io.on(
 
     /* =====================================================
        START CAMERA
-       PARENT → DRIVER
+       PARENT -> DRIVER
     ===================================================== */
 
     socket.on(
@@ -1656,7 +1332,7 @@ io.on(
 
     /* =====================================================
        WEBRTC OFFER
-       DRIVER → PARENT
+       DRIVER -> PARENT
     ===================================================== */
 
     socket.on(
@@ -1674,8 +1350,7 @@ io.on(
 
         const {
           offer,
-        } =
-          data;
+        } = data;
 
         const parentId =
           String(
@@ -1721,7 +1396,7 @@ io.on(
 
     /* =====================================================
        WEBRTC ANSWER
-       PARENT → DRIVER
+       PARENT -> DRIVER
     ===================================================== */
 
     socket.on(
@@ -1800,9 +1475,7 @@ io.on(
             return;
           }
 
-          /* ===============================================
-             DRIVER → PARENT
-          =============================================== */
+          /* DRIVER -> PARENT */
 
           if (
             user.role ===
@@ -1851,9 +1524,7 @@ io.on(
             return;
           }
 
-          /* ===============================================
-             PARENT → DRIVER
-          =============================================== */
+          /* PARENT -> DRIVER */
 
           if (
             user.role ===
@@ -1918,8 +1589,7 @@ io.on(
           Array.from(
             driverParentsMap.get(
               user.driverId
-            ) ||
-              []
+            ) || []
           );
 
         socket.emit(
@@ -2026,14 +1696,11 @@ io.on(
             speed,
             heading,
             accuracy,
-          } =
-            data;
+          } = data;
 
           if (
-            lat ===
-              undefined ||
-            lng ===
-              undefined
+            lat === undefined ||
+            lng === undefined
           ) {
             return;
           }
@@ -2060,21 +1727,15 @@ io.on(
           }
 
           if (
-            latitude <
-              -90 ||
-            latitude >
-              90 ||
-            longitude <
-              -180 ||
-            longitude >
-              180
+            latitude < -90 ||
+            latitude > 90 ||
+            longitude < -180 ||
+            longitude > 180
           ) {
             return;
           }
 
-          /* ===============================================
-             SPEED
-          =============================================== */
+          /* SPEED */
 
           const speedNumber =
             Number(
@@ -2085,14 +1746,11 @@ io.on(
             Number.isFinite(
               speedNumber
             ) &&
-            speedNumber >=
-              0
+            speedNumber >= 0
               ? speedNumber
               : 0;
 
-          /* ===============================================
-             HEADING
-          =============================================== */
+          /* HEADING */
 
           const headingNumber =
             Number(
@@ -2103,16 +1761,12 @@ io.on(
             Number.isFinite(
               headingNumber
             ) &&
-            headingNumber >=
-              0 &&
-            headingNumber <=
-              360
+            headingNumber >= 0 &&
+            headingNumber <= 360
               ? headingNumber
               : 0;
 
-          /* ===============================================
-             ACCURACY
-          =============================================== */
+          /* ACCURACY */
 
           const accuracyNumber =
             Number(
@@ -2123,14 +1777,11 @@ io.on(
             Number.isFinite(
               accuracyNumber
             ) &&
-            accuracyNumber >=
-              0
+            accuracyNumber >= 0
               ? accuracyNumber
               : null;
 
-          /* ===============================================
-             ETA
-          =============================================== */
+          /* ETA */
 
           const safeEta =
             typeof eta ===
@@ -2147,9 +1798,7 @@ io.on(
           const updatedAt =
             new Date();
 
-          /* ===============================================
-             LOAD DRIVER
-          =============================================== */
+          /* LOAD DRIVER */
 
           const driver =
             await Driver.findOne({
@@ -2166,9 +1815,7 @@ io.on(
             return;
           }
 
-          /* ===============================================
-             UPDATE LOCATION
-          =============================================== */
+          /* UPDATE LOCATION */
 
           driver.updateLiveLocation({
             lat:
@@ -2203,40 +1850,37 @@ io.on(
 
           await driver.save();
 
-          /* ===============================================
-             BROADCAST
-          =============================================== */
+          /* BROADCAST */
 
-          const locationPayload =
-            {
-              driverId:
-                user.driverId,
+          const locationPayload = {
+            driverId:
+              user.driverId,
 
-              lat:
-                latitude,
+            lat:
+              latitude,
 
-              lng:
-                longitude,
+            lng:
+              longitude,
 
-              eta:
-                safeEta,
+            eta:
+              safeEta,
 
-              speed:
-                safeSpeed,
+            speed:
+              safeSpeed,
 
-              heading:
-                safeHeading,
+            heading:
+              safeHeading,
 
-              accuracy:
-                safeAccuracy,
+            accuracy:
+              safeAccuracy,
 
-              updatedAt:
-                driver
-                  .lastLocation
-                  ?.updatedAt
-                  ?.toISOString?.() ||
-                updatedAt.toISOString(),
-            };
+            updatedAt:
+              driver
+                .lastLocation
+                ?.updatedAt
+                ?.toISOString?.() ||
+              updatedAt.toISOString(),
+          };
 
           socket
             .to(
@@ -2311,9 +1955,7 @@ io.on(
           user.role
         );
 
-        /* ===============================================
-           DRIVER
-        =============================================== */
+        /* DRIVER */
 
         if (
           user.role ===
@@ -2357,9 +1999,7 @@ io.on(
           return;
         }
 
-        /* ===============================================
-           PARENT
-        =============================================== */
+        /* PARENT */
 
         if (
           user.role ===
@@ -2435,7 +2075,9 @@ app.get(
     res
   ) => {
     return res
-      .status(200)
+      .status(
+        200
+      )
       .json({
         success:
           true,
@@ -2450,6 +2092,34 @@ app.get(
 );
 
 /* =========================================================
+   ROOT CHECK
+========================================================= */
+
+app.get(
+  "/",
+
+  (
+    req,
+    res
+  ) => {
+    return res
+      .status(
+        200
+      )
+      .json({
+        success:
+          true,
+
+        message:
+          "ASAN Backend API is running",
+
+        health:
+          "/api/health",
+      });
+  }
+);
+
+/* =========================================================
    404
 ========================================================= */
 
@@ -2459,7 +2129,9 @@ app.use(
     res
   ) => {
     return res
-      .status(404)
+      .status(
+        404
+      )
       .json({
         success:
           false,
@@ -2571,7 +2243,27 @@ connectDB()
 
         () => {
           console.log(
-            `Server running on port ${PORT}`
+            "========================================="
+          );
+
+          console.log(
+            `ASAN Backend running on port ${PORT}`
+          );
+
+          console.log(
+            "========================================="
+          );
+
+          console.log(
+            "CORS: ALL ORIGINS ALLOWED"
+          );
+
+          console.log(
+            "Socket.IO CORS: ALL ORIGINS ALLOWED"
+          );
+
+          console.log(
+            "========================================="
           );
 
           console.log(
@@ -2591,43 +2283,23 @@ connectDB()
           );
 
           console.log(
-            "Admin Login: /api/admin-auth/login"
-          );
-
-          console.log(
-            "Admin Session: /api/admin-auth/me"
-          );
-
-          console.log(
-            "Admin Logout: /api/admin-auth/logout"
-          );
-
-          console.log(
-            "Create Admin: /api/admin-auth/create"
-          );
-
-          console.log(
-            "Driver Register OTP: /api/driver-auth/send-register-otp"
-          );
-
-          console.log(
-            "Driver Verify Register OTP: /api/driver-auth/verify-register-otp"
-          );
-
-          console.log(
-            "Driver Login OTP: /api/driver-auth/send-login-otp"
-          );
-
-          console.log(
-            "Driver Verify Login OTP: /api/driver-auth/verify-login-otp"
-          );
-
-          console.log(
             "Driver APIs: /api/driver"
           );
 
           console.log(
+            "Parent APIs: /api/parent"
+          );
+
+          console.log(
+            "Trip APIs: /api/trip"
+          );
+
+          console.log(
             "Admin APIs: /api/admin"
+          );
+
+          console.log(
+            "========================================="
           );
         }
       );
