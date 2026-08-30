@@ -2,6 +2,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
 import Driver from "../models/Driver.js";
+import RejectedDriver from "../models/RejectedDriver.js";
 import Otp from "../models/Otp.js";
 
 import {
@@ -274,17 +275,58 @@ const getSafeDriver = (
           ...driver,
         };
 
-  /*
-    Legacy protection.
-
-    Password no longer exists in the current Driver schema,
-    but old MongoDB records may still contain the field.
-  */
-
   delete data.password;
   delete data.__v;
 
   return data;
+};
+
+/* =========================================================
+   SAFE REJECTION DATA
+========================================================= */
+
+const getSafeRejectedDriver = (
+  rejection
+) => {
+  if (
+    !rejection
+  ) {
+    return null;
+  }
+
+  return {
+    rejectionId:
+      String(
+        rejection._id
+      ),
+
+    name:
+      rejection.name,
+
+    email:
+      rejection.email,
+
+    driverId:
+      rejection.originalDriverId ||
+      null,
+
+    originalDriverMongoId:
+      rejection.originalDriverMongoId,
+
+    status:
+      "rejected",
+
+    rejectionReason:
+      rejection.rejectionReason,
+
+    rejectedAt:
+      rejection.rejectedAt,
+
+    acknowledged:
+      Boolean(
+        rejection.acknowledged
+      ),
+  };
 };
 
 /* =========================================================
@@ -333,6 +375,275 @@ const createDriverToken = (
     }
   );
 };
+
+/* =========================================================
+   CREATE REJECTION JWT
+
+   Used when a rejected Driver verifies their email OTP after
+   the original Driver document has already been deleted.
+========================================================= */
+
+const createRejectionToken = (
+  rejection
+) => {
+  if (
+    !process.env
+      .JWT_SECRET
+  ) {
+    throw new Error(
+      "JWT_SECRET is not configured"
+    );
+  }
+
+  if (
+    !rejection?._id
+  ) {
+    throw new Error(
+      "Rejected Driver record ID is missing"
+    );
+  }
+
+  return jwt.sign(
+    {
+      rejectionId:
+        String(
+          rejection._id
+        ),
+
+      originalDriverMongoId:
+        String(
+          rejection
+            .originalDriverMongoId
+        ),
+
+      tokenType:
+        "driver_rejection",
+    },
+
+    process.env.JWT_SECRET,
+
+    {
+      algorithm:
+        "HS256",
+
+      expiresIn:
+        "24h",
+    }
+  );
+};
+
+/* =========================================================
+   READ AUTHORIZATION TOKEN
+========================================================= */
+
+const getAuthorizationToken = (
+  req
+) => {
+  const authorization =
+    String(
+      req.headers
+        ?.authorization ||
+        ""
+    ).trim();
+
+  if (
+    !authorization
+  ) {
+    return null;
+  }
+
+  const [
+    scheme,
+    token,
+  ] =
+    authorization.split(
+      " "
+    );
+
+  if (
+    String(
+      scheme
+    ).toLowerCase() !==
+      "bearer" ||
+    !token
+  ) {
+    return null;
+  }
+
+  return token.trim();
+};
+
+/* =========================================================
+   VERIFY REJECTION ACCESS TOKEN
+
+   IMPORTANT:
+   This verifies the JWT directly.
+
+   It does NOT require the Driver document to still exist,
+   because rejected Driver documents are deleted.
+========================================================= */
+
+const verifyRejectionAccessToken = (
+  req
+) => {
+  const token =
+    getAuthorizationToken(
+      req
+    );
+
+  if (
+    !token
+  ) {
+    return {
+      valid:
+        false,
+
+      status:
+        401,
+
+      message:
+        "Driver authentication required",
+    };
+  }
+
+  if (
+    !process.env
+      .JWT_SECRET
+  ) {
+    return {
+      valid:
+        false,
+
+      status:
+        500,
+
+      message:
+        "JWT configuration is missing",
+    };
+  }
+
+  try {
+    const decoded =
+      jwt.verify(
+        token,
+
+        process.env.JWT_SECRET,
+
+        {
+          algorithms: [
+            "HS256",
+          ],
+        }
+      );
+
+    if (
+      ![
+        "driver",
+        "driver_rejection",
+      ].includes(
+        decoded?.tokenType
+      )
+    ) {
+      return {
+        valid:
+          false,
+
+        status:
+          401,
+
+        message:
+          "Invalid Driver authentication token",
+      };
+    }
+
+    return {
+      valid:
+        true,
+
+      decoded,
+    };
+  } catch (
+    error
+  ) {
+    return {
+      valid:
+        false,
+
+      status:
+        401,
+
+      message:
+        error?.name ===
+        "TokenExpiredError"
+          ? "Driver session has expired"
+          : "Invalid Driver authentication token",
+    };
+  }
+};
+
+/* =========================================================
+   FIND REJECTION FROM TOKEN
+========================================================= */
+
+const findRejectionFromToken =
+  async (
+    decoded
+  ) => {
+    if (
+      decoded
+        ?.tokenType ===
+      "driver_rejection"
+    ) {
+      if (
+        !decoded
+          ?.rejectionId
+      ) {
+        return null;
+      }
+
+      return RejectedDriver.findOne({
+        _id:
+          decoded
+            .rejectionId,
+
+        active:
+          true,
+
+        acknowledged:
+          false,
+      });
+    }
+
+    if (
+      decoded
+        ?.tokenType ===
+      "driver"
+    ) {
+      if (
+        !decoded?.id
+      ) {
+        return null;
+      }
+
+      return RejectedDriver.findOne({
+        originalDriverMongoId:
+          String(
+            decoded.id
+          ),
+
+        active:
+          true,
+
+        acknowledged:
+          false,
+      }).sort({
+        rejectedAt:
+          -1,
+      });
+    }
+
+    return null;
+  };
 
 /* =========================================================
    DRIVER STATUS INFORMATION
@@ -384,6 +695,13 @@ const getDriverStatusInfo = (
         null,
     };
   }
+
+  /*
+    Legacy support only.
+
+    New rejected Drivers should normally live inside
+    RejectedDriver rather than Driver.
+  */
 
   if (
     driver.status ===
@@ -662,10 +980,6 @@ const createAndSendDriverOtp =
     } catch (
       error
     ) {
-      /*
-        Delete unsent OTP.
-      */
-
       await Otp.deleteOne({
         email,
         purpose,
@@ -867,16 +1181,6 @@ const verifyStoredDriverOtp =
    SEND DRIVER REGISTRATION OTP
 ========================================================= */
 
-/*
-  POST /api/driver-auth/send-register-otp
-
-  BODY:
-
-  {
-    "email": "driver@example.com"
-  }
-*/
-
 export const sendRegisterOtp =
   async (
     req,
@@ -930,6 +1234,42 @@ export const sendRegisterOtp =
 
             message:
               "This email is already registered. Please sign in instead.",
+          });
+      }
+
+      /* ===================================================
+         ACTIVE REJECTION
+
+         The Driver must see/acknowledge their previous
+         rejection before registering again.
+      =================================================== */
+
+      const activeRejection =
+        await RejectedDriver
+          .findActiveByEmail(
+            email
+          );
+
+      if (
+        activeRejection
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            status:
+              "rejected",
+
+            code:
+              "DRIVER_REJECTED",
+
+            nextStep:
+              "application-rejected",
+
+            message:
+              "Your previous Driver application was rejected. Please review the rejection before registering again.",
           });
       }
 
@@ -998,37 +1338,6 @@ export const sendRegisterOtp =
 /* =========================================================
    VERIFY DRIVER REGISTRATION OTP + CREATE DRIVER
 ========================================================= */
-
-/*
-  POST /api/driver-auth/verify-register-otp
-
-  multipart/form-data
-
-  TEXT:
-
-  email
-  otp
-  name
-  phone
-  address
-  latitude
-  longitude
-  vehicleNumber
-  vehicleType
-  vehicleModel
-  licenseNumber
-
-  FILES:
-
-  licenseFront
-  licenseBack
-  rcFront
-  rcBack
-  insurance
-  idFront
-  idBack
-  profilePhoto
-*/
 
 export const verifyRegisterOtp =
   async (
@@ -1118,6 +1427,43 @@ export const verifyRegisterOtp =
 
             message:
               "Enter a valid email address",
+          });
+      }
+
+      /* ===================================================
+         ACTIVE REJECTION
+      =================================================== */
+
+      const activeRejection =
+        await RejectedDriver
+          .findActiveByEmail(
+            email
+          );
+
+      if (
+        activeRejection
+      ) {
+        await cleanupUploadedFiles(
+          req.files
+        );
+
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            status:
+              "rejected",
+
+            code:
+              "DRIVER_REJECTED",
+
+            nextStep:
+              "application-rejected",
+
+            message:
+              "Your previous Driver application must be acknowledged before registering again.",
           });
       }
 
@@ -1292,8 +1638,6 @@ export const verifyRegisterOtp =
 
       /* ===================================================
          DUPLICATE EMAIL / PHONE
-
-         Check BEFORE consuming OTP.
       =================================================== */
 
       const existingDriver =
@@ -1346,13 +1690,6 @@ export const verifyRegisterOtp =
           purpose:
             DRIVER_REGISTER_PURPOSE,
 
-          /*
-            Do not consume yet.
-
-            We consume only after all final duplicate
-            checks pass.
-          */
-
           consume:
             false,
         });
@@ -1378,10 +1715,7 @@ export const verifyRegisterOtp =
       }
 
       /* ===================================================
-         RACE-CONDITION CHECK
-
-         Another request could potentially register the
-         same email/phone while OTP verification occurred.
+         RACE CONDITION CHECK
       =================================================== */
 
       const duplicateAfterVerification =
@@ -1448,8 +1782,6 @@ export const verifyRegisterOtp =
 
       const driver =
         new Driver({
-          /* PERSONAL */
-
           name:
             normalizedName,
 
@@ -1461,8 +1793,6 @@ export const verifyRegisterOtp =
           address:
             normalizedAddress,
 
-          /* HOME LOCATION */
-
           homeLocation: {
             type:
               "Point",
@@ -1472,8 +1802,6 @@ export const verifyRegisterOtp =
               location.latitude,
             ],
           },
-
-          /* INITIAL LOCATION */
 
           location: {
             type:
@@ -1508,8 +1836,6 @@ export const verifyRegisterOtp =
               new Date(),
           },
 
-          /* VEHICLE */
-
           vehicleNumber:
             normalizedVehicleNumber,
 
@@ -1521,8 +1847,6 @@ export const verifyRegisterOtp =
 
           licenseNumber:
             normalizedLicenseNumber,
-
-          /* DOCUMENTS */
 
           licenseFront:
             getFilePath(
@@ -1569,8 +1893,6 @@ export const verifyRegisterOtp =
               "profilePhoto"
             ),
 
-          /* STATUS */
-
           status:
             "pending",
 
@@ -1607,9 +1929,6 @@ export const verifyRegisterOtp =
 
       /* ===================================================
          CONSUME REGISTRATION OTP
-
-         Driver is created successfully, therefore OTP can
-         now be permanently removed.
       =================================================== */
 
       await Otp.deleteOne({
@@ -1682,10 +2001,6 @@ export const verifyRegisterOtp =
         error
       );
 
-      /* ===================================================
-         DUPLICATE
-      =================================================== */
-
       if (
         error?.code ===
         11000
@@ -1700,10 +2015,6 @@ export const verifyRegisterOtp =
               "Driver account already exists",
           });
       }
-
-      /* ===================================================
-         VALIDATION
-      =================================================== */
 
       if (
         error?.name ===
@@ -1789,6 +2100,41 @@ export const sendLoginOtp =
       if (
         !driver
       ) {
+        const activeRejection =
+          await RejectedDriver
+            .findActiveByEmail(
+              email
+            );
+
+        if (
+          activeRejection
+        ) {
+          /*
+            We deliberately do not expose the rejection reason
+            here because this endpoint has not verified that
+            the caller owns the email address.
+          */
+
+          return res
+            .status(409)
+            .json({
+              success:
+                false,
+
+              status:
+                "rejected",
+
+              code:
+                "DRIVER_REJECTED",
+
+              nextStep:
+                "application-rejected",
+
+              message:
+                "This Driver application has been rejected. Please review the application status from your existing session.",
+            });
+        }
+
         return res
           .status(404)
           .json({
@@ -1964,9 +2310,69 @@ export const verifyLoginOtp =
           email
         );
 
+      /* ===================================================
+         DRIVER WAS REJECTED AFTER OTP REQUEST
+      =================================================== */
+
       if (
         !driver
       ) {
+        const rejection =
+          await RejectedDriver
+            .findActiveByEmail(
+              email
+            );
+
+        if (
+          rejection
+        ) {
+          const rejectionToken =
+            createRejectionToken(
+              rejection
+            );
+
+          return res
+            .status(200)
+            .json({
+              success:
+                true,
+
+              message:
+                "Your Driver application was rejected",
+
+              status:
+                "rejected",
+
+              code:
+                "DRIVER_REJECTED",
+
+              nextStep:
+                "application-rejected",
+
+              rejectionReason:
+                rejection
+                  .rejectionReason,
+
+              rejectedAt:
+                rejection
+                  .rejectedAt,
+
+              token:
+                rejectionToken,
+
+              tokenType:
+                "Bearer",
+
+              expiresIn:
+                "24h",
+
+              data:
+                getSafeRejectedDriver(
+                  rejection
+                ),
+            });
+        }
+
         return res
           .status(404)
           .json({
@@ -1991,10 +2397,6 @@ export const verifyLoginOtp =
         getDriverStatusInfo(
           driver
         );
-
-      /* ===================================================
-         RESPONSE
-      =================================================== */
 
       return res
         .status(200)
@@ -2141,6 +2543,292 @@ export const getCurrentDriver =
 
           message:
             "Failed to load Driver account",
+        });
+    }
+  };
+
+/* =========================================================
+   GET REJECTED APPLICATION STATUS
+
+   This endpoint intentionally verifies the JWT internally.
+
+   Do NOT place normal verifyDriver middleware in front of
+   this route because the original Driver record is deleted
+   after rejection.
+========================================================= */
+
+export const getRejectedApplicationStatus =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const verification =
+        verifyRejectionAccessToken(
+          req
+        );
+
+      if (
+        !verification.valid
+      ) {
+        return res
+          .status(
+            verification.status
+          )
+          .json({
+            success:
+              false,
+
+            message:
+              verification.message,
+          });
+      }
+
+      const rejection =
+        await findRejectionFromToken(
+          verification.decoded
+        );
+
+      if (
+        !rejection
+      ) {
+        /*
+          If the token belongs to a real Driver that still
+          exists, this simply means the Driver has not been
+          rejected.
+        */
+
+        if (
+          verification
+            .decoded
+            ?.tokenType ===
+            "driver" &&
+          verification
+            .decoded
+            ?.id
+        ) {
+          const driver =
+            await Driver.findById(
+              verification
+                .decoded
+                .id
+            );
+
+          if (
+            driver
+          ) {
+            const statusInfo =
+              getDriverStatusInfo(
+                driver
+              );
+
+            return res
+              .status(200)
+              .json({
+                success:
+                  true,
+
+                rejected:
+                  false,
+
+                status:
+                  statusInfo.status,
+
+                code:
+                  statusInfo.code,
+
+                nextStep:
+                  statusInfo.nextStep,
+
+                rejectionReason:
+                  null,
+              });
+          }
+        }
+
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            rejected:
+              false,
+
+            message:
+              "No active Driver rejection was found",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          rejected:
+            true,
+
+          status:
+            "rejected",
+
+          code:
+            "DRIVER_REJECTED",
+
+          nextStep:
+            "application-rejected",
+
+          message:
+            "Your Driver application was rejected",
+
+          rejectionReason:
+            rejection
+              .rejectionReason,
+
+          rejectedAt:
+            rejection
+              .rejectedAt,
+
+          data:
+            getSafeRejectedDriver(
+              rejection
+            ),
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "GET DRIVER REJECTION STATUS ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to load Driver rejection status",
+        });
+    }
+  };
+
+/* =========================================================
+   ACKNOWLEDGE REJECTED APPLICATION
+
+   Called only after the Driver has seen the rejection screen
+   and chooses to return to Sign In.
+========================================================= */
+
+export const acknowledgeRejectedApplication =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const verification =
+        verifyRejectionAccessToken(
+          req
+        );
+
+      if (
+        !verification.valid
+      ) {
+        return res
+          .status(
+            verification.status
+          )
+          .json({
+            success:
+              false,
+
+            message:
+              verification.message,
+          });
+      }
+
+      const rejection =
+        await findRejectionFromToken(
+          verification.decoded
+        );
+
+      if (
+        !rejection
+      ) {
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "No active Driver rejection was found",
+          });
+      }
+
+      /* ===================================================
+         ACKNOWLEDGE
+      =================================================== */
+
+      rejection.acknowledged =
+        true;
+
+      rejection.acknowledgedAt =
+        new Date();
+
+      rejection.active =
+        false;
+
+      await rejection.save();
+
+      /* ===================================================
+         REMOVE OLD OTP RECORDS
+      =================================================== */
+
+      await Otp.deleteMany({
+        email:
+          rejection.email,
+
+        purpose: {
+          $in: [
+            DRIVER_LOGIN_PURPOSE,
+            DRIVER_REGISTER_PURPOSE,
+          ],
+        },
+      });
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Driver rejection acknowledged successfully",
+
+          acknowledged:
+            true,
+
+          nextStep:
+            "signin",
+        });
+    } catch (
+      error
+    ) {
+      console.error(
+        "ACKNOWLEDGE DRIVER REJECTION ERROR:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
+
+          message:
+            "Failed to acknowledge Driver rejection",
         });
     }
   };
