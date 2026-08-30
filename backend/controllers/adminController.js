@@ -4,6 +4,11 @@ import Driver from "../models/Driver.js";
 import Students from "../models/Students.js";
 import Trips from "../models/Trips.js";
 import AdminLog from "../models/AdminLog.js";
+import RejectedDriver from "../models/RejectedDriver.js";
+
+import {
+  sendDriverRejectionEmail,
+} from "../services/emailService.js";
 
 /* =========================================================
    HELPERS
@@ -13,6 +18,93 @@ const isValidObjectId = (id) =>
   mongoose.Types.ObjectId.isValid(
     String(id || "")
   );
+
+/* =========================================================
+   FORMAT REJECTED DRIVER
+
+   Converts the small RejectedDriver snapshot into a shape
+   that the Admin frontend can understand.
+========================================================= */
+
+const formatRejectedDriver = (
+  rejection
+) => {
+  if (!rejection) {
+    return null;
+  }
+
+  const data =
+    typeof rejection.toJSON ===
+    "function"
+      ? rejection.toJSON()
+      : { ...rejection };
+
+  return {
+    _id:
+      data._id,
+
+    name:
+      data.name,
+
+    email:
+      data.email,
+
+    phone:
+      data.phone || "",
+
+    driverId:
+      data.originalDriverId ||
+      null,
+
+    originalDriverMongoId:
+      data.originalDriverMongoId,
+
+    status:
+      "rejected",
+
+    rejectionReason:
+      data.rejectionReason,
+
+    rejectedAt:
+      data.rejectedAt,
+
+    reviewedBy:
+      data.reviewedBy ||
+      null,
+
+    emailSent:
+      Boolean(
+        data.emailSent
+      ),
+
+    emailSentAt:
+      data.emailSentAt ||
+      null,
+
+    acknowledged:
+      Boolean(
+        data.acknowledged
+      ),
+
+    acknowledgedAt:
+      data.acknowledgedAt ||
+      null,
+
+    active:
+      Boolean(
+        data.active
+      ),
+
+    createdAt:
+      data.createdAt,
+
+    updatedAt:
+      data.updatedAt,
+
+    isRejectedSnapshot:
+      true,
+  };
+};
 
 /* =========================================================
    SAFE ADMIN LOG
@@ -26,7 +118,9 @@ const createAdminLog = async ({
   metadata = {},
 }) => {
   try {
-    if (!req?.admin?._id) {
+    if (
+      !req?.admin?._id
+    ) {
       console.warn(
         "AdminLog skipped: authenticated Admin missing"
       );
@@ -45,7 +139,18 @@ const createAdminLog = async ({
       metadata,
     };
 
-    if (driver?._id) {
+    /*
+      The Driver still exists when this function is called
+      during rejection, so we can preserve its reference.
+
+      After deletion, populate() may return null later.
+      Important Driver information is also stored inside
+      metadata.
+    */
+
+    if (
+      driver?._id
+    ) {
       logData.driverId =
         driver._id;
     }
@@ -53,7 +158,9 @@ const createAdminLog = async ({
     await AdminLog.create(
       logData
     );
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.warn(
       "AdminLog failed:",
       error?.message
@@ -66,10 +173,13 @@ const createAdminLog = async ({
 ========================================================= */
 
 export const getDashboardStats =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const [
-        totalDrivers,
+        activeDriverCount,
         pendingDrivers,
         approvedDrivers,
         rejectedDrivers,
@@ -89,9 +199,16 @@ export const getDashboardStats =
               "approved",
           }),
 
-          Driver.countDocuments({
-            status:
-              "rejected",
+          /*
+            Rejected Drivers are no longer stored inside the
+            Driver collection.
+
+            Only successfully notified rejections count.
+          */
+
+          RejectedDriver.countDocuments({
+            emailSent:
+              true,
           }),
 
           Students.countDocuments(),
@@ -99,30 +216,55 @@ export const getDashboardStats =
           Trips.countDocuments(),
         ]);
 
-      return res.status(200).json({
-        success: true,
+      /*
+        Total means total Driver applications accounted for:
 
-        data: {
-          totalDrivers,
-          pendingDrivers,
-          approvedDrivers,
-          rejectedDrivers,
-          totalStudents,
-          totalTrips,
-        },
-      });
-    } catch (error) {
+        current Driver records
+        +
+        successfully rejected applications
+      */
+
+      const totalDrivers =
+        activeDriverCount +
+        rejectedDrivers;
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          data: {
+            totalDrivers,
+
+            pendingDrivers,
+
+            approvedDrivers,
+
+            rejectedDrivers,
+
+            totalStudents,
+
+            totalTrips,
+          },
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Dashboard Stats Error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Failed to fetch dashboard statistics",
-      });
+          message:
+            "Failed to fetch dashboard statistics",
+        });
     }
   };
 
@@ -131,35 +273,150 @@ export const getDashboardStats =
 ========================================================= */
 
 export const getDrivers =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         status,
         search,
-      } = req.query;
+      } =
+        req.query;
 
-      const query = {};
+      const normalizedStatus =
+        String(
+          status || ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const searchTerm =
+        String(
+          search || ""
+        ).trim();
 
       /* =====================================================
-         STATUS FILTER
+         REJECTED DRIVER LIST
+
+         Rejected Drivers come from RejectedDriver instead of
+         Driver because the original Driver record is removed.
       ===================================================== */
 
       if (
-        status &&
+        normalizedStatus ===
+        "rejected"
+      ) {
+        const query = {
+          emailSent:
+            true,
+        };
+
+        if (
+          searchTerm
+        ) {
+          query.$or = [
+            {
+              name: {
+                $regex:
+                  searchTerm,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              email: {
+                $regex:
+                  searchTerm,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              phone: {
+                $regex:
+                  searchTerm,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              originalDriverId: {
+                $regex:
+                  searchTerm,
+
+                $options:
+                  "i",
+              },
+            },
+
+            {
+              originalDriverMongoId: {
+                $regex:
+                  searchTerm,
+
+                $options:
+                  "i",
+              },
+            },
+          ];
+        }
+
+        const rejectedDrivers =
+          await RejectedDriver.find(
+            query
+          )
+            .populate(
+              "reviewedBy",
+              "email role"
+            )
+            .sort({
+              rejectedAt:
+                -1,
+            });
+
+        const formatted =
+          rejectedDrivers.map(
+            formatRejectedDriver
+          );
+
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
+
+            count:
+              formatted.length,
+
+            data:
+              formatted,
+          });
+      }
+
+      /* =====================================================
+         NORMAL DRIVER LIST
+      ===================================================== */
+
+      const query = {};
+
+      if (
+        normalizedStatus &&
         [
           "pending",
           "approved",
-          "rejected",
         ].includes(
-          String(
-            status
-          ).toLowerCase()
+          normalizedStatus
         )
       ) {
         query.status =
-          String(
-            status
-          ).toLowerCase();
+          normalizedStatus;
       }
 
       /* =====================================================
@@ -167,21 +424,13 @@ export const getDrivers =
       ===================================================== */
 
       if (
-        search &&
-        String(
-          search
-        ).trim()
+        searchTerm
       ) {
-        const term =
-          String(
-            search
-          ).trim();
-
         query.$or = [
           {
             name: {
               $regex:
-                term,
+                searchTerm,
 
               $options:
                 "i",
@@ -191,7 +440,7 @@ export const getDrivers =
           {
             email: {
               $regex:
-                term,
+                searchTerm,
 
               $options:
                 "i",
@@ -201,7 +450,7 @@ export const getDrivers =
           {
             phone: {
               $regex:
-                term,
+                searchTerm,
 
               $options:
                 "i",
@@ -211,7 +460,7 @@ export const getDrivers =
           {
             driverId: {
               $regex:
-                term,
+                searchTerm,
 
               $options:
                 "i",
@@ -221,7 +470,7 @@ export const getDrivers =
           {
             vehicleNumber: {
               $regex:
-                term,
+                searchTerm,
 
               $options:
                 "i",
@@ -243,27 +492,35 @@ export const getDrivers =
               -1,
           });
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-        count:
-          drivers.length,
+          count:
+            drivers.length,
 
-        data:
-          drivers,
-      });
-    } catch (error) {
+          data:
+            drivers,
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Get Drivers Error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Failed to fetch drivers",
-      });
+          message:
+            "Failed to fetch drivers",
+        });
     }
   };
 
@@ -272,24 +529,35 @@ export const getDrivers =
 ========================================================= */
 
 export const getDriverById =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         id,
-      } = req.params;
+      } =
+        req.params;
 
       if (
         !isValidObjectId(
           id
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Invalid Driver ID",
-        });
+            message:
+              "Invalid Driver ID",
+          });
       }
+
+      /* =====================================================
+         ACTIVE DRIVER
+      ===================================================== */
 
       const driver =
         await Driver.findById(
@@ -300,34 +568,76 @@ export const getDriverById =
         );
 
       if (
-        !driver
+        driver
       ) {
-        return res.status(404).json({
-          success: false,
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
+
+            data:
+              driver,
+          });
+      }
+
+      /* =====================================================
+         REJECTED SNAPSHOT
+
+         The ID supplied by the rejected list is the
+         RejectedDriver MongoDB ID.
+      ===================================================== */
+
+      const rejectedDriver =
+        await RejectedDriver.findById(
+          id
+        ).populate(
+          "reviewedBy",
+          "email role"
+        );
+
+      if (
+        rejectedDriver
+      ) {
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
+
+            data:
+              formatRejectedDriver(
+                rejectedDriver
+              ),
+          });
+      }
+
+      return res
+        .status(404)
+        .json({
+          success:
+            false,
 
           message:
             "Driver not found",
         });
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        data:
-          driver,
-      });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "Get Driver Error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Failed to fetch driver",
-      });
+          message:
+            "Failed to fetch driver",
+        });
     }
   };
 
@@ -336,11 +646,15 @@ export const getDriverById =
 ========================================================= */
 
 export const approveDriver =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         id,
-      } = req.params;
+      } =
+        req.params;
 
       /* =====================================================
          VALIDATE ID
@@ -351,12 +665,15 @@ export const approveDriver =
           id
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Invalid Driver ID",
-        });
+            message:
+              "Invalid Driver ID",
+          });
       }
 
       /* =====================================================
@@ -371,12 +688,15 @@ export const approveDriver =
       if (
         !driver
       ) {
-        return res.status(404).json({
-          success: false,
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
 
-          message:
-            "Driver not found",
-        });
+            message:
+              "Driver not found",
+          });
       }
 
       /* =====================================================
@@ -387,31 +707,37 @@ export const approveDriver =
         driver.status ===
         "approved"
       ) {
-        return res.status(200).json({
-          success: true,
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
 
-          message:
-            "Driver is already approved",
+            message:
+              "Driver is already approved",
 
-          data:
-            driver,
-        });
+            data:
+              driver,
+          });
       }
 
       /* =====================================================
-         REJECTED DRIVER
+         LEGACY REJECTED DRIVER
       ===================================================== */
 
       if (
         driver.status ===
         "rejected"
       ) {
-        return res.status(409).json({
-          success: false,
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
 
-          message:
-            "Rejected Driver application cannot be approved directly",
-        });
+            message:
+              "Rejected Driver application cannot be approved directly",
+          });
       }
 
       /* =====================================================
@@ -422,12 +748,15 @@ export const approveDriver =
         driver.status !==
         "pending"
       ) {
-        return res.status(409).json({
-          success: false,
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
 
-          message:
-            "Driver is not awaiting approval",
-        });
+            message:
+              "Driver is not awaiting approval",
+          });
       }
 
       const previousStatus =
@@ -476,6 +805,17 @@ export const approveDriver =
           driverId:
             driver.driverId,
 
+          driverMongoId:
+            String(
+              driver._id
+            ),
+
+          name:
+            driver.name,
+
+          email:
+            driver.email,
+
           previousStatus,
 
           newStatus:
@@ -522,7 +862,7 @@ export const approveDriver =
                 ),
 
               status:
-                driver.status,
+                "approved",
 
               approvedAt:
                 approvedAt.toISOString(),
@@ -553,16 +893,21 @@ export const approveDriver =
         );
       }
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-        message:
-          "Driver approved successfully",
+          message:
+            "Driver approved successfully",
 
-        data:
-          driver,
-      });
-    } catch (error) {
+          data:
+            driver,
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Approve Driver Error:",
         error
@@ -572,21 +917,27 @@ export const approveDriver =
         error?.name ===
         "ValidationError"
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            error.message,
-        });
+            message:
+              error.message,
+          });
       }
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          error?.message ||
-          "Failed to approve driver",
-      });
+          message:
+            error?.message ||
+            "Failed to approve driver",
+        });
     }
   };
 
@@ -595,11 +946,15 @@ export const approveDriver =
 ========================================================= */
 
 export const rejectDriver =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         id,
-      } = req.params;
+      } =
+        req.params;
 
       const {
         reason,
@@ -615,12 +970,15 @@ export const rejectDriver =
           id
         )
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Invalid Driver ID",
-        });
+            message:
+              "Invalid Driver ID",
+          });
       }
 
       /* =====================================================
@@ -635,36 +993,45 @@ export const rejectDriver =
       if (
         !rejectionReason
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Rejection reason is required",
-        });
+            message:
+              "Rejection reason is required",
+          });
       }
 
       if (
         rejectionReason.length <
         5
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Please provide a valid rejection reason",
-        });
+            message:
+              "Please provide a valid rejection reason",
+          });
       }
 
       if (
         rejectionReason.length >
         500
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            "Rejection reason must not exceed 500 characters",
-        });
+            message:
+              "Rejection reason must not exceed 500 characters",
+          });
       }
 
       /* =====================================================
@@ -676,34 +1043,59 @@ export const rejectDriver =
           id
         );
 
-      if (
-        !driver
-      ) {
-        return res.status(404).json({
-          success: false,
-
-          message:
-            "Driver not found",
-        });
-      }
-
       /* =====================================================
-         ALREADY REJECTED
+         DRIVER ALREADY REMOVED?
+
+         This can happen if Admin retries a request after the
+         email was sent and the Driver was already deleted.
       ===================================================== */
 
       if (
-        driver.status ===
-        "rejected"
+        !driver
       ) {
-        return res.status(200).json({
-          success: true,
+        const existingRejection =
+          await RejectedDriver.findOne({
+            originalDriverMongoId:
+              String(
+                id
+              ),
 
-          message:
-            "Driver is already rejected",
+            emailSent:
+              true,
+          })
+            .sort({
+              rejectedAt:
+                -1,
+            });
 
-          data:
-            driver,
-        });
+        if (
+          existingRejection
+        ) {
+          return res
+            .status(200)
+            .json({
+              success:
+                true,
+
+              message:
+                "Driver is already rejected",
+
+              data:
+                formatRejectedDriver(
+                  existingRejection
+                ),
+            });
+        }
+
+        return res
+          .status(404)
+          .json({
+            success:
+              false,
+
+            message:
+              "Driver not found",
+          });
       }
 
       /* =====================================================
@@ -714,12 +1106,34 @@ export const rejectDriver =
         driver.status ===
         "approved"
       ) {
-        return res.status(409).json({
-          success: false,
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
 
-          message:
-            "Approved Driver cannot be rejected through the application review endpoint",
-        });
+            message:
+              "Approved Driver cannot be rejected through the application review endpoint",
+          });
+      }
+
+      /* =====================================================
+         LEGACY REJECTED DRIVER
+      ===================================================== */
+
+      if (
+        driver.status ===
+        "rejected"
+      ) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "This Driver is already marked as rejected",
+          });
       }
 
       /* =====================================================
@@ -730,12 +1144,15 @@ export const rejectDriver =
         driver.status !==
         "pending"
       ) {
-        return res.status(409).json({
-          success: false,
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
 
-          message:
-            "Driver is not awaiting review",
-        });
+            message:
+              "Driver is not awaiting review",
+          });
       }
 
       const previousStatus =
@@ -744,35 +1161,184 @@ export const rejectDriver =
       const rejectedAt =
         new Date();
 
-      /* =====================================================
-         REJECT
-      ===================================================== */
+      const originalDriverMongoId =
+        String(
+          driver._id
+        );
 
-      driver.status =
-        "rejected";
-
-      driver.rejectionReason =
-        rejectionReason;
-
-      driver.rejectedAt =
-        rejectedAt;
-
-      driver.approvedAt =
+      const originalDriverId =
+        driver.driverId ||
         null;
 
-      driver.reviewedBy =
-        req.admin._id;
+      /* =====================================================
+         CREATE / REUSE REJECTION SNAPSHOT
 
-      driver.isOnline =
-        false;
+         If an earlier rejection attempt created the snapshot
+         but email sending failed, reuse the same record.
 
-      driver.currentStatus =
-        "offline";
+         This prevents unnecessary duplicate records.
+      ===================================================== */
 
-      await driver.save();
+      let rejectionRecord =
+        await RejectedDriver.findOne({
+          originalDriverMongoId,
+
+          active:
+            true,
+
+          acknowledged:
+            false,
+        }).sort({
+          rejectedAt:
+            -1,
+        });
+
+      if (
+        !rejectionRecord
+      ) {
+        rejectionRecord =
+          await RejectedDriver.create({
+            name:
+              driver.name,
+
+            email:
+              driver.email,
+
+            phone:
+              driver.phone ||
+              "",
+
+            originalDriverMongoId,
+
+            originalDriverId,
+
+            rejectionReason,
+
+            rejectedAt,
+
+            reviewedBy:
+              req.admin._id,
+
+            emailSent:
+              false,
+
+            emailSentAt:
+              null,
+
+            acknowledged:
+              false,
+
+            acknowledgedAt:
+              null,
+
+            active:
+              true,
+          });
+      } else if (
+        !rejectionRecord
+          .emailSent
+      ) {
+        /*
+          An earlier attempt failed before the email was sent.
+
+          Allow the Admin's latest rejection reason to replace
+          the previous unsent reason.
+        */
+
+        rejectionRecord.name =
+          driver.name;
+
+        rejectionRecord.email =
+          driver.email;
+
+        rejectionRecord.phone =
+          driver.phone ||
+          "";
+
+        rejectionRecord.originalDriverId =
+          originalDriverId;
+
+        rejectionRecord.rejectionReason =
+          rejectionReason;
+
+        rejectionRecord.rejectedAt =
+          rejectedAt;
+
+        rejectionRecord.reviewedBy =
+          req.admin._id;
+
+        await rejectionRecord.save();
+      }
+
+      /* =====================================================
+         SEND REJECTION EMAIL
+
+         IMPORTANT:
+
+         The original Driver is NOT deleted if this fails.
+
+         If emailSent is already true because a previous
+         attempt succeeded but deletion failed, do not send a
+         duplicate email.
+      ===================================================== */
+
+      if (
+        !rejectionRecord
+          .emailSent
+      ) {
+        try {
+          await sendDriverRejectionEmail({
+            email:
+              driver.email,
+
+            name:
+              driver.name,
+
+            rejectionReason:
+              rejectionRecord
+                .rejectionReason,
+          });
+        } catch (
+          emailError
+        ) {
+          console.error(
+            "Driver rejection email failed:",
+            emailError
+          );
+
+          return res
+            .status(502)
+            .json({
+              success:
+                false,
+
+              message:
+                "The rejection email could not be sent. The Driver was not removed. Please try again.",
+
+              error:
+                emailError?.message ||
+                "Email delivery failed",
+            });
+        }
+
+        /* ===================================================
+           MARK EMAIL AS SENT
+        =================================================== */
+
+        rejectionRecord.emailSent =
+          true;
+
+        rejectionRecord.emailSentAt =
+          new Date();
+
+        await rejectionRecord.save();
+      }
 
       /* =====================================================
          AUDIT LOG
+
+         Create before deleting Driver so the Driver reference
+         can still be stored.
       ===================================================== */
 
       await createAdminLog({
@@ -784,21 +1350,52 @@ export const rejectDriver =
         driver,
 
         message:
-          `Driver ${driver.name} rejected: ${rejectionReason}`,
+          `Driver ${driver.name} rejected: ${rejectionRecord.rejectionReason}`,
 
         metadata: {
           driverId:
-            driver.driverId,
+            originalDriverId,
+
+          driverMongoId:
+            originalDriverMongoId,
+
+          rejectedDriverRecordId:
+            String(
+              rejectionRecord._id
+            ),
+
+          name:
+            driver.name,
+
+          email:
+            driver.email,
+
+          phone:
+            driver.phone ||
+            null,
 
           previousStatus,
 
           newStatus:
             "rejected",
 
-          rejectionReason,
+          rejectionReason:
+            rejectionRecord
+              .rejectionReason,
 
           rejectedAt:
-            rejectedAt.toISOString(),
+            rejectionRecord
+              .rejectedAt
+              .toISOString(),
+
+          emailSent:
+            true,
+
+          emailSentAt:
+            rejectionRecord
+              .emailSentAt
+              ?.toISOString?.() ||
+            null,
 
           reviewedBy:
             String(
@@ -809,6 +1406,10 @@ export const rejectDriver =
 
       /* =====================================================
          SOCKET EVENTS
+
+         Send before deleting the Driver document so an
+         already-connected Driver can immediately display
+         the rejection screen.
       ===================================================== */
 
       const io =
@@ -819,72 +1420,163 @@ export const rejectDriver =
       if (
         io
       ) {
+        const rejectionPayload = {
+          driverId:
+            originalDriverId,
+
+          driverMongoId:
+            originalDriverMongoId,
+
+          rejectionId:
+            String(
+              rejectionRecord._id
+            ),
+
+          status:
+            "rejected",
+
+          code:
+            "DRIVER_REJECTED",
+
+          reason:
+            rejectionRecord
+              .rejectionReason,
+
+          rejectionReason:
+            rejectionRecord
+              .rejectionReason,
+
+          rejectedAt:
+            rejectionRecord
+              .rejectedAt
+              .toISOString(),
+        };
+
+        /*
+          Existing backend uses public Driver ID as the
+          Driver-specific Socket.IO room.
+        */
+
         if (
-          driver.driverId
+          originalDriverId
         ) {
           io.to(
             String(
-              driver.driverId
+              originalDriverId
             )
           ).emit(
             "driver_rejected",
-            {
-              driverId:
-                driver.driverId,
-
-              driverMongoId:
-                String(
-                  driver._id
-                ),
-
-              status:
-                driver.status,
-
-              reason:
-                rejectionReason,
-
-              rejectedAt:
-                rejectedAt.toISOString(),
-            }
+            rejectionPayload
           );
         }
+
+        /*
+          Also emit to a Mongo ID room in case the Socket
+          implementation uses it now or in the future.
+        */
+
+        io.to(
+          `driver:${originalDriverMongoId}`
+        ).emit(
+          "driver_rejected",
+          rejectionPayload
+        );
 
         io.to(
           "admin"
         ).emit(
           "driver_status_changed",
-          {
-            driverMongoId:
-              String(
-                driver._id
-              ),
-
-            driverId:
-              driver.driverId ||
-              null,
-
-            status:
-              "rejected",
-
-            reason:
-              rejectionReason,
-
-            rejectedAt:
-              rejectedAt.toISOString(),
-          }
+          rejectionPayload
         );
       }
 
-      return res.status(200).json({
-        success: true,
+      /* =====================================================
+         REMOVE ORIGINAL DRIVER
 
-        message:
-          "Driver rejected successfully",
+         This happens ONLY after:
 
-        data:
-          driver,
-      });
-    } catch (error) {
+         1. Rejection snapshot exists
+         2. Rejection email succeeded
+         3. Email status was stored
+         4. Audit log attempt completed
+         5. Socket event was emitted
+      ===================================================== */
+
+      const deleteResult =
+        await Driver.deleteOne({
+          _id:
+            driver._id,
+
+          status:
+            "pending",
+        });
+
+      if (
+        deleteResult.deletedCount !==
+        1
+      ) {
+        /*
+          Email was already sent, so do NOT send it again on
+          the next retry.
+
+          The RejectedDriver record remains with emailSent=true
+          and the next request can retry deletion safely.
+        */
+
+        console.error(
+          "Driver rejection email was sent, but Driver deletion did not complete:",
+          originalDriverMongoId
+        );
+
+        return res
+          .status(500)
+          .json({
+            success:
+              false,
+
+            message:
+              "The rejection email was sent, but the Driver record could not be removed. Please retry the rejection action.",
+
+            emailSent:
+              true,
+
+            driverRemoved:
+              false,
+          });
+      }
+
+      /* =====================================================
+         SUCCESS RESPONSE
+
+         Do NOT return the old Driver document containing all
+         Driver registration/document information.
+
+         Return only the small rejection snapshot.
+      ===================================================== */
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          message:
+            "Driver rejected successfully. The rejection email was sent and the Driver registration was removed.",
+
+          emailSent:
+            true,
+
+          driverRemoved:
+            true,
+
+          data:
+            formatRejectedDriver(
+              rejectionRecord
+            ),
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Reject Driver Error:",
         error
@@ -894,21 +1586,27 @@ export const rejectDriver =
         error?.name ===
         "ValidationError"
       ) {
-        return res.status(400).json({
-          success: false,
+        return res
+          .status(400)
+          .json({
+            success:
+              false,
 
-          message:
-            error.message,
-        });
+            message:
+              error.message,
+          });
       }
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          error?.message ||
-          "Failed to reject driver",
-      });
+          message:
+            error?.message ||
+            "Failed to reject driver",
+        });
     }
   };
 
@@ -917,7 +1615,10 @@ export const rejectDriver =
 ========================================================= */
 
 export const getLogs =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const logs =
         await AdminLog.find()
@@ -934,27 +1635,35 @@ export const getLogs =
               -1,
           });
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-        count:
-          logs.length,
+          count:
+            logs.length,
 
-        data:
-          logs,
-      });
-    } catch (error) {
+          data:
+            logs,
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Get Admin Logs Error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Failed to fetch admin logs",
-      });
+          message:
+            "Failed to fetch admin logs",
+        });
     }
   };
 
@@ -963,7 +1672,10 @@ export const getLogs =
 ========================================================= */
 
 export const getAnalytics =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       /* =====================================================
          LAST 7 DAYS
@@ -989,7 +1701,7 @@ export const getAnalytics =
       ===================================================== */
 
       const [
-        total,
+        currentDrivers,
         approved,
         pending,
         rejected,
@@ -1007,14 +1719,25 @@ export const getAnalytics =
               "pending",
           }),
 
-          Driver.countDocuments({
-            status:
-              "rejected",
+          RejectedDriver.countDocuments({
+            emailSent:
+              true,
           }),
         ]);
 
+      const total =
+        currentDrivers +
+        rejected;
+
       /* =====================================================
          REGISTRATIONS
+
+         Current Driver registrations are available directly
+         in Driver.
+
+         Rejected records intentionally contain only limited
+         information, so this chart represents current Driver
+         registration records.
       ===================================================== */
 
       const registrations =
@@ -1102,14 +1825,16 @@ export const getAnalytics =
 
       /* =====================================================
          REJECTIONS
+
+         Rejection history now comes from RejectedDriver.
       ===================================================== */
 
       const rejections =
-        await Driver.aggregate([
+        await RejectedDriver.aggregate([
           {
             $match: {
-              status:
-                "rejected",
+              emailSent:
+                true,
 
               rejectedAt: {
                 $gte:
@@ -1145,35 +1870,46 @@ export const getAnalytics =
           },
         ]);
 
-      return res.status(200).json({
-        success: true,
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
 
-        data: {
-          summary: {
-            total,
-            approved,
-            pending,
-            rejected,
+          data: {
+            summary: {
+              total,
+
+              approved,
+
+              pending,
+
+              rejected,
+            },
+
+            registrations,
+
+            approvals,
+
+            rejections,
           },
-
-          registrations,
-
-          approvals,
-
-          rejections,
-        },
-      });
-    } catch (error) {
+        });
+    } catch (
+      error
+    ) {
       console.error(
         "Admin Analytics Error:",
         error
       );
 
-      return res.status(500).json({
-        success: false,
+      return res
+        .status(500)
+        .json({
+          success:
+            false,
 
-        message:
-          "Failed to fetch analytics",
-      });
+          message:
+            "Failed to fetch analytics",
+        });
     }
   };
