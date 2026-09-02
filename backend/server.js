@@ -61,6 +61,7 @@ import childRoutes from "./routes/child.js";
 import billingRoutes from "./routes/billingRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
 import driverRequestRoutes from "./routes/driverRequest.js";
+import enquiryRoutes from "./routes/enquiryRoutes.js";
 
 /* =========================================================
    CONSTANTS
@@ -328,6 +329,15 @@ app.use(
 app.use(
   "/api/invoices",
   invoiceRoutes
+);
+
+/* =========================================================
+   PUBLIC WEBSITE ENQUIRIES
+========================================================= */
+
+app.use(
+  "/api/enquiries",
+  enquiryRoutes
 );
 
 /* =========================================================
