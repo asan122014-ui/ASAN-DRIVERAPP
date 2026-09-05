@@ -44,6 +44,56 @@ const handleError = (error) => {
   };
 };
 
+const isTransientMongoTransactionError =
+  (error) =>
+    error?.code === 112 ||
+    error?.codeName === "WriteConflict" ||
+    error?.hasErrorLabel?.(
+      "TransientTransactionError"
+    ) ||
+    /write conflict/i.test(
+      error?.message || ""
+    );
+
+const runWithTransactionRetry =
+  async (
+    operation,
+    maxAttempts = 3
+  ) => {
+    let lastError;
+
+    for (
+      let attempt = 1;
+      attempt <= maxAttempts;
+      attempt += 1
+    ) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+
+        if (
+          !isTransientMongoTransactionError(
+            error
+          ) ||
+          attempt === maxAttempts
+        ) {
+          throw error;
+        }
+
+        await new Promise(
+          (resolve) =>
+            setTimeout(
+              resolve,
+              attempt * 75
+            )
+        );
+      }
+    }
+
+    throw lastError;
+  };
+
 /* =========================================================
    HELPER: SUCCESS RESPONSE
 ========================================================= */
@@ -594,11 +644,14 @@ export const dropStudent =
       }
 
       const trip =
-        await dropStudentService(
-          tripId,
-          req.app.get(
-            "io"
-          )
+        await runWithTransactionRetry(
+          () =>
+            dropStudentService(
+              tripId,
+              req.app.get(
+                "io"
+              )
+            )
         );
 
       return successResponse(
