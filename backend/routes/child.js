@@ -1149,6 +1149,14 @@ router.get(
               tripId:
                 trip?._id ||
                 null,
+
+              actualPickupTime:
+                trip?.pickupTime ||
+                null,
+
+              actualDropTime:
+                trip?.dropTime ||
+                null,
             };
           }
         );
