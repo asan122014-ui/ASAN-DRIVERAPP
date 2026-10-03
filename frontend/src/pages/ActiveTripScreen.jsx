@@ -420,6 +420,12 @@ function ActiveTripScreen({
     setDriverHeading,
   ] = useState(0);
 
+  // Keep the navigation pointer aligned to geographic north while the map rotates.
+  const [
+    mapHeading,
+    setMapHeading,
+  ] = useState(0);
+
   const [
     directions,
     setDirections,
@@ -557,6 +563,9 @@ function ActiveTripScreen({
     useRef(false);
 
   const mapRef =
+    useRef(null);
+
+  const mapHeadingListenerRef =
     useRef(null);
 
   const previousStudentRef =
@@ -3939,8 +3948,23 @@ function ActiveTripScreen({
               ) => {
                 mapRef.current =
                   map;
+
+                // Start north-up. The driver can rotate the map after it loads.
+                map.setHeading(0);
+                map.setTilt(45);
+                mapHeadingListenerRef.current =
+                  map.addListener(
+                    "heading_changed",
+                    () => {
+                      setMapHeading(
+                        Number(map.getHeading()) || 0
+                      );
+                    }
+                  );
               }}
               onUnmount={() => {
+                mapHeadingListenerRef.current?.remove();
+                mapHeadingListenerRef.current = null;
                 mapRef.current =
                   null;
               }}
@@ -3959,6 +3983,12 @@ function ActiveTripScreen({
 
                 fullscreenControl:
                   false,
+
+                rotateControl:
+                  true,
+
+                tilt:
+                  45,
 
                 clickableIcons:
                   false,
@@ -3988,7 +4018,7 @@ function ActiveTripScreen({
                         "42px",
 
                       transform:
-                        `translate(-50%, -50%) rotate(${driverHeading}deg)`,
+                        `translate(-50%, -50%) rotate(${-mapHeading}deg)`,
 
                       transformOrigin:
                         "center",
