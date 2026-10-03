@@ -416,17 +416,6 @@ function ActiveTripScreen({
   ] = useState(null);
 
   const [
-    driverHeading,
-    setDriverHeading,
-  ] = useState(0);
-
-  // Keep the navigation pointer aligned to geographic north while the map rotates.
-  const [
-    mapHeading,
-    setMapHeading,
-  ] = useState(0);
-
-  const [
     directions,
     setDirections,
   ] = useState(null);
@@ -563,9 +552,6 @@ function ActiveTripScreen({
     useRef(false);
 
   const mapRef =
-    useRef(null);
-
-  const mapHeadingListenerRef =
     useRef(null);
 
   const previousStudentRef =
@@ -1148,7 +1134,9 @@ function ActiveTripScreen({
             nextHeading !==
             null
           ) {
-            setDriverHeading(
+            // Navigation mode: turn the map to the vehicle's live heading.
+            // The driver arrow itself remains upright at the top of the screen.
+            mapRef.current?.setHeading(
               nextHeading
             );
           }
@@ -3949,22 +3937,11 @@ function ActiveTripScreen({
                 mapRef.current =
                   map;
 
-                // Start north-up. The driver can rotate the map after it loads.
+                // Start north-up; live GPS updates rotate this map beneath the arrow.
                 map.setHeading(0);
                 map.setTilt(45);
-                mapHeadingListenerRef.current =
-                  map.addListener(
-                    "heading_changed",
-                    () => {
-                      setMapHeading(
-                        Number(map.getHeading()) || 0
-                      );
-                    }
-                  );
               }}
               onUnmount={() => {
-                mapHeadingListenerRef.current?.remove();
-                mapHeadingListenerRef.current = null;
                 mapRef.current =
                   null;
               }}
@@ -4018,7 +3995,7 @@ function ActiveTripScreen({
                         "42px",
 
                       transform:
-                        `translate(-50%, -50%) rotate(${-mapHeading}deg)`,
+                        "translate(-50%, -50%)",
 
                       transformOrigin:
                         "center",
