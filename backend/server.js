@@ -62,6 +62,7 @@ import billingRoutes from "./routes/billingRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
 import driverRequestRoutes from "./routes/driverRequest.js";
 import enquiryRoutes from "./routes/enquiryRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 
 /* =========================================================
    CONSTANTS
@@ -353,7 +354,11 @@ app.use(
    DRIVER REQUESTS
 ========================================================= */
 
+
 app.use(
+  "/api/bookings",
+  bookingRoutes
+);app.use(
   "/api/driver-request",
   driverRequestRoutes
 );
@@ -2329,3 +2334,6 @@ connectDB()
       );
     }
   );
+
+
+
