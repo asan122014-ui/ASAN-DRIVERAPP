@@ -180,7 +180,9 @@ function DriverDashboard() {
       setBookingOffers(visibleOffers);
       setBookingOfferError("");
       if (manual) {
-        setBookingOfferNotice(visibleOffers.length ? `You have ${visibleOffers.length} ride request${visibleOffers.length === 1 ? "" : "s"} waiting for your response.` : "No new ride requests right now. Your requests were checked.");
+        setBookingOfferNotice(visibleOffers.length
+          ? `You have ${visibleOffers.length} ride request${visibleOffers.length === 1 ? "" : "s"} waiting for ${driver?.driverId || "this driver"}.`
+          : `No new ride requests for ${driver?.driverId || "this driver"} right now. Checked just now.`);
       }
     } catch (error) {
       setBookingOfferError(error?.response?.data?.message || "Unable to refresh ride offers.");
@@ -1973,7 +1975,7 @@ function DriverDashboard() {
               >
                 <span>
                   <span className="block text-[11px] font-black text-black">Ride requests</span>
-                  <span className="mt-0.5 block text-[9px] text-[#8C8276]">{bookingOffers.length ? "You have a new ride request. Check once." : bookingOffersLoading ? "Checking for new requests…" : "Tap to check for new requests"}</span>
+                  <span className="mt-0.5 block text-[9px] text-[#8C8276]">{bookingOffers.length ? "You have a new ride request. Check once." : bookingOffersLoading ? "Checking for new requests…" : `Signed in as ${driver?.driverId || "driver"} · tap to check`}</span>
                 </span>
                 <span className="rounded-full bg-[#FFB000] px-3 py-1.5 text-[9px] font-black text-black">{bookingOffersLoading ? "…" : bookingOffers.length || "Check"}</span>
               </button>
