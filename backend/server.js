@@ -64,6 +64,8 @@ import invoiceRoutes from "./routes/invoiceRoutes.js";
 import driverRequestRoutes from "./routes/driverRequest.js";
 import enquiryRoutes from "./routes/enquiryRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import bookingPaymentRoutes, { cashfreeWebhook } from "./routes/bookingPaymentRoutes.js";
+import { startBookingServiceExpiryWorker } from "./jobs/expireBookingServices.js";
 
 /* =========================================================
    CONSTANTS
@@ -191,6 +193,9 @@ app.use(
 /* =========================================================
    BODY PARSERS
 ========================================================= */
+
+app.post("/api/booking-payments/webhook", express.raw({ type: "application/json", limit: "1mb" }), cashfreeWebhook);
+app.use("/api/booking-payments", express.json({ limit: "64kb" }), bookingPaymentRoutes);
 
 app.use(
   express.json({
@@ -2217,6 +2222,7 @@ connectDB()
       );
 
       startBookingOfferExpiryWorker(io);
+      startBookingServiceExpiryWorker(io);
 
       /* =====================================================
          VERIFICATION PHOTO CLEANUP

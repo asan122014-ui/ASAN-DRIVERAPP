@@ -41,6 +41,10 @@ const bookingSchema = new mongoose.Schema({
   assignedDriverId: { type: String, default: "", trim: true, uppercase: true },
   status: { type: String, enum: ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active", "cancelled", "expired"], default: "quoted", index: true },
   startDate: { type: Date, default: null },
+  paymentId: { type: mongoose.Schema.Types.ObjectId, ref: "BookingPayment", default: null },
+  paidAt: { type: Date, default: null },
+  serviceStartsAt: { type: Date, default: null },
+  serviceEndsAt: { type: Date, default: null },
 }, { timestamps: true });
 
 bookingSchema.index({ parentId: 1, createdAt: -1 });

@@ -108,9 +108,7 @@ export const acceptDriverBookingOffer = async (req, res) => {
     if (!accepted) return res.status(409).json({ success: false, message: "Another driver has already accepted this request, or the offer expired." });
 
     await Booking.updateOne({ _id: accepted.bookingId }, { $set: { assignedDriverId: driverId, status: "awaiting_payment" } });
-    parent.driverId = driverId;
-    await parent.save();
-    if (accepted.childId) await Child.updateMany({ parentId: parent._id }, { $set: { driverId } });
+    // Student/parent linkage is activated only after Cashfree confirms payment.
 
     const booking = await Booking.findById(accepted.bookingId);
     const io = req.app.get("io");
