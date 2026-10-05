@@ -88,6 +88,49 @@ router.get("/mine", verifyParent, async (req, res) => {
   catch (error) { return res.status(500).json({ success: false, message: "Unable to load bookings" }); }
 });
 
+router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    const cancellableStatuses = ["awaiting_driver", "driver_searching"];
+    const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
+    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+    if (booking.status === "cancelled") return res.json({ success: true, message: "Booking is already cancelled", data: booking });
+    if (!cancellableStatuses.includes(booking.status)) return res.status(409).json({ success: false, message: "This booking can no longer be cancelled from the dashboard" });
+
+    const openRequest = booking.driverRequestId
+      ? await DriverRequest.findOne({ _id: booking.driverRequestId, parentId: req.parent._id, status: "Pending" }).select("currentOfferDriverIds")
+      : null;
+    if (!openRequest) return res.status(409).json({ success: false, message: "A driver has already responded to this request. Refresh the booking status." });
+    const offeredDriverIds = [...(openRequest.currentOfferDriverIds || [])];
+    const cancelledRequest = booking.driverRequestId
+      ? await DriverRequest.findOneAndUpdate(
+        { _id: booking.driverRequestId, parentId: req.parent._id, status: "Pending" },
+        { $set: { status: "Cancelled", matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date(), rejectionReason: "Cancelled by parent" } },
+        { new: true }
+      )
+      : null;
+    if (!cancelledRequest) return res.status(409).json({ success: false, message: "A driver has already responded to this request. Refresh the booking status." });
+
+    const cancelledBooking = await Booking.findOneAndUpdate(
+      { _id: booking._id, parentId: req.parent._id, status: { $in: cancellableStatuses } },
+      { $set: { status: "cancelled" } },
+      { new: true }
+    );
+    if (!cancelledBooking) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
+
+    const io = req.app.get("io");
+    for (const driverId of offeredDriverIds) {
+      io?.to(String(driverId)).emit("booking_request_cancelled", { requestId: String(cancelledRequest._id), bookingId: String(booking._id) });
+    }
+    io?.to(String(req.parent._id)).emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
+    io?.to("admin").emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
+    return res.json({ success: true, message: "Booking request cancelled", data: cancelledBooking });
+  } catch (error) {
+    console.error("CANCEL BOOKING ERROR", error);
+    return res.status(500).json({ success: false, message: "Unable to cancel this booking request" });
+  }
+});
+
 router.put("/mine/:id/retry-search", verifyParent, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });

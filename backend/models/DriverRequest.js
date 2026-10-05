@@ -8,6 +8,7 @@ const DRIVER_REQUEST_STATUSES = [
   "Pending",
   "Assigned",
   "Rejected",
+  "Cancelled",
 ];
 
 /* =========================================================
