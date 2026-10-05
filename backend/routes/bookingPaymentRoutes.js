@@ -11,8 +11,13 @@ import { reconcilePayment } from "../services/bookingPaymentService.js";
 const router = express.Router();
 const fail = (res, error) => {
   console.error("BOOKING PAYMENT ERROR", error.message);
-  const status = error.statusCode === 401 ? 401 : error.status && error.status < 500 ? error.status : 500;
-  return res.status(status).json({ success: false, message: status === 401 ? "Payment credentials were rejected. Please contact support." : status < 500 ? error.message : "Unable to process payment right now. Please try again later." });
+  const status = error.statusCode === 401 ? 502 : error.status >= 400 && error.status < 600 ? error.status : 500;
+  const message = error.statusCode === 401
+    ? "Razorpay rejected the backend API credentials. Check that the Key ID and Key Secret in Render are a matching pair."
+    : status === 503 ? error.message
+      : status < 500 ? error.message
+        : "Unable to check payment right now. Please try again later.";
+  return res.status(status).json({ success: false, message });
 };
 
 router.use(verifyParent);
@@ -31,6 +36,7 @@ router.get("/:id/status", async (req, res) => {
   try {
     const payment = await BookingPayment.findOne({ bookingId: req.params.id, parentId: req.parent._id });
     if (!payment) return res.status(404).json({ success: false, message: "Payment has not been started" });
+    if (payment.status === "PAID") return res.json({ success: true, data: { paid: true, status: "PAID" } });
     if (!payment.orderId.startsWith("order_")) return res.json({ success: true, data: { paid: false, status: payment.status } });
     const result = await reconcilePayment(payment, req.app.get("io"));
     return res.json({ success: true, data: { paid: result.paid, status: result.status } });

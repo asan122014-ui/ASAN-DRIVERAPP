@@ -9,7 +9,11 @@ import { confirmedRazorpayPayment, monthEnd, verifyCheckoutSignature } from "./p
 
 export async function reconcilePayment(payment, io, checkout) {
   const config = razorpayConfig();
-  if (payment.provider !== "razorpay" || payment.environment !== config.mode || !payment.orderId.startsWith("order_")) throw new Error("Payment provider or environment mismatch");
+  if (payment.provider !== "razorpay" || payment.environment !== config.mode || !payment.orderId.startsWith("order_")) {
+    const error = new Error("This payment belongs to a different payment mode. Start a fresh booking in the current mode.");
+    error.status = 409;
+    throw error;
+  }
   if (checkout) {
     const { razorpay_payment_id: paymentId, razorpay_order_id: orderId, razorpay_signature: signature } = checkout;
     if (![paymentId, orderId, signature].every((value) => typeof value === "string" && value.length)) {
