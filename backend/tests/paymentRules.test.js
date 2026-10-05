@@ -1,24 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { verifySignature, monthEnd, confirmedPayment, monthlyAmount } from "../services/paymentRules.js";
+import { verifyCheckoutSignature, monthEnd, confirmedRazorpayPayment, monthlyAmount } from "../services/paymentRules.js";
 
-test("raw webhook bytes must match the signature", () => {
-  const raw = Buffer.from('{"amount":10.00}');
-  const sig = crypto.createHmac("sha256", "sandbox-test-secret").update("123").update(raw).digest("base64");
-  assert.equal(verifySignature(raw, "123", sig, "sandbox-test-secret"), true);
-  assert.equal(verifySignature(Buffer.from('{"amount":10}'), "123", sig, "sandbox-test-secret"), false);
-  assert.equal(verifySignature(raw, "124", sig, "sandbox-test-secret"), false);
-  assert.equal(verifySignature(raw, "123", "bad", "sandbox-test-secret"), false);
+test("checkout signature must match the stored order and payment ID", () => {
+  const sig = crypto.createHmac("sha256", "test-secret").update("order_123|pay_456").digest("hex");
+  assert.equal(verifyCheckoutSignature("order_123", "pay_456", sig, "test-secret"), true);
+  assert.equal(verifyCheckoutSignature("order_123", "pay_other", sig, "test-secret"), false);
+  assert.equal(verifyCheckoutSignature("order_other", "pay_456", sig, "test-secret"), false);
+  assert.equal(verifyCheckoutSignature("order_123", "pay_456", "bad", "test-secret"), false);
 });
 test("activation needs matching successful amount, currency and order", () => {
-  const order = { order_id: "a", order_status: "PAID", order_amount: 100, order_currency: "INR" };
-  const payment = { payment_status: "SUCCESS", payment_amount: 100, payment_currency: "INR", cf_payment_id: "p" };
-  const expected = { orderId: "a", amount: 100 };
-  assert.equal(confirmedPayment(order, [payment], expected), payment);
-  for (const changed of [{ payment_amount: 1 }, { payment_currency: "USD" }, { payment_status: "PENDING" }]) assert.equal(confirmedPayment(order, [{ ...payment, ...changed }], expected), null);
-  assert.equal(confirmedPayment({ ...order, order_id: "b" }, [payment], expected), null);
-  assert.equal(confirmedPayment({ ...order, order_status: "ACTIVE" }, [payment], expected), null);
+  const order = { id: "order_a", status: "paid", amount: 10000, currency: "INR" };
+  const payment = { id: "pay_p", order_id: "order_a", status: "captured", amount: 10000, currency: "INR" };
+  const expected = { orderId: "order_a", amount: 100 };
+  assert.equal(confirmedRazorpayPayment(order, [payment], expected), payment);
+  for (const changed of [{ amount: 1 }, { currency: "USD" }, { status: "authorized" }, { order_id: "order_b" }]) assert.equal(confirmedRazorpayPayment(order, [{ ...payment, ...changed }], expected), null);
+  assert.equal(confirmedRazorpayPayment({ ...order, id: "order_b" }, [payment], expected), null);
+  assert.equal(confirmedRazorpayPayment({ ...order, status: "attempted" }, [payment], expected), null);
 });
 test("calendar month ends clamp correctly", () => {
   assert.equal(monthEnd("2026-01-31T10:00:00Z").toISOString(), "2026-02-28T10:00:00.000Z");

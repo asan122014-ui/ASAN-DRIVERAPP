@@ -8,12 +8,17 @@ export function monthlyAmount(booking) {
   return Math.round((distance * 2 * (vehicle === "AUTO" ? 14 : 16) * 26 + (children - 1) * 500) * 1.02 * 100) / 100;
 }
 
-export function verifySignature(rawBody, timestamp, signature, secret) {
-  if (!Buffer.isBuffer(rawBody) || !timestamp || !signature || !secret) return false;
-  const expected = crypto.createHmac("sha256", secret).update(String(timestamp)).update(rawBody).digest("base64");
-  const received = Buffer.from(String(signature));
-  const computed = Buffer.from(expected);
-  return received.length === computed.length && crypto.timingSafeEqual(received, computed);
+export function verifyCheckoutSignature(orderId, paymentId, signature, secret) {
+  if (![orderId, paymentId, signature, secret].every((value) => typeof value === "string" && value.length)) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`${orderId}|${paymentId}`).digest("hex");
+  if (!/^[a-f0-9]{64}$/i.test(signature)) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(signature, "hex"));
+}
+
+export function confirmedRazorpayPayment(order, payments, expected) {
+  const amountPaise = Math.round(Number(expected.amount) * 100);
+  if (order.id !== expected.orderId || order.status !== "paid" || order.currency !== "INR" || order.amount !== amountPaise) return null;
+  return payments.find((payment) => payment.order_id === order.id && payment.status === "captured" && payment.currency === "INR" && payment.amount === amountPaise && payment.id) || null;
 }
 
 export function monthEnd(start) {
@@ -24,9 +29,4 @@ export function monthEnd(start) {
   const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
   result.setUTCDate(Math.min(day, lastDay));
   return result;
-}
-
-export function confirmedPayment(order, payments, expected) {
-  if (order.order_id !== expected.orderId || order.order_status !== "PAID" || order.order_currency !== "INR" || Math.round(Number(order.order_amount) * 100) !== Math.round(expected.amount * 100)) return null;
-  return payments.find((payment) => payment.payment_status === "SUCCESS" && payment.payment_currency === "INR" && Math.round(Number(payment.payment_amount) * 100) === Math.round(expected.amount * 100) && payment.cf_payment_id) || null;
 }
