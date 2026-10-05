@@ -148,6 +148,7 @@ function DriverDashboard() {
     useRef(null);
 
   const knownBookingOfferIdsRef = useRef(new Set());
+  const socketBookingOffersRef = useRef(new Map());
 
   const peersRef =
     useRef({});
@@ -160,21 +161,69 @@ function DriverDashboard() {
     try {
       const response = await axios.get("/driver-request/offers");
       const offers = Array.isArray(response.data?.data) ? response.data.data : [];
+      const now = Date.now();
+      for (const [requestId, offer] of socketBookingOffersRef.current) {
+        if (offer.expiresAt && new Date(offer.expiresAt).getTime() <= now) socketBookingOffersRef.current.delete(requestId);
+      }
+      const mergedOffers = new Map([...socketBookingOffersRef.current.values()].map((offer) => [offer.requestId, offer]));
+      offers.forEach((offer) => mergedOffers.set(offer.requestId, offer));
+      const visibleOffers = [...mergedOffers.values()].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       const incomingOffer = offers.find((offer) => !knownBookingOfferIdsRef.current.has(offer.requestId));
       offers.forEach((offer) => knownBookingOfferIdsRef.current.add(offer.requestId));
       if (incomingOffer) setActiveBookingOfferId((currentId) => currentId || incomingOffer.requestId);
-      setBookingOffers(offers);
+      setBookingOffers(visibleOffers);
       setBookingOfferError("");
     } catch (error) {
       setBookingOfferError(error?.response?.data?.message || "Unable to refresh ride offers.");
     }
   }, [driver?.driverId]);
 
+  const handleBookingDriverOffer = useCallback((eventOffer) => {
+    if (!eventOffer?.requestId) {
+      refreshBookingOffers();
+      return;
+    }
+    const requestId = String(eventOffer.requestId);
+    const incomingOffer = {
+      requestId,
+      bookingId: eventOffer.bookingId,
+      child: eventOffer.child || { name: eventOffer.childName || "Student", school: eventOffer.school || "" },
+      route: eventOffer.route || {
+        pickup: eventOffer.pickup || "",
+        dropoff: eventOffer.dropoff || "",
+        distanceKm: eventOffer.distanceKm,
+        durationMinutes: eventOffer.durationMinutes,
+        pickupTime: eventOffer.pickupTime,
+        schoolPickupTime: eventOffer.schoolPickupTime,
+      },
+      vehicleType: eventOffer.vehicleType || "",
+      monthlyPrice: eventOffer.monthlyPrice,
+      expiresAt: eventOffer.expiresAt,
+      createdAt: eventOffer.createdAt || new Date().toISOString(),
+    };
+    const isNewOffer = !knownBookingOfferIdsRef.current.has(requestId);
+    knownBookingOfferIdsRef.current.add(requestId);
+    socketBookingOffersRef.current.set(requestId, incomingOffer);
+    setBookingOffers((current) => [incomingOffer, ...current.filter((offer) => offer.requestId !== requestId)]);
+    if (isNewOffer) setActiveBookingOfferId((currentId) => currentId || requestId);
+  }, [refreshBookingOffers]);
+
+  const handleBookingOfferCancelled = useCallback((event) => {
+    if (event?.requestId) {
+      const requestId = String(event.requestId);
+      socketBookingOffersRef.current.delete(requestId);
+      setBookingOffers((current) => current.filter((offer) => offer.requestId !== requestId));
+      setActiveBookingOfferId((currentId) => currentId === requestId ? null : currentId);
+    }
+    refreshBookingOffers();
+  }, [refreshBookingOffers]);
+
   const respondToBookingOffer = useCallback(async (requestId, action) => {
     setBookingOfferBusy(requestId);
     setBookingOfferError("");
     try {
       await axios.put(`/driver-request/${requestId}/${action}`);
+      socketBookingOffersRef.current.delete(requestId);
       setBookingOffers((current) => current.filter((offer) => offer.requestId !== requestId));
       setActiveBookingOfferId((activeId) => activeId === requestId ? bookingOffers.find((offer) => offer.requestId !== requestId)?.requestId || null : activeId);
       if (action === "accept") setBookingOfferNotice("Ride request accepted. The parent has been notified.");
@@ -754,8 +803,8 @@ function DriverDashboard() {
       }
     );
 
-    socket.on("booking_driver_offer", refreshBookingOffers);
-    socket.on("booking_request_cancelled", refreshBookingOffers);
+    socket.on("booking_driver_offer", handleBookingDriverOffer);
+    socket.on("booking_request_cancelled", handleBookingOfferCancelled);
 
     socket.io.engine.on(
       "upgrade",
@@ -998,6 +1047,8 @@ function DriverDashboard() {
     createPeerConnection,
     flushIceCandidates,
     refreshBookingOffers,
+    handleBookingDriverOffer,
+    handleBookingOfferCancelled,
   ]);
 
   /* =======================================================
