@@ -60,11 +60,12 @@ export const getDriverBookingOffers = async (req, res) => {
       route: item.bookingId.route,
       vehicleType: item.bookingId.quote?.vehicleType,
       monthlyPrice: item.bookingId.quote?.totalMonthly,
+      targetDriverId: driverId,
       startDate: item.bookingId.startDate,
       expiresAt: item.offerExpiresAt,
       createdAt: item.createdAt,
     }));
-    return res.json({ success: true, count: data.length, data });
+    return res.json({ success: true, driverId, count: data.length, data });
   } catch (error) {
     console.error("DRIVER BOOKING OFFERS ERROR", error);
     return res.status(500).json({ success: false, message: "Unable to load ride offers" });

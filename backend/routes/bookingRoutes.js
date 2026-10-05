@@ -79,7 +79,15 @@ router.post("/request", verifyParent, async (req, res) => {
     const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");
     const dispatch = await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") });
     const latestBooking = await Booking.findById(booking._id);
-    return res.status(201).json({ success: true, message: driverChoice === "existing" ? "Request sent to your driver" : dispatch.offersSent ? "Your request has been sent to nearby drivers" : "Your request is in the institute review queue", data: { booking: latestBooking, request: dispatch.request } });
+    const requestSentToDriver = driverChoice === "existing" && dispatch.offersSent > 0 && dispatch.request?.matchingStatus === "Offered";
+    const message = driverChoice === "existing"
+      ? requestSentToDriver
+        ? `Ride request sent to ASAN ID ${normalizedDriverId}. Waiting for the driver to respond.`
+        : dispatch.request?.rejectionReason || `The request could not be sent to ASAN ID ${normalizedDriverId}. Please contact the institute.`
+      : dispatch.offersSent
+        ? "Your request has been sent to nearby drivers"
+        : "Your request is in the institute review queue";
+    return res.status(201).json({ success: true, message, data: { booking: latestBooking, request: dispatch.request, targetDriverId: normalizedDriverId || null, offerSent: driverChoice === "existing" ? requestSentToDriver : dispatch.offersSent > 0 } });
   } catch (error) { console.error("BOOKING REQUEST ERROR", error); return res.status(500).json({ success: false, message: "Unable to create the booking request" }); }
 });
 
