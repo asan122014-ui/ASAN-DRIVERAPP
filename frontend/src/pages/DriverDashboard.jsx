@@ -198,6 +198,7 @@ function DriverDashboard() {
       },
       vehicleType: eventOffer.vehicleType || "",
       monthlyPrice: eventOffer.monthlyPrice,
+      startDate: eventOffer.startDate,
       expiresAt: eventOffer.expiresAt,
       createdAt: eventOffer.createdAt || new Date().toISOString(),
     };
@@ -1742,8 +1743,8 @@ function DriverDashboard() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[9px] font-black tracking-[0.18em] text-[#B87700]">NEW MONTHLY RIDE REQUEST</p>
-                  <h2 id="booking-offer-title" className="mt-1 text-[21px] font-black text-black">A parent needs a driver</h2>
-                  <p className="mt-1 text-[11px] text-[#8C8276]">Review the route and monthly price before responding.</p>
+                  <h2 id="booking-offer-title" className="mt-1 text-[21px] font-black text-black">You have a new ride request</h2>
+                  <p className="mt-1 text-[11px] text-[#8C8276]">Check the student, schedule and route details before responding.</p>
                 </div>
                 <div className="shrink-0 rounded-[16px] bg-[#FFF1C8] px-3 py-2 text-right">
                   <p className="text-[7px] font-black tracking-[0.12em] text-[#8C6A18]">MONTHLY PRICE</p>
@@ -1758,7 +1759,8 @@ function DriverDashboard() {
                 <div className="space-y-2.5 text-[10px] text-[#51483B]">
                   <p><b>Home pickup:</b> {activeBookingOffer.route?.pickup || "—"}{activeBookingOffer.route?.pickupTime ? ` · ${activeBookingOffer.route.pickupTime}` : ""}</p>
                   <p><b>School:</b> {activeBookingOffer.route?.dropoff || "—"}{activeBookingOffer.route?.schoolPickupTime ? ` · ${activeBookingOffer.route.schoolPickupTime}` : ""}</p>
-                  <p className="font-semibold text-[#8C8276]">{activeBookingOffer.route?.distanceKm || "—"} km · {activeBookingOffer.route?.durationMinutes || "—"} min · {activeBookingOffer.vehicleType || "Vehicle not specified"}</p>
+                  <p><b>Route details:</b> {activeBookingOffer.route?.distanceKm || "—"} km · {activeBookingOffer.route?.durationMinutes || "—"} min · {activeBookingOffer.vehicleType || "Vehicle not specified"}</p>
+                  {activeBookingOffer.startDate && <p><b>Requested start:</b> {new Date(activeBookingOffer.startDate).toLocaleDateString("en-IN")}</p>}
                 </div>
               </div>
               {bookingOfferError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{bookingOfferError}</p>}
@@ -1944,6 +1946,22 @@ function DriverDashboard() {
                 </div>
               </div>
 
+              <button
+                type="button"
+                onClick={() => {
+                  if (bookingOffers.length) setActiveBookingOfferId(bookingOffers[0].requestId);
+                  else refreshBookingOffers();
+                }}
+                className="flex w-full items-center justify-between rounded-[18px] border border-[#EED69B] bg-white px-4 py-3 text-left shadow-[0_8px_24px_rgba(140,100,0,0.07)]"
+                aria-label={`Ride requests${bookingOffers.length ? `, ${bookingOffers.length} new` : ""}`}
+              >
+                <span>
+                  <span className="block text-[11px] font-black text-black">Ride requests</span>
+                  <span className="mt-0.5 block text-[9px] text-[#8C8276]">{bookingOffers.length ? "You have a new ride request. Check once." : "Check for new requests"}</span>
+                </span>
+                <span className="rounded-full bg-[#FFB000] px-3 py-1.5 text-[9px] font-black text-black">{bookingOffers.length || "Check"}</span>
+              </button>
+
               {bookingOfferNotice && <div className="rounded-[15px] border border-[#B8DEC7] bg-[#EEF8F1] px-4 py-3 text-[10px] font-bold text-[#2F7149]">{bookingOfferNotice}</div>}
               {bookingOfferError && !activeBookingOffer && (
                 <div className="flex items-center justify-between gap-3 rounded-[15px] border border-[#F1C8C4] bg-[#FFF3F1] px-4 py-3 text-[10px] font-semibold text-[#A43C32]" role="status" aria-live="polite">
@@ -1971,9 +1989,10 @@ function DriverDashboard() {
                           <p className="shrink-0 text-[17px] font-black text-[#936400]">₹{Number(offer.monthlyPrice || 0).toLocaleString("en-IN")}<span className="block text-right text-[7px] font-bold text-[#95897C]">PER MONTH</span></p>
                         </div>
                         <div className="mt-3 space-y-2 rounded-[14px] bg-[#FFF8E8] p-3 text-[9px] text-[#51483B]">
-                          <p><b>Pickup:</b> {offer.route?.pickup || "—"}</p>
-                          <p><b>School:</b> {offer.route?.dropoff || "—"}</p>
-                          <p className="text-[#8C8276]">{offer.route?.distanceKm || "—"} km · {offer.vehicleType || "Vehicle not specified"}</p>
+                          <p><b>Home pickup:</b> {offer.route?.pickup || "—"}{offer.route?.pickupTime ? ` · ${offer.route.pickupTime}` : ""}</p>
+                          <p><b>School:</b> {offer.route?.dropoff || "—"}{offer.route?.schoolPickupTime ? ` · ${offer.route.schoolPickupTime}` : ""}</p>
+                          <p className="text-[#8C8276]">{offer.route?.distanceKm || "—"} km · {offer.route?.durationMinutes || "—"} min · {offer.vehicleType || "Vehicle not specified"}</p>
+                          {offer.startDate && <p><b>Requested start:</b> {new Date(offer.startDate).toLocaleDateString("en-IN")}</p>}
                         </div>
                         {bookingOfferError && <p className="mt-2 text-[9px] font-semibold text-red-600">{bookingOfferError}</p>}
                         <div className="mt-3 grid grid-cols-2 gap-2">
