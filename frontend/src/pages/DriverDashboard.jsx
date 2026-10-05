@@ -240,7 +240,14 @@ function DriverDashboard() {
   useEffect(() => {
     refreshBookingOffers();
     const timer = window.setInterval(refreshBookingOffers, 5000);
-    return () => window.clearInterval(timer);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshBookingOffers();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refreshBookingOffers]);
 
   /* =======================================================
