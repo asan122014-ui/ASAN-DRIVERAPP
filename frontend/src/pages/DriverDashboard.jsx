@@ -69,6 +69,7 @@ function DriverDashboard() {
   const [bookingOfferBusy, setBookingOfferBusy] = useState("");
   const [bookingOfferError, setBookingOfferError] = useState("");
   const [bookingOfferNotice, setBookingOfferNotice] = useState("");
+  const [bookingOffersLoading, setBookingOffersLoading] = useState(false);
 
   const [
     morningCompleted,
@@ -156,8 +157,12 @@ function DriverDashboard() {
   const iceCandidateQueueRef =
     useRef({});
 
-  const refreshBookingOffers = useCallback(async () => {
-    if (!driver?.driverId || !localStorage.getItem("accessToken")) return;
+  const refreshBookingOffers = useCallback(async ({ manual = false } = {}) => {
+    if (!driver?.driverId || !localStorage.getItem("accessToken")) {
+      setBookingOfferError("Your driver session is missing. Sign in again to check ride requests.");
+      return;
+    }
+    if (manual) setBookingOffersLoading(true);
     try {
       const response = await axios.get("/driver-request/offers");
       const offers = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -170,11 +175,17 @@ function DriverDashboard() {
       const visibleOffers = [...mergedOffers.values()].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       const incomingOffer = offers.find((offer) => !knownBookingOfferIdsRef.current.has(offer.requestId));
       offers.forEach((offer) => knownBookingOfferIdsRef.current.add(offer.requestId));
-      if (incomingOffer) setActiveBookingOfferId((currentId) => currentId || incomingOffer.requestId);
+      if (manual && visibleOffers.length) setActiveBookingOfferId(visibleOffers[0].requestId);
+      else if (incomingOffer) setActiveBookingOfferId((currentId) => currentId || incomingOffer.requestId);
       setBookingOffers(visibleOffers);
       setBookingOfferError("");
+      if (manual) {
+        setBookingOfferNotice(visibleOffers.length ? `You have ${visibleOffers.length} ride request${visibleOffers.length === 1 ? "" : "s"} waiting for your response.` : "No new ride requests right now. Your requests were checked.");
+      }
     } catch (error) {
       setBookingOfferError(error?.response?.data?.message || "Unable to refresh ride offers.");
+    } finally {
+      if (manual) setBookingOffersLoading(false);
     }
   }, [driver?.driverId]);
 
@@ -1955,25 +1966,23 @@ function DriverDashboard() {
 
               <button
                 type="button"
-                onClick={() => {
-                  if (bookingOffers.length) setActiveBookingOfferId(bookingOffers[0].requestId);
-                  else refreshBookingOffers();
-                }}
-                className="flex w-full items-center justify-between rounded-[18px] border border-[#EED69B] bg-white px-4 py-3 text-left shadow-[0_8px_24px_rgba(140,100,0,0.07)]"
+                onClick={() => refreshBookingOffers({ manual: true })}
+                disabled={bookingOffersLoading}
+                className="flex w-full items-center justify-between rounded-[18px] border border-[#EED69B] bg-white px-4 py-3 text-left shadow-[0_8px_24px_rgba(140,100,0,0.07)] disabled:opacity-70"
                 aria-label={`Ride requests${bookingOffers.length ? `, ${bookingOffers.length} new` : ""}`}
               >
                 <span>
                   <span className="block text-[11px] font-black text-black">Ride requests</span>
-                  <span className="mt-0.5 block text-[9px] text-[#8C8276]">{bookingOffers.length ? "You have a new ride request. Check once." : "Check for new requests"}</span>
+                  <span className="mt-0.5 block text-[9px] text-[#8C8276]">{bookingOffers.length ? "You have a new ride request. Check once." : bookingOffersLoading ? "Checking for new requests…" : "Tap to check for new requests"}</span>
                 </span>
-                <span className="rounded-full bg-[#FFB000] px-3 py-1.5 text-[9px] font-black text-black">{bookingOffers.length || "Check"}</span>
+                <span className="rounded-full bg-[#FFB000] px-3 py-1.5 text-[9px] font-black text-black">{bookingOffersLoading ? "…" : bookingOffers.length || "Check"}</span>
               </button>
 
               {bookingOfferNotice && <div className="rounded-[15px] border border-[#B8DEC7] bg-[#EEF8F1] px-4 py-3 text-[10px] font-bold text-[#2F7149]">{bookingOfferNotice}</div>}
               {bookingOfferError && !activeBookingOffer && (
                 <div className="flex items-center justify-between gap-3 rounded-[15px] border border-[#F1C8C4] bg-[#FFF3F1] px-4 py-3 text-[10px] font-semibold text-[#A43C32]" role="status" aria-live="polite">
                   <span>{bookingOfferError}</span>
-                  <button type="button" onClick={refreshBookingOffers} className="shrink-0 font-black underline underline-offset-2">Retry</button>
+                  <button type="button" onClick={() => refreshBookingOffers({ manual: true })} className="shrink-0 font-black underline underline-offset-2">Retry</button>
                 </div>
               )}
 
