@@ -2003,6 +2003,7 @@ function DriverDashboard() {
                             <p className="text-[8px] font-bold tracking-[0.12em] text-[#95897C]">MONTHLY RIDE REQUEST</p>
                             <h3 className="mt-1 text-[16px] font-black text-black">{offer.child?.name || "Student"}</h3>
                             <p className="mt-0.5 truncate text-[9px] text-[#8C8276]">{offer.child?.school || "School route"}</p>
+                            <p className="mt-1 text-[8px] font-bold text-[#9A6A00]">Sent to ASAN ID {offer.targetDriverId || driver?.driverId || "this driver"}</p>
                           </div>
                           <p className="shrink-0 text-[17px] font-black text-[#936400]">₹{Number(offer.monthlyPrice || 0).toLocaleString("en-IN")}<span className="block text-right text-[7px] font-bold text-[#95897C]">PER MONTH</span></p>
                         </div>
