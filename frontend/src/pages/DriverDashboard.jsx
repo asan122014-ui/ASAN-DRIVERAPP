@@ -205,7 +205,7 @@ function DriverDashboard() {
     knownBookingOfferIdsRef.current.add(requestId);
     socketBookingOffersRef.current.set(requestId, incomingOffer);
     setBookingOffers((current) => [incomingOffer, ...current.filter((offer) => offer.requestId !== requestId)]);
-    if (isNewOffer) setActiveBookingOfferId((currentId) => currentId || requestId);
+    if (isNewOffer) setActiveBookingOfferId(requestId);
   }, [refreshBookingOffers]);
 
   const handleBookingOfferCancelled = useCallback((event) => {
@@ -238,7 +238,7 @@ function DriverDashboard() {
 
   useEffect(() => {
     refreshBookingOffers();
-    const timer = window.setInterval(refreshBookingOffers, 20000);
+    const timer = window.setInterval(refreshBookingOffers, 5000);
     return () => window.clearInterval(timer);
   }, [refreshBookingOffers]);
 
@@ -788,6 +788,7 @@ function DriverDashboard() {
     socket.on(
       "connect",
       () => {
+        setBookingOfferError("");
         console.log(
           "Socket connected:",
           socket.id
@@ -823,6 +824,7 @@ function DriverDashboard() {
       (
         error
       ) => {
+        setBookingOfferError("Live requests are reconnecting. Keep this screen open; requests will refresh automatically.");
         console.error(
           "Socket error:",
           error.message
@@ -1943,6 +1945,12 @@ function DriverDashboard() {
               </div>
 
               {bookingOfferNotice && <div className="rounded-[15px] border border-[#B8DEC7] bg-[#EEF8F1] px-4 py-3 text-[10px] font-bold text-[#2F7149]">{bookingOfferNotice}</div>}
+              {bookingOfferError && !activeBookingOffer && (
+                <div className="flex items-center justify-between gap-3 rounded-[15px] border border-[#F1C8C4] bg-[#FFF3F1] px-4 py-3 text-[10px] font-semibold text-[#A43C32]" role="status" aria-live="polite">
+                  <span>{bookingOfferError}</span>
+                  <button type="button" onClick={refreshBookingOffers} className="shrink-0 font-black underline underline-offset-2">Retry</button>
+                </div>
+              )}
 
               {bookingOffers.length > 0 && (
                 <section className="space-y-3" aria-label="New ride requests">
