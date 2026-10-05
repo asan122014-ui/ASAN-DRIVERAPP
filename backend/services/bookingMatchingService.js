@@ -40,13 +40,27 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
   io?.to(driver.driverId).emit("booking_driver_offer", {
     requestId: String(request._id),
     bookingId: String(booking._id),
+    child: { name: child?.name || booking.child.name, school: child?.school || booking.child.school, grade: child?.grade || booking.child.grade || "" },
+    route: {
+      pickup: booking.route.pickup,
+      dropoff: booking.route.dropoff,
+      distanceKm: booking.route.distanceKm,
+      durationMinutes: booking.route.durationMinutes,
+      pickupTime: booking.route.pickupTime,
+      schoolPickupTime: booking.route.schoolPickupTime,
+    },
+    vehicleType: booking.quote?.vehicleType,
     childName: child?.name || booking.child.name,
     school: child?.school || booking.child.school,
     pickup: booking.route.pickup,
     dropoff: booking.route.dropoff,
     distanceKm: booking.route.distanceKm,
+    durationMinutes: booking.route.durationMinutes,
+    pickupTime: booking.route.pickupTime,
+    schoolPickupTime: booking.route.schoolPickupTime,
     monthlyPrice: booking.quote.totalMonthly,
     expiresAt: request.offerExpiresAt,
+    createdAt: request.createdAt,
     notificationId: String(notification._id),
   });
 };
