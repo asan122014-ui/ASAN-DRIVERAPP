@@ -65,6 +65,7 @@ function DriverDashboard() {
     useState(0);
 
   const [bookingOffers, setBookingOffers] = useState([]);
+  const [activeBookingOfferId, setActiveBookingOfferId] = useState(null);
   const [bookingOfferBusy, setBookingOfferBusy] = useState("");
   const [bookingOfferError, setBookingOfferError] = useState("");
   const [bookingOfferNotice, setBookingOfferNotice] = useState("");
@@ -146,6 +147,8 @@ function DriverDashboard() {
   const streamRef =
     useRef(null);
 
+  const knownBookingOfferIdsRef = useRef(new Set());
+
   const peersRef =
     useRef({});
 
@@ -156,7 +159,11 @@ function DriverDashboard() {
     if (!driver?.driverId || !localStorage.getItem("accessToken")) return;
     try {
       const response = await axios.get("/driver-request/offers");
-      setBookingOffers(Array.isArray(response.data?.data) ? response.data.data : []);
+      const offers = Array.isArray(response.data?.data) ? response.data.data : [];
+      const incomingOffer = offers.find((offer) => !knownBookingOfferIdsRef.current.has(offer.requestId));
+      offers.forEach((offer) => knownBookingOfferIdsRef.current.add(offer.requestId));
+      if (incomingOffer) setActiveBookingOfferId((currentId) => currentId || incomingOffer.requestId);
+      setBookingOffers(offers);
       setBookingOfferError("");
     } catch (error) {
       setBookingOfferError(error?.response?.data?.message || "Unable to refresh ride offers.");
@@ -169,6 +176,7 @@ function DriverDashboard() {
     try {
       await axios.put(`/driver-request/${requestId}/${action}`);
       setBookingOffers((current) => current.filter((offer) => offer.requestId !== requestId));
+      setActiveBookingOfferId((activeId) => activeId === requestId ? bookingOffers.find((offer) => offer.requestId !== requestId)?.requestId || null : activeId);
       if (action === "accept") setBookingOfferNotice("Ride request accepted. The parent has been notified.");
       else await refreshBookingOffers();
     } catch (error) {
@@ -177,7 +185,7 @@ function DriverDashboard() {
     } finally {
       setBookingOfferBusy("");
     }
-  }, [refreshBookingOffers]);
+  }, [bookingOffers, refreshBookingOffers]);
 
   useEffect(() => {
     refreshBookingOffers();
@@ -243,6 +251,8 @@ function DriverDashboard() {
       );
     };
   }, []);
+
+  const activeBookingOffer = bookingOffers.find((offer) => offer.requestId === activeBookingOfferId);
 
   /* =======================================================
      SELECT DEFAULT TRIP
@@ -745,6 +755,7 @@ function DriverDashboard() {
     );
 
     socket.on("booking_driver_offer", refreshBookingOffers);
+    socket.on("booking_request_cancelled", refreshBookingOffers);
 
     socket.io.engine.on(
       "upgrade",
@@ -1669,6 +1680,44 @@ function DriverDashboard() {
             "none",
         }}
       />
+
+      {activeBookingOffer && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[3px] sm:items-center sm:p-5" role="presentation">
+          <section className="w-full max-w-[440px] overflow-hidden rounded-t-[28px] border border-[#EED69B] bg-[#FFFDF8] shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:rounded-[28px]" role="dialog" aria-modal="true" aria-labelledby="booking-offer-title">
+            <div className="h-1.5 bg-[#FFB000]" />
+            <div className="p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[9px] font-black tracking-[0.18em] text-[#B87700]">NEW MONTHLY RIDE REQUEST</p>
+                  <h2 id="booking-offer-title" className="mt-1 text-[21px] font-black text-black">A parent needs a driver</h2>
+                  <p className="mt-1 text-[11px] text-[#8C8276]">Review the route and monthly price before responding.</p>
+                </div>
+                <div className="shrink-0 rounded-[16px] bg-[#FFF1C8] px-3 py-2 text-right">
+                  <p className="text-[7px] font-black tracking-[0.12em] text-[#8C6A18]">MONTHLY PRICE</p>
+                  <p className="mt-0.5 text-[19px] font-black text-[#936400]">₹{Number(activeBookingOffer.monthlyPrice || 0).toLocaleString("en-IN")}</p>
+                </div>
+              </div>
+              <div className="mt-5 rounded-[18px] border border-[#EFE4D0] bg-white p-4">
+                <p className="text-[8px] font-black tracking-[0.14em] text-[#95897C]">STUDENT</p>
+                <p className="mt-1 text-[15px] font-black text-black">{activeBookingOffer.child?.name || "Student"}</p>
+                <p className="mt-0.5 text-[10px] text-[#766D61]">{activeBookingOffer.child?.school || "School not specified"}{activeBookingOffer.child?.grade ? ` · ${activeBookingOffer.child.grade}` : ""}</p>
+                <div className="my-3 border-t border-dashed border-[#E8DCC8]" />
+                <div className="space-y-2.5 text-[10px] text-[#51483B]">
+                  <p><b>Home pickup:</b> {activeBookingOffer.route?.pickup || "—"}{activeBookingOffer.route?.pickupTime ? ` · ${activeBookingOffer.route.pickupTime}` : ""}</p>
+                  <p><b>School:</b> {activeBookingOffer.route?.dropoff || "—"}{activeBookingOffer.route?.schoolPickupTime ? ` · ${activeBookingOffer.route.schoolPickupTime}` : ""}</p>
+                  <p className="font-semibold text-[#8C8276]">{activeBookingOffer.route?.distanceKm || "—"} km · {activeBookingOffer.route?.durationMinutes || "—"} min · {activeBookingOffer.vehicleType || "Vehicle not specified"}</p>
+                </div>
+              </div>
+              {bookingOfferError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[10px] font-semibold text-red-700">{bookingOfferError}</p>}
+              <div className="mt-4 grid grid-cols-2 gap-2.5">
+                <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => respondToBookingOffer(activeBookingOffer.requestId, "decline")} className="h-12 rounded-[15px] border border-[#E5DAC8] bg-white text-[11px] font-black text-[#6D6255] disabled:opacity-50">{bookingOfferBusy === activeBookingOffer.requestId ? "Please wait…" : "Decline"}</button>
+                <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => respondToBookingOffer(activeBookingOffer.requestId, "accept")} className="h-12 rounded-[15px] bg-[#FFB000] text-[11px] font-black text-black disabled:opacity-50">{bookingOfferBusy === activeBookingOffer.requestId ? "Please wait…" : "Accept request"}</button>
+              </div>
+              <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => setActiveBookingOfferId(null)} className="mt-3 h-10 w-full text-[10px] font-bold text-[#8C8276] disabled:opacity-50">Review later</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* ===================================================
           CAMERA MODAL
