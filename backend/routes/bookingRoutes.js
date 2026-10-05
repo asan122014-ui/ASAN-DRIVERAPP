@@ -108,7 +108,9 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     if (!cancellableStatuses.includes(booking.status)) return res.status(409).json({ success: false, message: "This booking can no longer be cancelled from the dashboard" });
 
     const payment = booking.status === "awaiting_payment" ? await BookingPayment.findOne({ bookingId: booking._id, parentId: req.parent._id }) : null;
-    if (payment?.orderId.startsWith("order_") && payment.status !== "CANCELLED") {
+    const terminalPaymentStatuses = new Set(["PAID", "FAILED", "EXPIRED", "TERMINATED", "CANCELLED", "REFUNDING", "REFUNDED", "REFUND_FAILED"]);
+    if (payment?.status === "PAID") return res.status(409).json({ success: false, message: "This booking has already been paid and cannot be cancelled." });
+    if (payment?.orderId.startsWith("order_") && !terminalPaymentStatuses.has(payment.status)) {
       const paymentStatus = await reconcilePayment(payment, req.app.get("io"));
       if (paymentStatus.paid) return res.status(409).json({ success: false, message: "Payment was completed and the ride service is active, so this booking can no longer be cancelled." });
     }
@@ -121,29 +123,34 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     if (!openRequest) return res.status(409).json({ success: false, message: "The driver request status changed. Refresh the booking status." });
     const offeredDriverIds = [...(openRequest.currentOfferDriverIds || [])];
     if (openRequest.assignedDriverId) offeredDriverIds.push(openRequest.assignedDriverId);
+    const requestFilter = { _id: booking.driverRequestId, parentId: req.parent._id, status: booking.status === "awaiting_payment" ? "Assigned" : "Pending" };
+    const requestUpdate = { $set: { status: "Cancelled", matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date(), rejectionReason: "Cancelled by parent" } };
     let cancelledBooking;
     let cancelledRequest;
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
-        cancelledBooking = await Booking.findOneAndUpdate(
-          { _id: booking._id, parentId: req.parent._id, status: booking.status },
-          { $set: { status: "cancelled" } },
-          { new: true, session }
-        );
-        if (!cancelledBooking) throw new Error("BOOKING_STATUS_CHANGED");
-        cancelledRequest = await DriverRequest.findOneAndUpdate(
-          { _id: booking.driverRequestId, parentId: req.parent._id, status: booking.status === "awaiting_payment" ? "Assigned" : "Pending" },
-          { $set: { status: "Cancelled", matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date(), rejectionReason: "Cancelled by parent" } },
-          { new: true, session }
-        );
-        if (!cancelledRequest) throw new Error("DRIVER_REQUEST_STATUS_CHANGED");
-        if (payment) await BookingPayment.updateOne({ _id: payment._id, status: { $ne: "PAID" } }, { $set: { status: "CANCELLED" } }, { session });
-      });
-    } catch (error) {
-      if (["BOOKING_STATUS_CHANGED", "DRIVER_REQUEST_STATUS_CHANGED"].includes(error.message)) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
-      throw error;
-    } finally { await session.endSession(); }
+    if (booking.status === "awaiting_payment") {
+      // Claim cancellation on the booking first so a concurrent payment reconciliation
+      // either wins and activates the service, or sees a cancelled booking and refunds.
+      cancelledBooking = await Booking.findOneAndUpdate(
+        { _id: booking._id, parentId: req.parent._id, status: "awaiting_payment" },
+        { $set: { status: "cancelled" } },
+        { new: true }
+      );
+      if (!cancelledBooking) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
+      cancelledRequest = await DriverRequest.findOneAndUpdate(requestFilter, requestUpdate, { new: true });
+      if (!cancelledRequest) console.error("CANCEL BOOKING: assigned driver request was already changed", String(booking.driverRequestId));
+    } else {
+      // A driver can accept only while this request is Pending. Claiming the request
+      // first makes acceptance and cancellation mutually exclusive without a DB transaction.
+      cancelledRequest = await DriverRequest.findOneAndUpdate(requestFilter, requestUpdate, { new: true });
+      if (!cancelledRequest) return res.status(409).json({ success: false, message: "A driver has already responded to this request. Refresh the booking status." });
+      cancelledBooking = await Booking.findOneAndUpdate(
+        { _id: booking._id, parentId: req.parent._id, status: booking.status },
+        { $set: { status: "cancelled" } },
+        { new: true }
+      );
+      if (!cancelledBooking) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
+    }
+    if (payment) await BookingPayment.updateOne({ _id: payment._id, status: { $ne: "PAID" } }, { $set: { status: "CANCELLED" } });
 
     const io = req.app.get("io");
     for (const driverId of offeredDriverIds) {
@@ -154,7 +161,9 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     return res.json({ success: true, message: payment ? "Booking cancelled. If a payment was completed at the same time, it will be refunded automatically." : "Booking request cancelled", data: cancelledBooking });
   } catch (error) {
     console.error("CANCEL BOOKING ERROR", error);
-    return res.status(500).json({ success: false, message: "Unable to cancel this booking request" });
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
+    const message = status < 500 ? error.message : "Unable to cancel this booking request. Please retry.";
+    return res.status(status).json({ success: false, message });
   }
 });
 
