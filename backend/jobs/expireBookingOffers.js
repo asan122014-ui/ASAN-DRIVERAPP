@@ -20,9 +20,8 @@ export const startBookingOfferExpiryWorker = (io) => {
           if (request.requestType === "existing_driver") {
             await DriverRequest.updateOne(
               { _id: request._id, status: "Pending", matchingStatus: "Offered", offerExpiresAt: { $lte: new Date() } },
-              { $set: { matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date() } }
+              { $set: { offerExpiresAt: null } }
             );
-            io?.to(String(request.parentId)).emit("booking_driver_offer_expired", { requestId: String(request._id) });
           } else {
             await dispatchNextOfferBatch({ requestId: request._id, io });
           }

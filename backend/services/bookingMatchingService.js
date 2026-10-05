@@ -76,8 +76,15 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
 export const dispatchNextOfferBatch = async ({ requestId, io }) => {
   const request = await DriverRequest.findById(requestId);
   if (!request || request.status !== "Pending" || request.matchingStatus === "Accepted") return { request, offersSent: 0 };
-  if (request.matchingStatus === "Offered" && request.offerExpiresAt?.getTime() > Date.now()) return { request, offersSent: 0 };
+  if (request.matchingStatus === "Offered" && (!request.offerExpiresAt || request.offerExpiresAt.getTime() > Date.now())) {
+    return { request, offersSent: (request.currentOfferDriverIds || []).length };
+  }
   if (request.matchingStatus === "Offered") {
+    if (request.requestType === "existing_driver") {
+      request.offerExpiresAt = null;
+      await request.save();
+      return { request, offersSent: (request.currentOfferDriverIds || []).length };
+    }
     request.rejectedDriverIds = [...new Set([...(request.rejectedDriverIds || []), ...(request.currentOfferDriverIds || [])])];
     request.currentOfferDriverIds = [];
     request.matchingStatus = "Searching";
@@ -105,7 +112,8 @@ export const dispatchNextOfferBatch = async ({ requestId, io }) => {
     request.matchingStatus = "Offered";
     request.offeredDriverIds = [driver.driverId];
     request.currentOfferDriverIds = [driver.driverId];
-    request.offerExpiresAt = new Date(Date.now() + OFFER_TTL_MS);
+    // A direct request stays available until this specific driver accepts or declines.
+    request.offerExpiresAt = null;
     await request.save();
     await notifyDriver({ driver, request, booking, child, io });
     return { request, offersSent: 1 };

@@ -12,17 +12,44 @@ const loadOfferForDriver = async (requestId, driverId) => {
   const driverRequest = await DriverRequest.findById(requestId);
   if (!driverRequest || driverRequest.status !== "Pending") return { error: "This ride request is no longer open.", status: 409 };
   if (driverRequest.matchingStatus !== "Offered" || !(driverRequest.currentOfferDriverIds || []).includes(driverId)) return { error: "This ride request is not currently offered to you.", status: 403 };
-  if (!driverRequest.offerExpiresAt || driverRequest.offerExpiresAt.getTime() <= Date.now()) return { error: "This ride offer has expired.", status: 410 };
+  if (driverRequest.offerExpiresAt && driverRequest.offerExpiresAt.getTime() <= Date.now()) return { error: "This ride offer has expired.", status: 410 };
   return { driverRequest };
 };
 
 export const getDriverBookingOffers = async (req, res) => {
   try {
     const driverId = normalizeDriverId(req.driver.driverId);
-    const requests = await DriverRequest.find({ status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, offerExpiresAt: { $gt: new Date() } })
+    const requests = await DriverRequest.find({ status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] })
       .populate("bookingId")
       .populate("childId", "name school grade")
       .sort({ createdAt: -1 });
+
+    // Restore direct requests that an earlier backend version marked exhausted only because
+    // their five-minute offer window elapsed while the driver app was closed.
+    const timedOutDirectRequests = await DriverRequest.find({
+      status: "Pending",
+      requestType: "existing_driver",
+      requestedDriverId: driverId,
+      rejectedDriverIds: { $nin: [driverId] },
+      $or: [
+        { matchingStatus: "Exhausted", rejectionReason: { $in: ["", null] } },
+        { matchingStatus: "Offered", offerExpiresAt: { $lte: new Date() } },
+      ],
+    }).limit(20);
+    for (const request of timedOutDirectRequests) {
+      request.matchingStatus = "Offered";
+      request.currentOfferDriverIds = [driverId];
+      request.offeredDriverIds = [...new Set([...(request.offeredDriverIds || []), driverId])];
+      request.offerExpiresAt = null;
+      await request.save();
+    }
+
+    if (timedOutDirectRequests.length) {
+      const recovered = await DriverRequest.find({ _id: { $in: timedOutDirectRequests.map((request) => request._id) } })
+        .populate("bookingId")
+        .populate("childId", "name school grade");
+      requests.push(...recovered);
+    }
     const data = requests.filter((item) => item.bookingId).map((item) => ({
       requestId: String(item._id),
       bookingId: String(item.bookingId._id),
@@ -53,7 +80,7 @@ export const acceptDriverBookingOffer = async (req, res) => {
     if (parent.driverId && normalizeDriverId(parent.driverId) !== driverId) return res.status(409).json({ success: false, message: "This parent is already linked to another driver." });
 
     const accepted = await DriverRequest.findOneAndUpdate(
-      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, offerExpiresAt: { $gt: new Date() } },
+      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
       { $set: { status: "Assigned", matchingStatus: "Accepted", assignedDriverId: driverId, assignedAt: new Date(), respondedAt: new Date(), offerExpiresAt: null, rejectionReason: "" } },
       { new: true }
     );
@@ -94,7 +121,7 @@ export const rejectDriverBookingOffer = async (req, res) => {
     if (loaded.error) return res.status(loaded.status).json({ success: false, message: loaded.error });
     const request = loaded.driverRequest;
     const rejected = await DriverRequest.findOneAndUpdate(
-      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, offerExpiresAt: { $gt: new Date() } },
+      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
       { $addToSet: { rejectedDriverIds: driverId }, $set: { respondedAt: new Date() } },
       { new: true }
     );
