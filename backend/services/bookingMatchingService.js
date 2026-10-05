@@ -27,17 +27,24 @@ const haversineKm = (a, b) => {
 
 const notifyDriver = async ({ driver, request, booking, child, io }) => {
   const message = `New ASAN ride request for ${child?.name || booking.child.name}. Monthly price ₹${Number(booking.quote.totalMonthly).toLocaleString("en-IN")}.`;
-  const notification = await Notification.create({
-    driver: driver.driverId,
-    recipientType: "driver",
-    notificationKey: "BOOKING_DRIVER_OFFER",
-    title: "New ride request",
-    message,
-    type: "general",
-    priority: "high",
-    meta: { requestId: String(request._id), bookingId: String(booking._id), monthlyPrice: booking.quote.totalMonthly, expiresAt: request.offerExpiresAt },
-  });
-  io?.to(driver.driverId).emit("booking_driver_offer", {
+  let notificationId;
+  try {
+    const notification = await Notification.create({
+      driver: normalizeDriverId(driver.driverId),
+      recipientType: "driver",
+      notificationKey: "BOOKING_DRIVER_OFFER",
+      title: "New ride request",
+      message,
+      type: "general",
+      priority: "high",
+      meta: { requestId: String(request._id), bookingId: String(booking._id), monthlyPrice: booking.quote.totalMonthly, expiresAt: request.offerExpiresAt },
+    });
+    notificationId = String(notification._id);
+  } catch (error) {
+    // Notification storage is secondary; the live offer and polling API must still work.
+    console.error("BOOKING OFFER NOTIFICATION PERSISTENCE ERROR", error.message);
+  }
+  io?.to(normalizeDriverId(driver.driverId)).emit("booking_driver_offer", {
     requestId: String(request._id),
     bookingId: String(booking._id),
     child: { name: child?.name || booking.child.name, school: child?.school || booking.child.school, grade: child?.grade || booking.child.grade || "" },
@@ -61,7 +68,7 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
     monthlyPrice: booking.quote.totalMonthly,
     expiresAt: request.offerExpiresAt,
     createdAt: request.createdAt,
-    notificationId: String(notification._id),
+    ...(notificationId ? { notificationId } : {}),
   });
 };
 
