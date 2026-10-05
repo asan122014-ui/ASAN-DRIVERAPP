@@ -24,16 +24,18 @@ export const getDriverBookingOffers = async (req, res) => {
       .populate("childId", "name school grade")
       .sort({ createdAt: -1 });
 
-    // Restore direct requests that an earlier backend version marked exhausted only because
-    // their five-minute offer window elapsed while the driver app was closed.
+    // Ensure every still-pending direct request addressed to this driver is visible, including
+    // requests left in a non-offered state by an older server or a missed dispatch.
     const timedOutDirectRequests = await DriverRequest.find({
       status: "Pending",
       requestType: "existing_driver",
       requestedDriverId: driverId,
       rejectedDriverIds: { $nin: [driverId] },
+      matchingStatus: { $ne: "Accepted" },
       $or: [
-        { matchingStatus: "Exhausted", rejectionReason: { $in: ["", null] } },
-        { matchingStatus: "Offered", offerExpiresAt: { $lte: new Date() } },
+        { matchingStatus: { $ne: "Offered" } },
+        { offerExpiresAt: { $lte: new Date() } },
+        { currentOfferDriverIds: { $ne: driverId } },
       ],
     }).limit(20);
     for (const request of timedOutDirectRequests) {
@@ -41,6 +43,7 @@ export const getDriverBookingOffers = async (req, res) => {
       request.currentOfferDriverIds = [driverId];
       request.offeredDriverIds = [...new Set([...(request.offeredDriverIds || []), driverId])];
       request.offerExpiresAt = null;
+      request.rejectionReason = "";
       await request.save();
     }
 
