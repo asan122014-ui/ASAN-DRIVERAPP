@@ -64,6 +64,11 @@ function DriverDashboard() {
   const [unreadCount, setUnreadCount] =
     useState(0);
 
+  const [bookingOffers, setBookingOffers] = useState([]);
+  const [bookingOfferBusy, setBookingOfferBusy] = useState("");
+  const [bookingOfferError, setBookingOfferError] = useState("");
+  const [bookingOfferNotice, setBookingOfferNotice] = useState("");
+
   const [
     morningCompleted,
     setMorningCompleted,
@@ -146,6 +151,39 @@ function DriverDashboard() {
 
   const iceCandidateQueueRef =
     useRef({});
+
+  const refreshBookingOffers = useCallback(async () => {
+    if (!driver?.driverId || !localStorage.getItem("accessToken")) return;
+    try {
+      const response = await axios.get("/driver-request/offers");
+      setBookingOffers(Array.isArray(response.data?.data) ? response.data.data : []);
+      setBookingOfferError("");
+    } catch (error) {
+      setBookingOfferError(error?.response?.data?.message || "Unable to refresh ride offers.");
+    }
+  }, [driver?.driverId]);
+
+  const respondToBookingOffer = useCallback(async (requestId, action) => {
+    setBookingOfferBusy(requestId);
+    setBookingOfferError("");
+    try {
+      await axios.put(`/driver-request/${requestId}/${action}`);
+      setBookingOffers((current) => current.filter((offer) => offer.requestId !== requestId));
+      if (action === "accept") setBookingOfferNotice("Ride request accepted. The parent has been notified.");
+      else await refreshBookingOffers();
+    } catch (error) {
+      setBookingOfferError(error?.response?.data?.message || "Unable to respond to this ride request.");
+      await refreshBookingOffers();
+    } finally {
+      setBookingOfferBusy("");
+    }
+  }, [refreshBookingOffers]);
+
+  useEffect(() => {
+    refreshBookingOffers();
+    const timer = window.setInterval(refreshBookingOffers, 20000);
+    return () => window.clearInterval(timer);
+  }, [refreshBookingOffers]);
 
   /* =======================================================
      SLIDER
@@ -706,6 +744,8 @@ function DriverDashboard() {
       }
     );
 
+    socket.on("booking_driver_offer", refreshBookingOffers);
+
     socket.io.engine.on(
       "upgrade",
       (
@@ -946,6 +986,7 @@ function DriverDashboard() {
     driver?.driverId,
     createPeerConnection,
     flushIceCandidates,
+    refreshBookingOffers,
   ]);
 
   /* =======================================================
@@ -1800,6 +1841,42 @@ function DriverDashboard() {
                   </p>
                 </div>
               </div>
+
+              {bookingOfferNotice && <div className="rounded-[15px] border border-[#B8DEC7] bg-[#EEF8F1] px-4 py-3 text-[10px] font-bold text-[#2F7149]">{bookingOfferNotice}</div>}
+
+              {bookingOffers.length > 0 && (
+                <section className="space-y-3" aria-label="New ride requests">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-[8px] font-black tracking-[0.16em] text-[#B87700]">NEW RIDE REQUESTS</p>
+                    <span className="rounded-full bg-[#FFB000] px-2.5 py-1 text-[8px] font-black text-black">{bookingOffers.length} NEW</span>
+                  </div>
+                  {bookingOffers.map((offer) => (
+                    <article key={offer.requestId} className="overflow-hidden rounded-[22px] border border-[#EED69B] bg-[#FFFDF8]">
+                      <div className="h-[4px] bg-[#FFB000]" />
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[8px] font-bold tracking-[0.12em] text-[#95897C]">MONTHLY RIDE REQUEST</p>
+                            <h3 className="mt-1 text-[16px] font-black text-black">{offer.child?.name || "Student"}</h3>
+                            <p className="mt-0.5 truncate text-[9px] text-[#8C8276]">{offer.child?.school || "School route"}</p>
+                          </div>
+                          <p className="shrink-0 text-[17px] font-black text-[#936400]">₹{Number(offer.monthlyPrice || 0).toLocaleString("en-IN")}<span className="block text-right text-[7px] font-bold text-[#95897C]">PER MONTH</span></p>
+                        </div>
+                        <div className="mt-3 space-y-2 rounded-[14px] bg-[#FFF8E8] p-3 text-[9px] text-[#51483B]">
+                          <p><b>Pickup:</b> {offer.route?.pickup || "—"}</p>
+                          <p><b>School:</b> {offer.route?.dropoff || "—"}</p>
+                          <p className="text-[#8C8276]">{offer.route?.distanceKm || "—"} km · {offer.vehicleType || "Vehicle not specified"}</p>
+                        </div>
+                        {bookingOfferError && <p className="mt-2 text-[9px] font-semibold text-red-600">{bookingOfferError}</p>}
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => respondToBookingOffer(offer.requestId, "decline")} className="h-10 rounded-[13px] border border-[#E5DAC8] bg-white text-[9px] font-black text-[#6D6255] disabled:opacity-50">{bookingOfferBusy === offer.requestId ? "Please wait…" : "Decline"}</button>
+                          <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => respondToBookingOffer(offer.requestId, "accept")} className="h-10 rounded-[13px] bg-[#FFB000] text-[9px] font-black text-black disabled:opacity-50">{bookingOfferBusy === offer.requestId ? "Please wait…" : "Accept request"}</button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </section>
+              )}
 
               {/* =================================================
                   PRIMARY DUTY CARD
