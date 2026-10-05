@@ -154,7 +154,7 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
 
     const io = req.app.get("io");
     for (const driverId of offeredDriverIds) {
-      io?.to(String(driverId)).emit("booking_request_cancelled", { requestId: String(cancelledRequest._id), bookingId: String(booking._id) });
+      io?.to(String(driverId)).emit("booking_request_cancelled", { requestId: String(cancelledRequest?._id || booking.driverRequestId), bookingId: String(booking._id) });
     }
     io?.to(String(req.parent._id)).emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
     io?.to("admin").emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
