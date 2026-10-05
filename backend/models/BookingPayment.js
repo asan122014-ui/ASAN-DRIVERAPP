@@ -10,7 +10,7 @@ const schema = new mongoose.Schema({
   amount: { type: Number, required: true, min: 1 },
   currency: { type: String, default: "INR" },
   environment: { type: String, enum: ["sandbox", "production"], required: true },
-  status: { type: String, enum: ["CREATING", "CREATED", "ACTIVE", "PENDING", "FAILED", "EXPIRED", "TERMINATED", "PAID"], default: "CREATING" },
+  status: { type: String, enum: ["CREATING", "CREATED", "ACTIVE", "PENDING", "FAILED", "EXPIRED", "TERMINATED", "CANCELLED", "REFUNDING", "REFUNDED", "REFUND_FAILED", "PAID"], default: "CREATING" },
   paymentId: { type: String, default: "" },
   paidAt: Date,
 }, { timestamps: true });

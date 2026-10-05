@@ -5,7 +5,9 @@ import Booking from "../models/Booking.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
 import DriverRequest from "../models/DriverRequest.js";
+import BookingPayment from "../models/BookingPayment.js";
 import verifyParent from "../middleware/verifyParent.js";
+import { reconcilePayment } from "../services/bookingPaymentService.js";
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
@@ -99,32 +101,49 @@ router.get("/mine", verifyParent, async (req, res) => {
 router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });
-    const cancellableStatuses = ["awaiting_driver", "driver_searching"];
+    const cancellableStatuses = ["awaiting_driver", "driver_searching", "awaiting_payment"];
     const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
     if (booking.status === "cancelled") return res.json({ success: true, message: "Booking is already cancelled", data: booking });
     if (!cancellableStatuses.includes(booking.status)) return res.status(409).json({ success: false, message: "This booking can no longer be cancelled from the dashboard" });
 
-    const openRequest = booking.driverRequestId
-      ? await DriverRequest.findOne({ _id: booking.driverRequestId, parentId: req.parent._id, status: "Pending" }).select("currentOfferDriverIds")
-      : null;
-    if (!openRequest) return res.status(409).json({ success: false, message: "A driver has already responded to this request. Refresh the booking status." });
-    const offeredDriverIds = [...(openRequest.currentOfferDriverIds || [])];
-    const cancelledRequest = booking.driverRequestId
-      ? await DriverRequest.findOneAndUpdate(
-        { _id: booking.driverRequestId, parentId: req.parent._id, status: "Pending" },
-        { $set: { status: "Cancelled", matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date(), rejectionReason: "Cancelled by parent" } },
-        { new: true }
-      )
-      : null;
-    if (!cancelledRequest) return res.status(409).json({ success: false, message: "A driver has already responded to this request. Refresh the booking status." });
+    const payment = booking.status === "awaiting_payment" ? await BookingPayment.findOne({ bookingId: booking._id, parentId: req.parent._id }) : null;
+    if (payment?.orderId.startsWith("order_") && payment.status !== "CANCELLED") {
+      const paymentStatus = await reconcilePayment(payment, req.app.get("io"));
+      if (paymentStatus.paid) return res.status(409).json({ success: false, message: "Payment was completed and the ride service is active, so this booking can no longer be cancelled." });
+    }
+    const currentBooking = await Booking.findOne({ _id: booking._id, parentId: req.parent._id });
+    if (currentBooking?.status !== booking.status) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
 
-    const cancelledBooking = await Booking.findOneAndUpdate(
-      { _id: booking._id, parentId: req.parent._id, status: { $in: cancellableStatuses } },
-      { $set: { status: "cancelled" } },
-      { new: true }
-    );
-    if (!cancelledBooking) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
+    const openRequest = booking.driverRequestId
+      ? await DriverRequest.findOne({ _id: booking.driverRequestId, parentId: req.parent._id, status: booking.status === "awaiting_payment" ? "Assigned" : "Pending" }).select("currentOfferDriverIds assignedDriverId")
+      : null;
+    if (!openRequest) return res.status(409).json({ success: false, message: "The driver request status changed. Refresh the booking status." });
+    const offeredDriverIds = [...(openRequest.currentOfferDriverIds || [])];
+    if (openRequest.assignedDriverId) offeredDriverIds.push(openRequest.assignedDriverId);
+    let cancelledBooking;
+    let cancelledRequest;
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        cancelledBooking = await Booking.findOneAndUpdate(
+          { _id: booking._id, parentId: req.parent._id, status: booking.status },
+          { $set: { status: "cancelled" } },
+          { new: true, session }
+        );
+        if (!cancelledBooking) throw new Error("BOOKING_STATUS_CHANGED");
+        cancelledRequest = await DriverRequest.findOneAndUpdate(
+          { _id: booking.driverRequestId, parentId: req.parent._id, status: booking.status === "awaiting_payment" ? "Assigned" : "Pending" },
+          { $set: { status: "Cancelled", matchingStatus: "Exhausted", currentOfferDriverIds: [], offerExpiresAt: null, respondedAt: new Date(), rejectionReason: "Cancelled by parent" } },
+          { new: true, session }
+        );
+        if (!cancelledRequest) throw new Error("DRIVER_REQUEST_STATUS_CHANGED");
+        if (payment) await BookingPayment.updateOne({ _id: payment._id, status: { $ne: "PAID" } }, { $set: { status: "CANCELLED" } }, { session });
+      });
+    } catch (error) {
+      if (["BOOKING_STATUS_CHANGED", "DRIVER_REQUEST_STATUS_CHANGED"].includes(error.message)) return res.status(409).json({ success: false, message: "The booking status changed. Refresh and try again." });
+      throw error;
+    } finally { await session.endSession(); }
 
     const io = req.app.get("io");
     for (const driverId of offeredDriverIds) {
@@ -132,7 +151,7 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     }
     io?.to(String(req.parent._id)).emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
     io?.to("admin").emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
-    return res.json({ success: true, message: "Booking request cancelled", data: cancelledBooking });
+    return res.json({ success: true, message: payment ? "Booking cancelled. If a payment was completed at the same time, it will be refunded automatically." : "Booking request cancelled", data: cancelledBooking });
   } catch (error) {
     console.error("CANCEL BOOKING ERROR", error);
     return res.status(500).json({ success: false, message: "Unable to cancel this booking request" });
