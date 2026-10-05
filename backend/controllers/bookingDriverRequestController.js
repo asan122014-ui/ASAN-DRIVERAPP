@@ -19,6 +19,23 @@ const loadOfferForDriver = async (requestId, driverId) => {
 export const getDriverBookingOffers = async (req, res) => {
   try {
     const driverId = normalizeDriverId(req.driver.driverId);
+    // Older requests lost requestedDriverId because it was absent from the schema.
+    // Restore it only from this driver's still-open existing-driver bookings.
+    const directBookings = await Booking.find({
+      requestedDriverId: driverId,
+      driverChoice: "existing",
+      status: "awaiting_driver",
+    }).select("_id driverRequestId");
+    for (const booking of directBookings) {
+      if (!booking.driverRequestId) continue;
+      await DriverRequest.updateOne({
+        _id: booking.driverRequestId,
+        bookingId: booking._id,
+        status: "Pending",
+        rejectedDriverIds: { $nin: [driverId] },
+        $or: [{ requestedDriverId: { $exists: false } }, { requestedDriverId: "" }],
+      }, { $set: { requestedDriverId: driverId, requestType: "existing_driver" } });
+    }
     const requests = await DriverRequest.find({ status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] })
       .populate("bookingId")
       .populate("childId", "name school grade")

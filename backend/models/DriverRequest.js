@@ -67,6 +67,14 @@ const driverRequestSchema =
         index: true,
       },
 
+      requestedDriverId: {
+        type: String,
+        default: "",
+        trim: true,
+        uppercase: true,
+        index: true,
+      },
+
       matchingStatus: {
         type: String,
         enum: ["NotStarted", "Searching", "Offered", "Accepted", "Exhausted"],
@@ -216,8 +224,7 @@ driverRequestSchema.pre(
         Assignment means it is no longer rejected.
       */
 
-      this.rejectionReason =
-        "";
+      this.rejectionReason = "";
     }
 
     /* =====================================================
@@ -254,8 +261,7 @@ driverRequestSchema.pre(
       this.assignedAt =
         null;
 
-      this.rejectionReason =
-        "";
+      if (this.matchingStatus !== "Exhausted") this.rejectionReason = "";
     }
   }
 );
