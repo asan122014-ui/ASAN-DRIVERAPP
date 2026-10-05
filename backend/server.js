@@ -41,6 +41,7 @@ import verifyAdmin from "./middleware/verifyAdmin.js";
 ========================================================= */
 
 import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
+import { startBookingOfferExpiryWorker } from "./jobs/expireBookingOffers.js";
 
 /* =========================================================
    ROUTES
@@ -2214,6 +2215,8 @@ connectDB()
       console.log(
         "Database connected successfully"
       );
+
+      startBookingOfferExpiryWorker(io);
 
       /* =====================================================
          VERIFICATION PHOTO CLEANUP

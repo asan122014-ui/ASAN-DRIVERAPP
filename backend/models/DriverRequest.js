@@ -52,6 +52,52 @@ const driverRequestSchema =
         default: null,
       },
 
+      bookingId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Booking",
+        default: null,
+        index: true,
+      },
+
+      requestType: {
+        type: String,
+        enum: ["existing_driver", "new_driver", "legacy"],
+        default: "legacy",
+        index: true,
+      },
+
+      matchingStatus: {
+        type: String,
+        enum: ["NotStarted", "Searching", "Offered", "Accepted", "Exhausted"],
+        default: "NotStarted",
+        index: true,
+      },
+
+      offeredDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      currentOfferDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      rejectedDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      offerExpiresAt: {
+        type: Date,
+        default: null,
+      },
+
+      respondedAt: {
+        type: Date,
+        default: null,
+      },
+
       /* =====================================================
          ASSIGNED DRIVER
       ===================================================== */
@@ -254,6 +300,11 @@ driverRequestSchema.index({
   assignedDriverId: 1,
   status: 1,
   createdAt: -1,
+});
+
+driverRequestSchema.index({
+  matchingStatus: 1,
+  offerExpiresAt: 1,
 });
 
 /* =========================================================

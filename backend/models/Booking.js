@@ -37,6 +37,8 @@ const bookingSchema = new mongoose.Schema({
   },
   driverChoice: { type: String, enum: ["existing", "new"], required: true },
   requestedDriverId: { type: String, default: "", trim: true, uppercase: true },
+  driverRequestId: { type: mongoose.Schema.Types.ObjectId, ref: "DriverRequest", default: null },
+  assignedDriverId: { type: String, default: "", trim: true, uppercase: true },
   status: { type: String, enum: ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active", "cancelled", "expired"], default: "quoted", index: true },
   startDate: { type: Date, default: null },
 }, { timestamps: true });

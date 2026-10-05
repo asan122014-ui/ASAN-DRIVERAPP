@@ -8,6 +8,7 @@ import DriverRequest from "../models/DriverRequest.js";
 import verifyParent from "../middleware/verifyParent.js";
 
 const router = express.Router();
+const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
 const round = (value) => Math.round(Number(value) * 100) / 100;
 const quoteForDistance = (distanceKm, vehicleType = "AUTO", childCount = 1, workingDays = 26) => {
   const distance = Number(distanceKm);
@@ -41,7 +42,6 @@ const getTrafficRoute = async (pickup, dropoff) => {
 router.post("/quote", verifyParent, async (req, res) => {
   try {
     const { child, route, vehicleType = "AUTO", workingDays = 26 } = req.body || {};
-    const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
     const activeBooking = await Booking.findOne({ parentId: req.parent._id, status: { $in: activeStatuses } }).select("_id status");
     if (activeBooking) return res.status(409).json({ success: false, message: "You already have a booking in progress. Complete or cancel it before creating another booking.", bookingId: activeBooking._id, status: activeBooking.status });
     if (!child?.name?.trim() || !child?.school?.trim() || !Number.isInteger(Number(child.age)) || !route?.pickup?.trim() || !route?.dropoff?.trim() || !route?.pickupTime || !route?.schoolPickupTime || !Number.isFinite(Number(route.distanceKm)) || Number(route.distanceKm) <= 0) {
@@ -53,7 +53,7 @@ router.post("/quote", verifyParent, async (req, res) => {
     const trafficRoute = await getTrafficRoute(pickupCoordinates, dropoffCoordinates).catch((error) => { console.error("TRAFFIC ROUTE ERROR", error.message); return null; });
     const finalRoute = trafficRoute || { distanceKm: round(route.distanceKm), durationMinutes: Number(route.durationMinutes) || 0 };
     const pricing = quoteForDistance(finalRoute.distanceKm, vehicleType, Number(child.count || 1), workingDays);
-    return res.status(200).json({ success: true, data: { child: { name: child.name.trim(), age: Number(child.age), school: child.school.trim(), grade: String(child.grade || "").trim() }, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, ...finalRoute, trafficAware: Boolean(trafficRoute) }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
+    return res.status(200).json({ success: true, data: { child: { name: child.name.trim(), age: Number(child.age), school: child.school.trim(), grade: String(child.grade || "").trim() }, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, pickupTime: route.pickupTime, schoolPickupTime: route.schoolPickupTime, ...finalRoute, trafficAware: Boolean(trafficRoute) }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
   } catch (error) { console.error("BOOKING QUOTE ERROR", error); return res.status(500).json({ success: false, message: "Unable to calculate the quote" }); }
 });
 
@@ -73,14 +73,49 @@ router.post("/request", verifyParent, async (req, res) => {
     let childRecord = await Child.findOne({ parentId: req.parent._id, name: child.name.trim() });
     if (!childRecord) childRecord = await Child.create({ parentId: req.parent._id, name: child.name.trim(), age: Number(child.age), gender: String(child.gender || "").trim(), school: child.school.trim(), grade: String(child.grade || "").trim(), section: String(child.section || "").trim(), pickupTime: route.pickupTime, eveningPickup: route.schoolPickupTime, pickupLocation: route.pickup.trim(), dropoffLocation: route.dropoff.trim(), location: route.pickupCoordinates, dropLocationCoords: route.dropoffCoordinates, routeDistance: Number(route.distanceKm), estimatedDuration: Number(route.durationMinutes) || 0 });
     const booking = await Booking.create({ parentId: req.parent._id, childId: childRecord._id, child: { name: child.name.trim(), age: Number(child.age), school: child.school.trim(), grade: String(child.grade || "").trim() }, route, quote, driverChoice, requestedDriverId: normalizedDriverId, startDate: startDate ? new Date(startDate) : null, status: driverChoice === "existing" ? "awaiting_driver" : "driver_searching" });
-    const request = await DriverRequest.create({ parentId: req.parent._id, childId: childRecord._id, requestedDriverId: normalizedDriverId, status: "Pending", notes: `Booking ${booking._id} · Monthly quote ₹${quote.totalMonthly}` });
-    return res.status(201).json({ success: true, message: driverChoice === "existing" ? "Request sent to the driver" : "We are searching for an available driver", data: { booking, request } });
+    const request = await DriverRequest.create({ parentId: req.parent._id, childId: childRecord._id, bookingId: booking._id, requestType: driverChoice === "existing" ? "existing_driver" : "new_driver", requestedDriverId: normalizedDriverId, status: "Pending", matchingStatus: "Searching", notes: `Booking ${booking._id} · Monthly price ₹${quote.totalMonthly}` });
+    booking.driverRequestId = request._id;
+    await booking.save();
+    const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");
+    const dispatch = await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") });
+    const latestBooking = await Booking.findById(booking._id);
+    return res.status(201).json({ success: true, message: driverChoice === "existing" ? "Request sent to your driver" : dispatch.offersSent ? "Your request has been sent to nearby drivers" : "Your request is in the institute review queue", data: { booking: latestBooking, request: dispatch.request } });
   } catch (error) { console.error("BOOKING REQUEST ERROR", error); return res.status(500).json({ success: false, message: "Unable to create the booking request" }); }
 });
 
 router.get("/mine", verifyParent, async (req, res) => {
-  try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
+  try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").populate("driverRequestId", "status matchingStatus assignedDriverId rejectionReason offerExpiresAt").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
   catch (error) { return res.status(500).json({ success: false, message: "Unable to load bookings" }); }
+});
+
+router.put("/mine/:id/retry-search", verifyParent, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
+    if (!booking || booking.status !== "awaiting_driver" || booking.driverChoice !== "existing") return res.status(404).json({ success: false, message: "No eligible existing-driver request was found" });
+    const request = await DriverRequest.findOne({ _id: booking.driverRequestId, parentId: req.parent._id, status: "Pending", matchingStatus: "Exhausted" });
+    if (!request) return res.status(409).json({ success: false, message: "This request cannot be changed to driver search" });
+    request.requestType = "new_driver";
+    request.requestedDriverId = "";
+    request.matchingStatus = "Searching";
+    request.offeredDriverIds = [];
+    request.currentOfferDriverIds = [];
+    request.rejectedDriverIds = [];
+    request.offerExpiresAt = null;
+    request.rejectionReason = "";
+    await request.save();
+    booking.driverChoice = "new";
+    booking.requestedDriverId = "";
+    booking.status = "driver_searching";
+    await booking.save();
+    const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");
+    const dispatch = await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") });
+    const refreshedBooking = await Booking.findById(booking._id).populate("driverRequestId", "status matchingStatus rejectionReason");
+    return res.json({ success: true, message: dispatch.offersSent ? "Your request is now being sent to nearby drivers" : "The institute will continue matching your request", data: refreshedBooking });
+  } catch (error) {
+    console.error("RETRY DRIVER SEARCH ERROR", error);
+    return res.status(500).json({ success: false, message: "Unable to start nearby driver search" });
+  }
 });
 
 export default router;
