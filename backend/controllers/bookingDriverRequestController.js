@@ -30,6 +30,7 @@ export const getDriverBookingOffers = async (req, res) => {
       route: item.bookingId.route,
       vehicleType: item.bookingId.quote?.vehicleType,
       monthlyPrice: item.bookingId.quote?.totalMonthly,
+      startDate: item.bookingId.startDate,
       expiresAt: item.offerExpiresAt,
       createdAt: item.createdAt,
     }));

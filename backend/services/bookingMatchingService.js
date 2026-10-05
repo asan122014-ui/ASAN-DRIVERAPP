@@ -66,6 +66,7 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
     pickupTime: booking.route.pickupTime,
     schoolPickupTime: booking.route.schoolPickupTime,
     monthlyPrice: booking.quote.totalMonthly,
+    startDate: booking.startDate,
     expiresAt: request.offerExpiresAt,
     createdAt: request.createdAt,
     ...(notificationId ? { notificationId } : {}),
