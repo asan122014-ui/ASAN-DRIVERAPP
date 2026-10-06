@@ -9,11 +9,12 @@ export function quoteForDistance(distanceKm, vehicleType = "AUTO", childCount = 
   const ratePerKm = normalizedVehicle === "VAN" ? 16 : normalizedVehicle === "AUTO" ? 14 : null;
   if (!ratePerKm) throw new Error("Vehicle type must be AUTO or VAN");
   const distanceCharge = distance * 2 * ratePerKm * days;
+  const dailyDistanceCharge = distance * 2 * ratePerKm;
   const additionalChildCharge = Math.max(children - 1, 0) * 500;
   const rideSubtotal = distanceCharge + additionalChildCharge;
   const platformFee = rideSubtotal * 0.02;
   const tax = 0;
   const discount = 0;
   const totalMonthly = rideSubtotal + platformFee + tax - discount;
-  return { currency: "INR", vehicleType: normalizedVehicle, workingDays: days, childCount: children, ratePerKm, distanceCharge: round(distanceCharge), additionalChildCharge: round(additionalChildCharge), rideSubtotal: round(rideSubtotal), platformFeeRate: 0.02, platformFee: round(platformFee), tax, discount, totalMonthly: round(totalMonthly) };
+  return { currency: "INR", vehicleType: normalizedVehicle, workingDays: days, childCount: children, ratePerKm, dailyDistanceCharge: round(dailyDistanceCharge), distanceCharge: round(distanceCharge), additionalChildCharge: round(additionalChildCharge), rideSubtotal: round(rideSubtotal), platformFeeRate: 0.02, platformFee: round(platformFee), tax, discount, totalMonthly: round(totalMonthly) };
 }

@@ -9,6 +9,8 @@ test("monthly price includes an additional child charge for each child after the
 
   assert.equal(oneChild.childCount, 1);
   assert.equal(oneChild.additionalChildCharge, 0);
+  assert.equal(oneChild.dailyDistanceCharge, 140);
+  assert.equal(oneChild.distanceCharge, oneChild.dailyDistanceCharge * oneChild.workingDays);
   assert.equal(oneChild.totalMonthly, 3712.8);
   assert.equal(twoChildren.childCount, 2);
   assert.equal(twoChildren.additionalChildCharge, 500);

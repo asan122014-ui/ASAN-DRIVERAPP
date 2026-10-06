@@ -37,6 +37,7 @@ const bookingSchema = new mongoose.Schema({
     workingDays: { type: Number, required: true, min: 1 },
     childCount: { type: Number, required: true, min: 1 },
     ratePerKm: { type: Number, required: true, min: 0 },
+    dailyDistanceCharge: { type: Number, min: 0 },
     distanceCharge: { type: Number, required: true, min: 0 },
     additionalChildCharge: { type: Number, required: true, min: 0 },
     rideSubtotal: { type: Number, required: true, min: 0 },

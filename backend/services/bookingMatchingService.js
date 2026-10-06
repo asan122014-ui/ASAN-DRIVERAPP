@@ -30,7 +30,10 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
   const childNames = bookingChildren.map((item) => item?.name).filter(Boolean).join(", ") || "the child";
   const firstChild = bookingChildren[0] || booking.child;
   const children = bookingChildren.map(({ name, school, grade, age }) => ({ name, school, grade, age }));
-  const message = `New ASAN ride request for ${childNames}. Monthly price ₹${Number(booking.quote.totalMonthly).toLocaleString("en-IN")}.`;
+  const monthlyRouteAmount = Number(booking.quote.distanceCharge || 0);
+  const workingDays = Number(booking.quote.workingDays || 26);
+  const dailyDistanceCharge = Number(booking.quote.dailyDistanceCharge ?? (monthlyRouteAmount / workingDays));
+  const message = `New ASAN ride request for ${childNames}. Monthly route amount ₹${monthlyRouteAmount.toLocaleString("en-IN")} (distance charges only).`;
   let notificationId;
   try {
     const notification = await Notification.create({
@@ -41,7 +44,7 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
       message,
       type: "general",
       priority: "high",
-      meta: { requestId: String(request._id), bookingId: String(booking._id), monthlyPrice: booking.quote.totalMonthly, expiresAt: request.offerExpiresAt },
+      meta: { requestId: String(request._id), bookingId: String(booking._id), monthlyRouteAmount, dailyDistanceCharge, workingDays, amountBasis: "distance_charges_only", expiresAt: request.offerExpiresAt },
     });
     notificationId = String(notification._id);
   } catch (error) {
@@ -71,7 +74,9 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
     durationMinutes: booking.route.durationMinutes,
     pickupTime: booking.route.pickupTime,
     schoolPickupTime: booking.route.schoolPickupTime,
-    monthlyPrice: booking.quote.totalMonthly,
+    monthlyRouteAmount,
+    dailyDistanceCharge,
+    workingDays,
     startDate: booking.startDate,
     expiresAt: request.offerExpiresAt,
     createdAt: request.createdAt,
