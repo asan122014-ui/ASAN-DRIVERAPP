@@ -210,7 +210,9 @@ function DriverDashboard() {
         schoolPickupTime: eventOffer.schoolPickupTime,
       },
       vehicleType: eventOffer.vehicleType || "",
-      monthlyPrice: eventOffer.monthlyPrice,
+      monthlyRouteAmount: eventOffer.monthlyRouteAmount,
+      dailyDistanceCharge: eventOffer.dailyDistanceCharge,
+      workingDays: eventOffer.workingDays,
       startDate: eventOffer.startDate,
       expiresAt: eventOffer.expiresAt,
       createdAt: eventOffer.createdAt || new Date().toISOString(),
@@ -1762,13 +1764,14 @@ function DriverDashboard() {
             <div className="p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[9px] font-black tracking-[0.18em] text-[#B87700]">NEW MONTHLY RIDE REQUEST</p>
+                  <p className="text-[9px] font-black tracking-[0.18em] text-[#B87700]">NEW ROUTE SERVICE REQUEST</p>
                   <h2 id="booking-offer-title" className="mt-1 text-[21px] font-black text-black">You have a new ride request</h2>
                   <p className="mt-1 text-[11px] text-[#8C8276]">Check the student, schedule and route details before responding.</p>
                 </div>
                 <div className="shrink-0 rounded-[16px] bg-[#FFF1C8] px-3 py-2 text-right">
-                  <p className="text-[7px] font-black tracking-[0.12em] text-[#8C6A18]">MONTHLY PRICE</p>
-                  <p className="mt-0.5 text-[19px] font-black text-[#936400]">₹{Number(activeBookingOffer.monthlyPrice || 0).toLocaleString("en-IN")}</p>
+                  <p className="text-[7px] font-black tracking-[0.12em] text-[#8C6A18]">MONTHLY ROUTE AMOUNT</p>
+                  <p className="mt-0.5 text-[19px] font-black text-[#936400]">₹{Number(activeBookingOffer.monthlyRouteAmount || 0).toLocaleString("en-IN")}</p>
+                  <p className="mt-0.5 text-[7px] font-semibold text-[#8C6A18]">Distance charges only</p>
                 </div>
               </div>
               <div className="mt-5 rounded-[18px] border border-[#EFE4D0] bg-white p-4">
@@ -2000,12 +2003,12 @@ function DriverDashboard() {
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-[8px] font-bold tracking-[0.12em] text-[#95897C]">MONTHLY RIDE REQUEST</p>
+                            <p className="text-[8px] font-bold tracking-[0.12em] text-[#95897C]">ROUTE SERVICE REQUEST</p>
                             <h3 className="mt-1 text-[16px] font-black text-black">{offer.child?.name || "Student"}</h3>
                             <p className="mt-0.5 truncate text-[9px] text-[#8C8276]">{offer.child?.school || "School route"}</p>
                             <p className="mt-1 text-[8px] font-bold text-[#9A6A00]">Sent to ASAN ID {offer.targetDriverId || driver?.driverId || "this driver"}</p>
                           </div>
-                          <p className="shrink-0 text-[17px] font-black text-[#936400]">₹{Number(offer.monthlyPrice || 0).toLocaleString("en-IN")}<span className="block text-right text-[7px] font-bold text-[#95897C]">PER MONTH</span></p>
+                          <p className="shrink-0 text-right text-[17px] font-black text-[#936400]">₹{Number(offer.monthlyRouteAmount || 0).toLocaleString("en-IN")}<span className="block text-[7px] font-bold text-[#95897C]">MONTHLY ROUTE AMOUNT</span><span className="block text-[7px] font-semibold text-[#8C6A18]">Distance charges only</span></p>
                         </div>
                         <div className="mt-3 space-y-2 rounded-[14px] bg-[#FFF8E8] p-3 text-[9px] text-[#51483B]">
                           <p><b>Home pickup:</b> {offer.route?.pickup || "—"}{offer.route?.pickupTime ? ` · ${offer.route.pickupTime}` : ""}</p>
