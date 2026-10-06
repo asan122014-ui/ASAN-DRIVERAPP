@@ -26,7 +26,11 @@ const haversineKm = (a, b) => {
 };
 
 const notifyDriver = async ({ driver, request, booking, child, io }) => {
-  const message = `New ASAN ride request for ${child?.name || booking.child.name}. Monthly price ₹${Number(booking.quote.totalMonthly).toLocaleString("en-IN")}.`;
+  const bookingChildren = booking.children?.length ? booking.children : [child || booking.child];
+  const childNames = bookingChildren.map((item) => item?.name).filter(Boolean).join(", ") || "the child";
+  const firstChild = bookingChildren[0] || booking.child;
+  const children = bookingChildren.map(({ name, school, grade, age }) => ({ name, school, grade, age }));
+  const message = `New ASAN ride request for ${childNames}. Monthly price ₹${Number(booking.quote.totalMonthly).toLocaleString("en-IN")}.`;
   let notificationId;
   try {
     const notification = await Notification.create({
@@ -47,7 +51,9 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
   io?.to(normalizeDriverId(driver.driverId)).emit("booking_driver_offer", {
     requestId: String(request._id),
     bookingId: String(booking._id),
-    child: { name: child?.name || booking.child.name, school: child?.school || booking.child.school, grade: child?.grade || booking.child.grade || "" },
+    child: { name: childNames, school: firstChild?.school || child?.school || booking.child.school, grade: firstChild?.grade || child?.grade || booking.child.grade || "" },
+    children,
+    childCount: children.length,
     route: {
       pickup: booking.route.pickup,
       dropoff: booking.route.dropoff,
@@ -57,8 +63,8 @@ const notifyDriver = async ({ driver, request, booking, child, io }) => {
       schoolPickupTime: booking.route.schoolPickupTime,
     },
     vehicleType: booking.quote?.vehicleType,
-    childName: child?.name || booking.child.name,
-    school: child?.school || booking.child.school,
+    childName: childNames,
+    school: firstChild?.school || child?.school || booking.child.school,
     pickup: booking.route.pickup,
     dropoff: booking.route.dropoff,
     distanceKm: booking.route.distanceKm,

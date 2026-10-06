@@ -70,18 +70,25 @@ export const getDriverBookingOffers = async (req, res) => {
         .populate("childId", "name school grade");
       requests.push(...recovered);
     }
-    const data = requests.filter((item) => item.bookingId).map((item) => ({
-      requestId: String(item._id),
-      bookingId: String(item.bookingId._id),
-      child: item.childId ? { name: item.childId.name, school: item.childId.school, grade: item.childId.grade } : item.bookingId.child,
-      route: item.bookingId.route,
-      vehicleType: item.bookingId.quote?.vehicleType,
-      monthlyPrice: item.bookingId.quote?.totalMonthly,
-      targetDriverId: driverId,
-      startDate: item.bookingId.startDate,
-      expiresAt: item.offerExpiresAt,
-      createdAt: item.createdAt,
-    }));
+    const data = requests.filter((item) => item.bookingId).map((item) => {
+      const children = item.bookingId.children?.length
+        ? item.bookingId.children.map(({ name, school, grade, age }) => ({ name, school, grade, age }))
+        : [item.childId ? { name: item.childId.name, school: item.childId.school, grade: item.childId.grade } : item.bookingId.child].filter(Boolean);
+      return {
+        requestId: String(item._id),
+        bookingId: String(item.bookingId._id),
+        child: children.length ? { ...children[0], name: children.map((child) => child.name).filter(Boolean).join(", ") } : item.bookingId.child,
+        children,
+        childCount: children.length || Number(item.bookingId.quote?.childCount) || 1,
+        route: item.bookingId.route,
+        vehicleType: item.bookingId.quote?.vehicleType,
+        monthlyPrice: item.bookingId.quote?.totalMonthly,
+        targetDriverId: driverId,
+        startDate: item.bookingId.startDate,
+        expiresAt: item.offerExpiresAt,
+        createdAt: item.createdAt,
+      };
+    });
     return res.json({ success: true, driverId, count: data.length, data });
   } catch (error) {
     console.error("DRIVER BOOKING OFFERS ERROR", error);

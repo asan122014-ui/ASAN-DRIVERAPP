@@ -3,11 +3,23 @@ import mongoose from "mongoose";
 const bookingSchema = new mongoose.Schema({
   parentId: { type: mongoose.Schema.Types.ObjectId, ref: "Parent", required: true, index: true },
   childId: { type: mongoose.Schema.Types.ObjectId, ref: "Child", default: null },
+  childIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Child" }], default: [] },
   child: {
     name: { type: String, required: true, trim: true },
     age: { type: Number, required: true, min: 1, max: 17 },
     school: { type: String, required: true, trim: true },
     grade: { type: String, default: "", trim: true },
+  },
+  children: {
+    type: [{
+      name: { type: String, required: true, trim: true },
+      age: { type: Number, required: true, min: 1, max: 17 },
+      gender: { type: String, default: "", trim: true },
+      school: { type: String, required: true, trim: true },
+      grade: { type: String, default: "", trim: true },
+      section: { type: String, default: "", trim: true },
+    }],
+    default: [],
   },
   route: {
     pickup: { type: String, required: true, trim: true },

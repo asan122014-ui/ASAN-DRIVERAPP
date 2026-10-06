@@ -8,29 +8,27 @@ import DriverRequest from "../models/DriverRequest.js";
 import BookingPayment from "../models/BookingPayment.js";
 import verifyParent from "../middleware/verifyParent.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
+import { quoteForDistance } from "../services/bookingPricing.js";
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
 const round = (value) => Math.round(Number(value) * 100) / 100;
-const quoteForDistance = (distanceKm, vehicleType = "AUTO", childCount = 1, workingDays = 26) => {
-  const distance = Number(distanceKm);
-  const days = Number(workingDays);
-  const children = Number(childCount);
-  if (!Number.isFinite(distance) || distance <= 0 || !Number.isInteger(children) || children < 1 || !Number.isInteger(days) || days < 1) throw new Error("Invalid pricing inputs");
-  const normalizedVehicle = String(vehicleType).toUpperCase();
-  const ratePerKm = normalizedVehicle === "VAN" ? 16 : normalizedVehicle === "AUTO" ? 14 : null;
-  if (!ratePerKm) throw new Error("Vehicle type must be AUTO or VAN");
-  const distanceCharge = distance * 2 * ratePerKm * days;
-  const additionalChildCharge = Math.max(children - 1, 0) * 500;
-  const rideSubtotal = distanceCharge + additionalChildCharge;
-  const platformFee = rideSubtotal * 0.02;
-  const tax = 0;
-  const discount = 0;
-  const totalMonthly = rideSubtotal + platformFee + tax - discount;
-  return { currency: "INR", vehicleType: normalizedVehicle, workingDays: days, childCount: children, ratePerKm, distanceCharge: round(distanceCharge), additionalChildCharge: round(additionalChildCharge), rideSubtotal: round(rideSubtotal), platformFeeRate: 0.02, platformFee: round(platformFee), tax, discount, totalMonthly: round(totalMonthly) };
-};
 const coordinates = (value) => ({ lat: Number(value?.lat), lng: Number(value?.lng) });
 const validCoordinates = (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng);
+const normalizeChildren = (children, child) => {
+  const source = Array.isArray(children) && children.length ? children : child ? [child] : [];
+  return source.map((item) => ({
+    name: String(item?.name || "").trim(),
+    age: Number(item?.age),
+    gender: String(item?.gender || "").trim(),
+    school: String(item?.school || "").trim(),
+    grade: String(item?.grade || "").trim(),
+    section: String(item?.section || "").trim(),
+  }));
+};
+const validChildren = (children) => children.length > 0 && children.every((child) =>
+  child.name && child.name.length <= 100 && Number.isInteger(child.age) && child.age >= 1 && child.age <= 17 && child.school && child.school.length <= 160
+) && new Set(children.map((child) => `${child.name.toLocaleLowerCase()}|${child.school.toLocaleLowerCase()}`)).size === children.length;
 const getTrafficRoute = async (pickup, dropoff) => {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY || process.env.GOOGLE_MAPS_API_KEY;
   if (!key || !validCoordinates(pickup) || !validCoordinates(dropoff)) return null;
@@ -43,26 +41,29 @@ const getTrafficRoute = async (pickup, dropoff) => {
 
 router.post("/quote", verifyParent, async (req, res) => {
   try {
-    const { child, route, vehicleType = "AUTO", workingDays = 26 } = req.body || {};
+    const { child, children: childInput, route, vehicleType = "AUTO", workingDays = 26 } = req.body || {};
+    const normalizedChildren = normalizeChildren(childInput, child);
     const activeBooking = await Booking.findOne({ parentId: req.parent._id, status: { $in: activeStatuses } }).select("_id status");
     if (activeBooking) return res.status(409).json({ success: false, message: "You already have a booking in progress. Complete or cancel it before creating another booking.", bookingId: activeBooking._id, status: activeBooking.status });
-    if (!child?.name?.trim() || !child?.school?.trim() || !Number.isInteger(Number(child.age)) || !route?.pickup?.trim() || !route?.dropoff?.trim() || !route?.pickupTime || !route?.schoolPickupTime || !Number.isFinite(Number(route.distanceKm)) || Number(route.distanceKm) <= 0) {
-      return res.status(400).json({ success: false, message: "Child details, pickup, drop-off and a valid route distance are required" });
+    if (!validChildren(normalizedChildren) || !route?.pickup?.trim() || !route?.dropoff?.trim() || !route?.pickupTime || !route?.schoolPickupTime || !Number.isFinite(Number(route.distanceKm)) || Number(route.distanceKm) <= 0) {
+      return res.status(400).json({ success: false, message: "Complete each child’s name, age and school, plus pickup, drop-off and a valid route distance" });
     }
     const pickupCoordinates = coordinates(route.pickupCoordinates);
     const dropoffCoordinates = coordinates(route.dropoffCoordinates);
     if (!validCoordinates(pickupCoordinates) || !validCoordinates(dropoffCoordinates)) return res.status(400).json({ success: false, message: "Pickup and drop-off map locations are required" });
     const trafficRoute = await getTrafficRoute(pickupCoordinates, dropoffCoordinates).catch((error) => { console.error("TRAFFIC ROUTE ERROR", error.message); return null; });
     const finalRoute = trafficRoute || { distanceKm: round(route.distanceKm), durationMinutes: Number(route.durationMinutes) || 0 };
-    const pricing = quoteForDistance(finalRoute.distanceKm, vehicleType, Number(child.count || 1), workingDays);
-    return res.status(200).json({ success: true, data: { child: { name: child.name.trim(), age: Number(child.age), school: child.school.trim(), grade: String(child.grade || "").trim() }, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, pickupTime: route.pickupTime, schoolPickupTime: route.schoolPickupTime, ...finalRoute, trafficAware: Boolean(trafficRoute) }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
+    const pricing = quoteForDistance(finalRoute.distanceKm, vehicleType, normalizedChildren.length, workingDays);
+    const pricedChildren = normalizedChildren.map(({ name, age, gender, school, grade, section }) => ({ name, age, gender, school, grade, section }));
+    return res.status(200).json({ success: true, data: { child: pricedChildren[0], children: pricedChildren, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, pickupTime: route.pickupTime, schoolPickupTime: route.schoolPickupTime, ...finalRoute, trafficAware: Boolean(trafficRoute) }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
   } catch (error) { console.error("BOOKING QUOTE ERROR", error); return res.status(500).json({ success: false, message: "Unable to calculate the quote" }); }
 });
 
 router.post("/request", verifyParent, async (req, res) => {
   try {
-    const { child, route, quote, driverChoice, requestedDriverId, startDate } = req.body || {};
-    if (!["existing", "new"].includes(driverChoice) || !child?.name || !route?.pickup || !route?.dropoff || !route?.pickupTime || !route?.schoolPickupTime || !quote?.totalMonthly) return res.status(400).json({ success: false, message: "Complete the child, route, quote and driver choice first" });
+    const { child, children: childInput, route, quote, driverChoice, requestedDriverId, startDate } = req.body || {};
+    const normalizedChildren = normalizeChildren(childInput, child);
+    if (!["existing", "new"].includes(driverChoice) || !validChildren(normalizedChildren) || !route?.pickup || !route?.dropoff || !route?.pickupTime || !route?.schoolPickupTime || !quote?.totalMonthly || Number(quote.childCount || 1) !== normalizedChildren.length) return res.status(400).json({ success: false, message: "Complete the child, route, price and driver choice first" });
     if (new Date(quote.expiresAt).getTime() <= Date.now()) return res.status(400).json({ success: false, message: "This quote has expired. Please calculate a new quote" });
     const activeBooking = await Booking.findOne({ parentId: req.parent._id, status: { $in: activeStatuses } }).select("_id status");
     if (activeBooking) return res.status(409).json({ success: false, message: "You already have a booking in progress. Complete or cancel it before creating another booking.", bookingId: activeBooking._id, status: activeBooking.status });
@@ -72,10 +73,18 @@ router.post("/request", verifyParent, async (req, res) => {
       const driver = await Driver.findOne({ driverId: normalizedDriverId }).select("driverId status");
       if (!driver || driver.status !== "approved") return res.status(404).json({ success: false, message: "Approved driver not found for that ASAN ID" });
     }
-    let childRecord = await Child.findOne({ parentId: req.parent._id, name: child.name.trim() });
-    if (!childRecord) childRecord = await Child.create({ parentId: req.parent._id, name: child.name.trim(), age: Number(child.age), gender: String(child.gender || "").trim(), school: child.school.trim(), grade: String(child.grade || "").trim(), section: String(child.section || "").trim(), pickupTime: route.pickupTime, eveningPickup: route.schoolPickupTime, pickupLocation: route.pickup.trim(), dropoffLocation: route.dropoff.trim(), location: route.pickupCoordinates, dropLocationCoords: route.dropoffCoordinates, routeDistance: Number(route.distanceKm), estimatedDuration: Number(route.durationMinutes) || 0 });
-    const booking = await Booking.create({ parentId: req.parent._id, childId: childRecord._id, child: { name: child.name.trim(), age: Number(child.age), school: child.school.trim(), grade: String(child.grade || "").trim() }, route, quote, driverChoice, requestedDriverId: normalizedDriverId, startDate: startDate ? new Date(startDate) : null, status: driverChoice === "existing" ? "awaiting_driver" : "driver_searching" });
-    const request = await DriverRequest.create({ parentId: req.parent._id, childId: childRecord._id, bookingId: booking._id, requestType: driverChoice === "existing" ? "existing_driver" : "new_driver", requestedDriverId: normalizedDriverId, status: "Pending", matchingStatus: "Searching", notes: `Booking ${booking._id} · Monthly price ₹${quote.totalMonthly}` });
+    const childRecords = await Promise.all(normalizedChildren.map(async (item) => {
+      let record = await Child.findOne({ parentId: req.parent._id, name: item.name, age: item.age, school: item.school });
+      const childDetails = { name: item.name, age: item.age, gender: item.gender, school: item.school, grade: item.grade, section: item.section, pickupTime: route.pickupTime, eveningPickup: route.schoolPickupTime, pickupLocation: route.pickup.trim(), dropoffLocation: route.dropoff.trim(), location: route.pickupCoordinates, dropLocationCoords: route.dropoffCoordinates, routeDistance: Number(route.distanceKm), estimatedDuration: Number(route.durationMinutes) || 0 };
+      if (record) record = await Child.findOneAndUpdate({ _id: record._id, parentId: req.parent._id }, { $set: childDetails }, { new: true });
+      else record = await Child.create({ parentId: req.parent._id, ...childDetails });
+      return record;
+    }));
+    const bookingChildren = normalizedChildren.map(({ name, age, gender, school, grade, section }) => ({ name, age, gender, school, grade, section }));
+    const primaryChild = bookingChildren[0];
+    const booking = await Booking.create({ parentId: req.parent._id, childId: childRecords[0]._id, childIds: childRecords.map((record) => record._id), child: primaryChild, children: bookingChildren, route, quote, driverChoice, requestedDriverId: normalizedDriverId, startDate: startDate ? new Date(startDate) : null, status: driverChoice === "existing" ? "awaiting_driver" : "driver_searching" });
+    const childNames = bookingChildren.map((item) => item.name).join(", ");
+    const request = await DriverRequest.create({ parentId: req.parent._id, childId: childRecords[0]._id, bookingId: booking._id, requestType: driverChoice === "existing" ? "existing_driver" : "new_driver", requestedDriverId: normalizedDriverId, status: "Pending", matchingStatus: "Searching", notes: `Booking ${booking._id} · ${bookingChildren.length} ${bookingChildren.length === 1 ? "child" : "children"} (${childNames}) · Monthly price ₹${quote.totalMonthly}` });
     booking.driverRequestId = request._id;
     await booking.save();
     const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");

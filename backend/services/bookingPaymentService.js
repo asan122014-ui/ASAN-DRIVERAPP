@@ -75,13 +75,15 @@ export async function reconcilePayment(payment, io, checkout) {
       booking.serviceEndsAt = monthEnd(now);
       booking.status = "active";
       await booking.save({ session });
-      const child = await Child.updateOne({ _id: booking.childId, parentId: booking.parentId }, { $set: { driverId: booking.assignedDriverId, activeBookingId: booking._id } }, { session });
-      if (!child.matchedCount) throw new Error("Booking child was not found");
+      const bookingChildIds = [...new Set((booking.childIds?.length ? booking.childIds : [booking.childId]).filter(Boolean).map(String))];
+      const childResult = await Child.updateMany({ _id: { $in: bookingChildIds }, parentId: booking.parentId }, { $set: { driverId: booking.assignedDriverId, activeBookingId: booking._id } }, { session });
+      if (!bookingChildIds.length || childResult.matchedCount !== bookingChildIds.length) throw new Error("One or more booking children were not found");
       parent.driverId = booking.assignedDriverId;
       await parent.save({ session });
+      const childNames = (booking.children?.length ? booking.children : [booking.child]).map((item) => item?.name).filter(Boolean).join(", ");
       const notifications = await Notification.create([
         { parent: parent._id, recipientType: "parent", title: "Payment received", message: "Your monthly ride service is now active.", type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id) } },
-        { driver: booking.assignedDriverId, recipientType: "driver", title: "Parent payment confirmed", message: `The parent paid for ${booking.child.name}. Distance charge: ₹${Number(booking.quote.distanceCharge).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the month. The ride service is active.`, type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id), distanceCharge: booking.quote.distanceCharge } },
+        { driver: booking.assignedDriverId, recipientType: "driver", title: "Parent payment confirmed", message: `The parent paid for ${childNames || "the child"}. Distance charge: ₹${Number(booking.quote.distanceCharge).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the month. The ride service is active.`, type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id), distanceCharge: booking.quote.distanceCharge } },
       ], { session, ordered: true });
       driverNotification = notifications[1];
       activated = booking;
