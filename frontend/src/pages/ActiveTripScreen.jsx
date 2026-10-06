@@ -530,16 +530,7 @@ function ActiveTripScreen({
   const pollingRef =
     useRef(null);
 
-  const localVideoRef =
-    useRef(null);
-
-  const streamRef =
-    useRef(null);
-
-  const pcRef =
-    useRef(null);
-
-  const backgroundWatchId =
+const backgroundWatchId =
     useRef(null);
 
   const foregroundWatchId =
@@ -2570,48 +2561,6 @@ function ActiveTripScreen({
   ]);
 
   /* =======================================================
-     STOP CAMERA
-  ======================================================= */
-
-  const stopCamera =
-    useCallback(
-      () => {
-        if (
-          streamRef.current
-        ) {
-          streamRef.current
-            .getTracks()
-            .forEach(
-              (
-                track
-              ) =>
-                track.stop()
-            );
-
-          streamRef.current =
-            null;
-        }
-
-        if (
-          localVideoRef.current
-        ) {
-          localVideoRef.current.srcObject =
-            null;
-        }
-
-        if (
-          pcRef.current
-        ) {
-          pcRef.current.close();
-
-          pcRef.current =
-            null;
-        }
-      },
-      []
-    );
-
-  /* =======================================================
      END TRIP
   ======================================================= */
 
@@ -2740,20 +2689,6 @@ function ActiveTripScreen({
           await stopBackgroundTracking();
 
           stopForegroundTracking();
-
-          socket.emit(
-            "camera_control",
-            {
-              action:
-                "stop",
-
-              driverId:
-                driver?.driverId,
-            }
-          );
-
-          stopCamera();
-
           navigate(
             "/trip-success",
             {
@@ -2809,7 +2744,6 @@ function ActiveTripScreen({
         onEndTrip,
         stopBackgroundTracking,
         stopForegroundTracking,
-        stopCamera,
       ]
     );
 
@@ -3219,14 +3153,11 @@ function ActiveTripScreen({
       stopBackgroundTracking();
 
       stopForegroundTracking();
-
-      stopCamera();
     };
   }, [
     startLocationTracking,
     stopBackgroundTracking,
     stopForegroundTracking,
-    stopCamera,
   ]);
 
   /* =======================================================
@@ -3538,112 +3469,6 @@ function ActiveTripScreen({
       } finally {
         setIsUploading(
           false
-        );
-      }
-    };
-
-  /* =======================================================
-     CAMERA
-  ======================================================= */
-
-  const startCamera =
-    async () => {
-      try {
-        const stream =
-          await navigator.mediaDevices.getUserMedia(
-            {
-              video:
-                true,
-
-              audio:
-                false,
-            }
-          );
-
-        streamRef.current =
-          stream;
-
-        if (
-          localVideoRef.current
-        ) {
-          localVideoRef.current.srcObject =
-            stream;
-        }
-
-        if (
-          pcRef.current
-        ) {
-          pcRef.current.close();
-        }
-
-        pcRef.current =
-          new RTCPeerConnection(
-            {
-              iceServers: [
-                {
-                  urls:
-                    "stun:stun.l.google.com:19302",
-                },
-              ],
-            }
-          );
-
-        stream
-          .getTracks()
-          .forEach(
-            (
-              track
-            ) => {
-              pcRef.current.addTrack(
-                track,
-                stream
-              );
-            }
-          );
-
-        pcRef.current.onicecandidate =
-          (
-            event
-          ) => {
-            if (
-              event.candidate
-            ) {
-              socket.emit(
-                "ice-candidate",
-                {
-                  candidate:
-                    event.candidate,
-
-                  driverId:
-                    driver?.driverId,
-
-                  sender:
-                    "driver",
-                }
-              );
-            }
-          };
-
-        const offer =
-          await pcRef.current.createOffer();
-
-        await pcRef.current.setLocalDescription(
-          offer
-        );
-
-        socket.emit(
-          "offer",
-          {
-            offer,
-
-            driverId:
-              driver?.driverId,
-          }
-        );
-      } catch (error) {
-        console.error(
-          "Camera error:",
-          error
         );
       }
     };
@@ -4811,19 +4636,6 @@ function ActiveTripScreen({
             }}
           />
         )}
-
-        <video
-          ref={
-            localVideoRef
-          }
-          autoPlay
-          playsInline
-          muted
-          style={{
-            display:
-              "none",
-          }}
-        />
 
       </div>
 

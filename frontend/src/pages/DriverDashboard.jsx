@@ -93,17 +93,7 @@ function DriverDashboard() {
     new Date().getHours()
   );
 
-  const [
-    videoDevices,
-    setVideoDevices,
-  ] = useState([]);
-
-  const [
-    showCameraSelect,
-    setShowCameraSelect,
-  ] = useState(false);
-
-  /* =======================================================
+/* =======================================================
      DRIVER
   ======================================================= */
 
@@ -139,25 +129,13 @@ function DriverDashboard() {
   const sliderRef =
     useRef(null);
 
-  const videoRef =
-    useRef(null);
-
-  const socketRef =
-    useRef(null);
-
-  const streamRef =
+const socketRef =
     useRef(null);
 
   const knownBookingOfferIdsRef = useRef(new Set());
   const socketBookingOffersRef = useRef(new Map());
 
-  const peersRef =
-    useRef({});
-
-  const iceCandidateQueueRef =
-    useRef({});
-
-  const refreshBookingOffers = useCallback(async ({ manual = false } = {}) => {
+const refreshBookingOffers = useCallback(async ({ manual = false } = {}) => {
     if (!driver?.driverId || !localStorage.getItem("accessToken")) {
       setBookingOfferError("Your driver session is missing. Sign in again to check ride requests.");
       return;
@@ -581,179 +559,6 @@ function DriverDashboard() {
   ]);
 
   /* =======================================================
-     FLUSH ICE
-  ======================================================= */
-
-  const flushIceCandidates =
-    useCallback(
-      async (
-        parentId
-      ) => {
-        const pc =
-          peersRef.current[
-            parentId
-          ];
-
-        const queue =
-          iceCandidateQueueRef
-            .current[
-            parentId
-          ] || [];
-
-        if (
-          !pc ||
-          !pc.remoteDescription ||
-          queue.length ===
-            0
-        ) {
-          return;
-        }
-
-        while (
-          queue.length
-        ) {
-          const candidate =
-            queue.shift();
-
-          try {
-            await pc.addIceCandidate(
-              new RTCIceCandidate(
-                candidate
-              )
-            );
-          } catch (error) {
-            console.error(
-              "ICE candidate failed:",
-              error
-            );
-          }
-        }
-      },
-      []
-    );
-
-  /* =======================================================
-     WEBRTC
-  ======================================================= */
-
-  const createPeerConnection =
-    useCallback(
-      async (
-        parentId
-      ) => {
-        if (
-          !parentId ||
-          peersRef.current[
-            parentId
-          ] ||
-          !streamRef.current ||
-          !socketRef.current
-            ?.connected
-        ) {
-          return;
-        }
-
-        try {
-          const pc =
-            new RTCPeerConnection(
-              {
-                iceServers: [
-                  {
-                    urls:
-                      "stun:stun.l.google.com:19302",
-                  },
-                ],
-              }
-            );
-
-          peersRef.current[
-            parentId
-          ] = pc;
-
-          iceCandidateQueueRef.current[
-            parentId
-          ] = [];
-
-          pc.onconnectionstatechange =
-            () => {
-              if (
-                pc.connectionState ===
-                  "failed" ||
-                pc.connectionState ===
-                  "closed"
-              ) {
-                try {
-                  pc.close();
-                } catch {
-                  // ignore
-                }
-
-                delete peersRef.current[
-                  parentId
-                ];
-
-                delete iceCandidateQueueRef
-                  .current[
-                  parentId
-                ];
-              }
-            };
-
-          streamRef.current
-            .getTracks()
-            .forEach(
-              (track) => {
-                pc.addTrack(
-                  track,
-                  streamRef.current
-                );
-              }
-            );
-
-          pc.onicecandidate =
-            (event) => {
-              if (
-                !event.candidate
-              ) {
-                return;
-              }
-
-              socketRef.current?.emit(
-                "ice-candidate",
-                {
-                  candidate:
-                    event.candidate,
-
-                  parentId,
-                }
-              );
-            };
-
-          const offer =
-            await pc.createOffer();
-
-          await pc.setLocalDescription(
-            offer
-          );
-
-          socketRef.current.emit(
-            "offer",
-            {
-              offer,
-              parentId,
-            }
-          );
-        } catch (error) {
-          console.error(
-            "WebRTC peer creation failed:",
-            error
-          );
-        }
-      },
-      []
-    );
-
-  /* =======================================================
      SOCKET
   ======================================================= */
 
@@ -855,209 +660,7 @@ function DriverDashboard() {
       }
     );
 
-    socket.on(
-      "parent_joined",
-      async ({
-        parentId,
-      }) => {
-        await createPeerConnection(
-          parentId
-        );
-      }
-    );
-
-    socket.on(
-      "answer",
-      async ({
-        answer,
-        parentId,
-      }) => {
-        if (
-          !answer ||
-          !parentId
-        ) {
-          return;
-        }
-
-        const pc =
-          peersRef.current[
-            parentId
-          ];
-
-        if (!pc) {
-          return;
-        }
-
-        try {
-          if (
-            !pc.remoteDescription
-          ) {
-            await pc.setRemoteDescription(
-              new RTCSessionDescription(
-                answer
-              )
-            );
-
-            await flushIceCandidates(
-              parentId
-            );
-          }
-        } catch (error) {
-          console.error(
-            "WebRTC answer failed:",
-            error
-          );
-        }
-      }
-    );
-
-    socket.on(
-      "ice-candidate",
-      async ({
-        candidate,
-        parentId,
-      }) => {
-        if (
-          !candidate ||
-          !parentId
-        ) {
-          return;
-        }
-
-        const pc =
-          peersRef.current[
-            parentId
-          ];
-
-        if (!pc) {
-          return;
-        }
-
-        if (
-          pc.remoteDescription
-        ) {
-          try {
-            await pc.addIceCandidate(
-              new RTCIceCandidate(
-                candidate
-              )
-            );
-          } catch (error) {
-            console.error(
-              "ICE candidate failed:",
-              error
-            );
-          }
-
-          return;
-        }
-
-        if (
-          !iceCandidateQueueRef
-            .current[
-            parentId
-          ]
-        ) {
-          iceCandidateQueueRef.current[
-            parentId
-          ] = [];
-        }
-
-        iceCandidateQueueRef.current[
-          parentId
-        ].push(
-          candidate
-        );
-      }
-    );
-
-    socket.on(
-      "parent_left",
-      ({
-        parentId,
-      }) => {
-        const pc =
-          peersRef.current[
-            parentId
-          ];
-
-        if (pc) {
-          try {
-            pc.close();
-          } catch {
-            // ignore
-          }
-
-          delete peersRef.current[
-            parentId
-          ];
-
-          delete iceCandidateQueueRef
-            .current[
-            parentId
-          ];
-        }
-      }
-    );
-
-    socket.on(
-      "existing_parents",
-      ({
-        parentIds,
-      }) => {
-        if (
-          !streamRef.current ||
-          !Array.isArray(
-            parentIds
-          )
-        ) {
-          return;
-        }
-
-        parentIds.forEach(
-          (
-            parentId
-          ) => {
-            createPeerConnection(
-              parentId
-            );
-          }
-        );
-      }
-    );
-
     return () => {
-      Object.values(
-        peersRef.current
-      ).forEach(
-        (pc) => {
-          try {
-            pc.close();
-          } catch {
-            // ignore
-          }
-        }
-      );
-
-      peersRef.current = {};
-
-      iceCandidateQueueRef.current =
-        {};
-
-      if (
-        streamRef.current
-      ) {
-        streamRef.current
-          .getTracks()
-          .forEach(
-            (track) =>
-              track.stop()
-          );
-
-        streamRef.current =
-          null;
-      }
-
       socket.removeAllListeners();
 
       socket.io.removeAllListeners();
@@ -1069,8 +672,6 @@ function DriverDashboard() {
     };
   }, [
     driver?.driverId,
-    createPeerConnection,
-    flushIceCandidates,
     refreshBookingOffers,
     handleBookingDriverOffer,
     handleBookingOfferCancelled,
@@ -1180,234 +781,6 @@ function DriverDashboard() {
   ]);
 
   /* =======================================================
-     CAMERA
-  ======================================================= */
-
-  const startCamera =
-    async () => {
-      try {
-        if (
-          streamRef.current
-        ) {
-          return;
-        }
-
-        if (
-          !navigator.mediaDevices
-            ?.getUserMedia
-        ) {
-          alert(
-            "Camera is not supported on this device."
-          );
-
-          return;
-        }
-
-        const permissionStream =
-          await navigator.mediaDevices.getUserMedia(
-            {
-              video: true,
-              audio: false,
-            }
-          );
-
-        permissionStream
-          .getTracks()
-          .forEach(
-            (track) =>
-              track.stop()
-          );
-
-        const devices =
-          await navigator.mediaDevices.enumerateDevices();
-
-        const cameras =
-          devices.filter(
-            (
-              device
-            ) =>
-              device.kind ===
-              "videoinput"
-          );
-
-        if (
-          cameras.length ===
-          0
-        ) {
-          alert(
-            "No camera found."
-          );
-
-          return;
-        }
-
-        if (
-          cameras.length ===
-          1
-        ) {
-          await handleCameraSelect(
-            cameras[0]
-              .deviceId
-          );
-
-          return;
-        }
-
-        setVideoDevices(
-          cameras
-        );
-
-        setShowCameraSelect(
-          true
-        );
-      } catch (error) {
-        console.error(
-          "Camera permission error:",
-          error
-        );
-
-        alert(
-          "Unable to access camera."
-        );
-      }
-    };
-
-  /* =======================================================
-     CAMERA SELECT
-  ======================================================= */
-
-  const handleCameraSelect =
-    async (
-      deviceId
-    ) => {
-      try {
-        setShowCameraSelect(
-          false
-        );
-
-        if (
-          streamRef.current
-        ) {
-          streamRef.current
-            .getTracks()
-            .forEach(
-              (track) =>
-                track.stop()
-            );
-
-          streamRef.current =
-            null;
-        }
-
-        const constraints =
-          deviceId
-            ? {
-                video: {
-                  deviceId: {
-                    exact:
-                      deviceId,
-                  },
-                },
-
-                audio:
-                  false,
-              }
-            : {
-                video:
-                  true,
-
-                audio:
-                  false,
-              };
-
-        const stream =
-          await navigator.mediaDevices.getUserMedia(
-            constraints
-          );
-
-        streamRef.current =
-          stream;
-
-        if (
-          videoRef.current
-        ) {
-          videoRef.current.srcObject =
-            stream;
-
-          await videoRef.current
-            .play()
-            .catch(
-              () => {}
-            );
-        }
-
-        if (
-          socketRef.current
-            ?.connected
-        ) {
-          socketRef.current.emit(
-            "driver_camera_ready"
-          );
-        }
-      } catch (error) {
-        console.error(
-          "Camera start failed:",
-          error
-        );
-
-        alert(
-          "Unable to start camera."
-        );
-      }
-    };
-
-  /* =======================================================
-     STOP CAMERA
-  ======================================================= */
-
-  const stopCamera =
-    () => {
-      Object.values(
-        peersRef.current
-      ).forEach(
-        (pc) => {
-          try {
-            pc.close();
-          } catch {
-            // ignore
-          }
-        }
-      );
-
-      peersRef.current =
-        {};
-
-      iceCandidateQueueRef.current =
-        {};
-
-      if (
-        streamRef.current
-      ) {
-        streamRef.current
-          .getTracks()
-          .forEach(
-            (track) =>
-              track.stop()
-          );
-
-        streamRef.current =
-          null;
-      }
-
-      if (
-        videoRef.current
-      ) {
-        videoRef.current.srcObject =
-          null;
-      }
-    };
-
-  /* =======================================================
      START TRIP
 
      MORNING   : before 12:00 PM
@@ -1505,14 +878,7 @@ function DriverDashboard() {
           true
         );
 
-        setTimeout(
-          () => {
-            startCamera();
-          },
-          500
-        );
-
-        fetchTripStatus();
+fetchTripStatus();
       } catch (error) {
         console.error(
           "Start trip error:",
@@ -1535,7 +901,6 @@ function DriverDashboard() {
 
   const handleEndTripCleanup =
     () => {
-      stopCamera();
 
       if (
         selectedTrip ===
@@ -1738,25 +1103,6 @@ function DriverDashboard() {
 
   return (
     <>
-      {/* ===================================================
-          HIDDEN CAMERA
-      =================================================== */}
-
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{
-          width: "1px",
-          height: "1px",
-          opacity: 0,
-          position: "fixed",
-          pointerEvents:
-            "none",
-        }}
-      />
-
       {activeBookingOffer && (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[3px] sm:items-center sm:p-5" role="presentation">
           <section className="w-full max-w-[440px] overflow-hidden rounded-t-[28px] border border-[#EED69B] bg-[#FFFDF8] shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:rounded-[28px]" role="dialog" aria-modal="true" aria-labelledby="booking-offer-title">
@@ -1794,69 +1140,6 @@ function DriverDashboard() {
               <button type="button" disabled={Boolean(bookingOfferBusy)} onClick={() => setActiveBookingOfferId(null)} className="mt-3 h-10 w-full text-[10px] font-bold text-[#8C8276] disabled:opacity-50">Review later</button>
             </div>
           </section>
-        </div>
-      )}
-
-      {/* ===================================================
-          CAMERA MODAL
-      =================================================== */}
-
-      {showCameraSelect && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/35">
-          <div className="w-full max-w-[475px] rounded-t-[28px] bg-[#FFFDF8] px-5 pb-7 pt-4">
-            <div className="mx-auto h-1 w-10 rounded-full bg-[#DCD5C9]" />
-
-            <h2 className="mt-6 text-[18px] font-black text-black">
-              Select Camera
-            </h2>
-
-            <p className="mt-1 text-[10px] text-[#8C8276]">
-              Choose the camera for this duty.
-            </p>
-
-            <div className="mt-5 space-y-2">
-              {videoDevices.map(
-                (
-                  camera,
-                  index
-                ) => (
-                  <button
-                    type="button"
-                    key={
-                      camera.deviceId ||
-                      index
-                    }
-                    onClick={() =>
-                      handleCameraSelect(
-                        camera.deviceId
-                      )
-                    }
-                    className="w-full rounded-[16px] border border-[#EEE3D1] bg-white px-4 py-4 text-left"
-                  >
-                    <p className="text-[12px] font-bold text-black">
-                      {camera.label ||
-                        `Camera ${
-                          index +
-                          1
-                        }`}
-                    </p>
-                  </button>
-                )
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowCameraSelect(
-                  false
-                )
-              }
-              className="mt-4 h-12 w-full rounded-[15px] bg-[#F2EEE7] text-[11px] font-bold text-[#746D65]"
-            >
-              Cancel
-            </button>
-          </div>
         </div>
       )}
 
@@ -2217,7 +1500,7 @@ function DriverDashboard() {
                     </p>
 
                     <p className="mt-0.5 text-[8px] text-[#91877B]">
-                      GPS and camera start automatically.
+                      GPS tracking starts automatically.
                     </p>
                   </div>
                 </div>
