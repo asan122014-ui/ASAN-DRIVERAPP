@@ -82,7 +82,7 @@ export async function reconcilePayment(payment, io, checkout) {
       const notifications = await Notification.create([
         { parent: parent._id, recipientType: "parent", title: "Payment received", message: "Your monthly ride service is now active.", type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id) } },
         { driver: booking.assignedDriverId, recipientType: "driver", title: "Parent payment confirmed", message: `The parent paid for ${booking.child.name}. Distance charge: ₹${Number(booking.quote.distanceCharge).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the month. The ride service is active.`, type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id), distanceCharge: booking.quote.distanceCharge } },
-      ], { session });
+      ], { session, ordered: true });
       driverNotification = notifications[1];
       activated = booking;
     });
