@@ -12,9 +12,9 @@ import { quoteForDistance } from "../services/bookingPricing.js";
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
-const round = (value) => Math.round(Number(value) * 100) / 100;
 const coordinates = (value) => ({ lat: Number(value?.lat), lng: Number(value?.lng) });
 const validCoordinates = (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng);
+const validMapPoint = (point) => validCoordinates(point) && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180;
 const normalizeChildren = (children, child) => {
   const source = Array.isArray(children) && children.length ? children : child ? [child] : [];
   return source.map((item) => ({
@@ -31,13 +31,48 @@ const validChildren = (children) => children.length > 0 && children.every((child
 ) && new Set(children.map((child) => `${child.name.toLocaleLowerCase()}|${child.school.toLocaleLowerCase()}`)).size === children.length;
 const getTrafficRoute = async (pickup, dropoff) => {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY || process.env.GOOGLE_MAPS_API_KEY;
-  if (!key || !validCoordinates(pickup) || !validCoordinates(dropoff)) return null;
+  if (!key) {
+    const error = new Error("Server-side Google Maps route calculation is not configured");
+    error.code = "MAPS_ROUTE_UNAVAILABLE";
+    throw error;
+  }
+  if (!validMapPoint(pickup) || !validMapPoint(dropoff)) {
+    const error = new Error("Valid pickup and school map coordinates are required");
+    error.code = "INVALID_ROUTE_COORDINATES";
+    throw error;
+  }
   const params = new URLSearchParams({ origins: `${pickup.lat},${pickup.lng}`, destinations: `${dropoff.lat},${dropoff.lng}`, departure_time: "now", traffic_model: "best_guess", key });
-  const response = await axios.get(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`, { timeout: 8000 });
+  let response;
+  try {
+    response = await axios.get(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`, { timeout: 8000 });
+  } catch (cause) {
+    const error = new Error("Google Maps route lookup failed", { cause });
+    error.code = "MAPS_ROUTE_UNAVAILABLE";
+    throw error;
+  }
   const element = response.data?.rows?.[0]?.elements?.[0];
-  if (element?.status !== "OK") return null;
-  return { distanceKm: round(Number(element.distance?.value || 0) / 1000), durationMinutes: Math.max(1, Math.round(Number((element.duration_in_traffic || element.duration)?.value || 0) / 60)) };
+  const distanceMeters = Number(element?.distance?.value);
+  const durationSeconds = Number((element?.duration_in_traffic || element?.duration)?.value);
+  if (response.data?.status !== "OK" || element?.status !== "OK" || !Number.isFinite(distanceMeters) || distanceMeters <= 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    const error = new Error(`Google Maps could not calculate this driving route (${response.data?.status || element?.status || "unknown status"})`);
+    error.code = "MAPS_ROUTE_UNAVAILABLE";
+    throw error;
+  }
+  return { distanceMeters, distanceKm: distanceMeters / 1000, durationMinutes: Math.max(1, Math.round(durationSeconds / 60)), trafficAware: Boolean(element.duration_in_traffic) };
 };
+
+router.post("/route-estimate", verifyParent, async (req, res) => {
+  try {
+    const pickup = coordinates(req.body?.pickupCoordinates);
+    const dropoff = coordinates(req.body?.dropoffCoordinates);
+    const route = await getTrafficRoute(pickup, dropoff);
+    return res.status(200).json({ success: true, data: route });
+  } catch (error) {
+    console.error("BOOKING ROUTE ESTIMATE ERROR", error.message);
+    const status = error.code === "INVALID_ROUTE_COORDINATES" ? 400 : 503;
+    return res.status(status).json({ success: false, message: status === 400 ? error.message : "Accurate driving distance is temporarily unavailable. Please try again shortly." });
+  }
+});
 
 router.post("/quote", verifyParent, async (req, res) => {
   try {
@@ -51,12 +86,15 @@ router.post("/quote", verifyParent, async (req, res) => {
     const pickupCoordinates = coordinates(route.pickupCoordinates);
     const dropoffCoordinates = coordinates(route.dropoffCoordinates);
     if (!validCoordinates(pickupCoordinates) || !validCoordinates(dropoffCoordinates)) return res.status(400).json({ success: false, message: "Pickup and drop-off map locations are required" });
-    const trafficRoute = await getTrafficRoute(pickupCoordinates, dropoffCoordinates).catch((error) => { console.error("TRAFFIC ROUTE ERROR", error.message); return null; });
-    const finalRoute = trafficRoute || { distanceKm: round(route.distanceKm), durationMinutes: Number(route.durationMinutes) || 0 };
+    const finalRoute = await getTrafficRoute(pickupCoordinates, dropoffCoordinates);
     const pricing = quoteForDistance(finalRoute.distanceKm, vehicleType, normalizedChildren.length, workingDays);
     const pricedChildren = normalizedChildren.map(({ name, age, gender, school, grade, section }) => ({ name, age, gender, school, grade, section }));
-    return res.status(200).json({ success: true, data: { child: pricedChildren[0], children: pricedChildren, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, pickupTime: route.pickupTime, schoolPickupTime: route.schoolPickupTime, ...finalRoute, trafficAware: Boolean(trafficRoute) }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
-  } catch (error) { console.error("BOOKING QUOTE ERROR", error); return res.status(500).json({ success: false, message: "Unable to calculate the quote" }); }
+    return res.status(200).json({ success: true, data: { child: pricedChildren[0], children: pricedChildren, route: { pickup: route.pickup.trim(), dropoff: route.dropoff.trim(), pickupCoordinates, dropoffCoordinates, pickupTime: route.pickupTime, schoolPickupTime: route.schoolPickupTime, ...finalRoute }, quote: { ...pricing, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() } } });
+  } catch (error) {
+    console.error("BOOKING QUOTE ERROR", error);
+    const status = error.code === "INVALID_ROUTE_COORDINATES" ? 400 : error.code === "MAPS_ROUTE_UNAVAILABLE" || error.response ? 503 : 500;
+    return res.status(status).json({ success: false, message: status === 503 ? "Accurate driving distance is temporarily unavailable. Please try again shortly." : status === 400 ? error.message : "Unable to calculate the price" });
+  }
 });
 
 router.post("/request", verifyParent, async (req, res) => {
