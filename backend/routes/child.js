@@ -1240,6 +1240,13 @@ router.put(
           });
       }
 
+      if (["pickupLocation", "dropoffLocation", "location", "dropLocationCoords"].some((field) => req.body?.[field] !== undefined)) {
+        return res.status(403).json({
+          success: false,
+          message: "Home and school locations can only be changed through an approved location-change request.",
+        });
+      }
+
       /*
         driverId is intentionally NOT editable.
       */
@@ -1254,8 +1261,6 @@ router.put(
           "dropoffTime",
           "eveningPickup",
           "eveningDrop",
-          "pickupLocation",
-          "dropoffLocation",
         ];
 
       for (

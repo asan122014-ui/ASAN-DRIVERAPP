@@ -48,6 +48,10 @@ const bookingSchema = new mongoose.Schema({
     totalMonthly: { type: Number, required: true, min: 0 },
     expiresAt: { type: Date, required: true },
   },
+  // A shorter approved route keeps the already-paid current service price,
+  // while recording the price that should be used for the next renewal.
+  renewalQuote: { type: mongoose.Schema.Types.Mixed, default: null },
+  renewalEffectiveAt: { type: Date, default: null },
   driverChoice: { type: String, enum: ["existing", "new"], required: true },
   requestedDriverId: { type: String, default: "", trim: true, uppercase: true },
   driverRequestId: { type: mongoose.Schema.Types.ObjectId, ref: "DriverRequest", default: null },

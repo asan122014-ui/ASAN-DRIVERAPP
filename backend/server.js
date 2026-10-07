@@ -65,6 +65,7 @@ import driverRequestRoutes from "./routes/driverRequest.js";
 import enquiryRoutes from "./routes/enquiryRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import bookingPaymentRoutes from "./routes/bookingPaymentRoutes.js";
+import childLocationChangeRoutes from "./routes/childLocationChangeRoutes.js";
 import { startBookingServiceExpiryWorker } from "./jobs/expireBookingServices.js";
 
 /* =========================================================
@@ -353,6 +354,11 @@ app.use(
 app.use(
   "/api/children",
   childRoutes
+);
+
+app.use(
+  "/api/child-location-changes",
+  childLocationChangeRoutes
 );
 
 /* =========================================================
