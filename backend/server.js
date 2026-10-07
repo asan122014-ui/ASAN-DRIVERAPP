@@ -21,6 +21,7 @@ import cron from "node-cron";
 ========================================================= */
 
 import connectDB from "./config/db.js";
+import { getHealthStatus } from "./services/healthStatus.js";
 
 /* =========================================================
    MODELS
@@ -41,6 +42,7 @@ import verifyAdmin from "./middleware/verifyAdmin.js";
 ========================================================= */
 
 import cleanupVerificationPhotos from "./jobs/cleanupVerificationPhotos.js";
+import { startBookingOfferExpiryWorker } from "./jobs/expireBookingOffers.js";
 
 /* =========================================================
    ROUTES
@@ -63,6 +65,8 @@ import invoiceRoutes from "./routes/invoiceRoutes.js";
 import driverRequestRoutes from "./routes/driverRequest.js";
 import enquiryRoutes from "./routes/enquiryRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import bookingPaymentRoutes from "./routes/bookingPaymentRoutes.js";
+import { startBookingServiceExpiryWorker } from "./jobs/expireBookingServices.js";
 
 /* =========================================================
    CONSTANTS
@@ -190,6 +194,8 @@ app.use(
 /* =========================================================
    BODY PARSERS
 ========================================================= */
+
+app.use("/api/booking-payments", express.json({ limit: "64kb" }), bookingPaymentRoutes);
 
 app.use(
   express.json({
@@ -2089,20 +2095,15 @@ app.get(
     req,
     res
   ) => {
+    const health = getHealthStatus(
+      mongoose.connection.readyState
+    );
+
     return res
       .status(
-        200
+        health.httpStatus
       )
-      .json({
-        success:
-          true,
-
-        status:
-          "OK",
-
-        time:
-          new Date(),
-      });
+      .json(health.body);
   }
 );
 
@@ -2214,6 +2215,9 @@ connectDB()
       console.log(
         "Database connected successfully"
       );
+
+      startBookingOfferExpiryWorker(io);
+      startBookingServiceExpiryWorker(io);
 
       /* =====================================================
          VERIFICATION PHOTO CLEANUP

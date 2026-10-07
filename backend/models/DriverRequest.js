@@ -8,6 +8,7 @@ const DRIVER_REQUEST_STATUSES = [
   "Pending",
   "Assigned",
   "Rejected",
+  "Cancelled",
 ];
 
 /* =========================================================
@@ -49,6 +50,60 @@ const driverRequestSchema =
 
         ref: "Child",
 
+        default: null,
+      },
+
+      bookingId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Booking",
+        default: null,
+        index: true,
+      },
+
+      requestType: {
+        type: String,
+        enum: ["existing_driver", "new_driver", "legacy"],
+        default: "legacy",
+        index: true,
+      },
+
+      requestedDriverId: {
+        type: String,
+        default: "",
+        trim: true,
+        uppercase: true,
+        index: true,
+      },
+
+      matchingStatus: {
+        type: String,
+        enum: ["NotStarted", "Searching", "Offered", "Accepted", "Exhausted"],
+        default: "NotStarted",
+        index: true,
+      },
+
+      offeredDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      currentOfferDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      rejectedDriverIds: {
+        type: [String],
+        default: [],
+      },
+
+      offerExpiresAt: {
+        type: Date,
+        default: null,
+      },
+
+      respondedAt: {
+        type: Date,
         default: null,
       },
 
@@ -169,8 +224,7 @@ driverRequestSchema.pre(
         Assignment means it is no longer rejected.
       */
 
-      this.rejectionReason =
-        "";
+      this.rejectionReason = "";
     }
 
     /* =====================================================
@@ -207,8 +261,7 @@ driverRequestSchema.pre(
       this.assignedAt =
         null;
 
-      this.rejectionReason =
-        "";
+      if (this.matchingStatus !== "Exhausted") this.rejectionReason = "";
     }
   }
 );
@@ -254,6 +307,11 @@ driverRequestSchema.index({
   assignedDriverId: 1,
   status: 1,
   createdAt: -1,
+});
+
+driverRequestSchema.index({
+  matchingStatus: 1,
+  offerExpiresAt: 1,
 });
 
 /* =========================================================

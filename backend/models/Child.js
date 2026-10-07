@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 
 const childSchema = new mongoose.Schema(
   {
+    activeBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
     /* =====================================================
        CHILD INFO
     ===================================================== */

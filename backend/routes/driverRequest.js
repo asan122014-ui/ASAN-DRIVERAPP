@@ -9,9 +9,43 @@ import {
 
 import verifyParent from "../middleware/verifyParent.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
+import verifyDriver, { requireApprovedDriver } from "../middleware/verifyDriver.js";
+import {
+  acceptDriverBookingOffer,
+  adminDispatchBookingRequest,
+  getDriverBookingOffers,
+  rejectDriverBookingOffer,
+} from "../controllers/bookingDriverRequestController.js";
 
 const router =
   express.Router();
+
+router.get(
+  "/offers",
+  verifyDriver,
+  requireApprovedDriver,
+  getDriverBookingOffers
+);
+
+router.put(
+  "/:id/accept",
+  verifyDriver,
+  requireApprovedDriver,
+  acceptDriverBookingOffer
+);
+
+router.put(
+  "/:id/decline",
+  verifyDriver,
+  requireApprovedDriver,
+  rejectDriverBookingOffer
+);
+
+router.put(
+  "/:id/dispatch",
+  verifyAdmin,
+  adminDispatchBookingRequest
+);
 
 /* =========================================================
    DRIVER REQUEST ROUTES

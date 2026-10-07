@@ -835,6 +835,9 @@ export const getAllRequests =
             "childId",
             "name school grade"
           )
+          .populate(
+            "bookingId"
+          )
           .sort({
             createdAt:
               -1,
@@ -845,7 +848,7 @@ export const getAllRequests =
           status:
             "approved",
         }).select(
-          "name driverId phone vehicleNumber address homeLocation status"
+          "name driverId phone vehicleNumber address homeLocation location status isOnline currentStatus"
         );
 
       const data =
@@ -881,50 +884,24 @@ export const getAllRequests =
         let nearestDrivers =
           [];
 
-        const parentCoordinates =
-          parent
-            .homeLocation
-            ?.coordinates;
+        const booking = request.bookingId;
+        const pickup = booking?.route?.pickupCoordinates;
+        const parentCoordinates = Array.isArray(parent.homeLocation?.coordinates)
+          ? parent.homeLocation.coordinates
+          : null;
+        const originLng = Number(pickup?.lng ?? parentCoordinates?.[0]);
+        const originLat = Number(pickup?.lat ?? parentCoordinates?.[1]);
 
-        if (
-          Array.isArray(
-            parentCoordinates
-          ) &&
-          parentCoordinates.length ===
-            2
-        ) {
-          const parentLng =
-            Number(
-              parentCoordinates[
-                0
-              ]
-            );
-
-          const parentLat =
-            Number(
-              parentCoordinates[
-                1
-              ]
-            );
-
-          if (
-            Number.isFinite(
-              parentLng
-            ) &&
-            Number.isFinite(
-              parentLat
-            )
-          ) {
+        if (Number.isFinite(originLng) && Number.isFinite(originLat)) {
             nearestDrivers =
               approvedDrivers
                 .map(
                   (
                     driver
                   ) => {
-                    const coordinates =
-                      driver
-                        .homeLocation
-                        ?.coordinates;
+                    const coordinates = Array.isArray(driver.location?.coordinates)
+                      ? driver.location.coordinates
+                      : driver.homeLocation?.coordinates;
 
                     if (
                       !Array.isArray(
@@ -952,8 +929,8 @@ export const getAllRequests =
 
                     const distance =
                       getDistance(
-                        parentLat,
-                        parentLng,
+                        originLat,
+                        originLng,
                         driverLat,
                         driverLng
                       );
@@ -984,6 +961,12 @@ export const getAllRequests =
                       address:
                         driver.address,
 
+                      isOnline: driver.isOnline,
+
+                      currentStatus: driver.currentStatus,
+
+                      eligible: driver.status === "approved" && driver.isOnline && driver.currentStatus === "idle",
+
                       distance:
                         Number(
                           distance.toFixed(
@@ -1008,7 +991,6 @@ export const getAllRequests =
                   0,
                   5
                 );
-          }
         }
 
         data.push({
@@ -1016,6 +998,15 @@ export const getAllRequests =
 
           orphaned:
             false,
+
+          booking: booking ? {
+            _id: booking._id,
+            status: booking.status,
+            driverChoice: booking.driverChoice,
+            monthlyPrice: booking.quote?.totalMonthly,
+            vehicleType: booking.quote?.vehicleType,
+            route: booking.route,
+          } : null,
 
           nearestDrivers,
         });
@@ -1151,6 +1142,13 @@ export const assignDriver =
             throw createHttpError(
               409,
               "Rejected request cannot be assigned"
+            );
+          }
+
+          if (request.bookingId) {
+            throw createHttpError(
+              409,
+              "Booking requests must be assigned by driver acceptance. Use the dispatch action to send an offer."
             );
           }
 
