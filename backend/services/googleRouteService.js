@@ -9,11 +9,13 @@ export async function getTrafficRoute(pickup, dropoff) {
     error.code = "INVALID_ROUTE_COORDINATES";
     throw error;
   }
-  const key = process.env.GOOGLE_MAPS_SERVER_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  // This endpoint is called by the backend. Never fall back to GOOGLE_MAPS_API_KEY,
+  // which is commonly configured as a browser/referrer-restricted key.
+  const key = process.env.GOOGLE_MAPS_SERVER_KEY;
   if (!key) {
     const error = new Error("Server-side Google Maps route calculation is not configured");
     error.code = "MAPS_ROUTE_UNAVAILABLE";
-    error.publicMessage = "Driving distance is not configured on the server. Set GOOGLE_MAPS_SERVER_KEY in Render.";
+    error.publicMessage = "A server-restricted Google Maps key is missing. Set GOOGLE_MAPS_SERVER_KEY in Render; the website key cannot be used by the backend.";
     throw error;
   }
 

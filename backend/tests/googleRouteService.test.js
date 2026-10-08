@@ -39,15 +39,15 @@ test("route estimate rejects invalid coordinates before calling Google", async (
   }
 });
 
-test("route estimate returns a clear configuration message when the API key is missing", async () => {
+test("route estimate requires a dedicated server key instead of a browser key", async () => {
   const previousServerKey = process.env.GOOGLE_MAPS_SERVER_KEY;
   const previousApiKey = process.env.GOOGLE_MAPS_API_KEY;
   delete process.env.GOOGLE_MAPS_SERVER_KEY;
-  delete process.env.GOOGLE_MAPS_API_KEY;
+  process.env.GOOGLE_MAPS_API_KEY = "website-restricted-key";
   try {
     await assert.rejects(getTrafficRoute(pickup, dropoff), {
       code: "MAPS_ROUTE_UNAVAILABLE",
-      publicMessage: "Driving distance is not configured on the server. Set GOOGLE_MAPS_SERVER_KEY in Render.",
+      publicMessage: "A server-restricted Google Maps key is missing. Set GOOGLE_MAPS_SERVER_KEY in Render; the website key cannot be used by the backend.",
     });
   } finally {
     if (previousServerKey === undefined) delete process.env.GOOGLE_MAPS_SERVER_KEY;
