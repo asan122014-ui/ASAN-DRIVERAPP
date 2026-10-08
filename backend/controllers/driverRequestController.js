@@ -667,21 +667,6 @@ export const createRequest =
       }
 
       /* ===================================================
-         ALREADY HAS DRIVER
-      =================================================== */
-
-      if (
-        parent.driverId
-      ) {
-        return res.status(409).json({
-          success: false,
-
-          message:
-            "A Driver is already linked to this Parent",
-        });
-      }
-
-      /* ===================================================
          DUPLICATE PENDING REQUEST
       =================================================== */
 
@@ -1209,25 +1194,6 @@ export const assignDriver =
             );
           }
 
-          /*
-            Prevent a stale request from overwriting
-            a Driver that may have been linked elsewhere
-            after this request was created.
-          */
-
-          if (
-            parent.driverId &&
-            normalizeDriverId(
-              parent.driverId
-            ) !==
-              driver.driverId
-          ) {
-            throw createHttpError(
-              409,
-              "Parent already has another Driver linked"
-            );
-          }
-
           /* ===============================================
              CHILD
           =============================================== */
@@ -1281,8 +1247,8 @@ export const assignDriver =
              PARENT UPDATE
           =============================================== */
 
-          parent.driverId =
-            driver.driverId;
+          parent.driverIds = [...new Set([...(parent.driverIds || []), parent.driverId, driver.driverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+          parent.driverId = parent.driverId || driver.driverId;
 
           await parent.save({
             session,

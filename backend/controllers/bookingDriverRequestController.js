@@ -107,14 +107,16 @@ export const acceptDriverBookingOffer = async (req, res) => {
     const parent = await Parent.findById(request.parentId);
     const driver = await Driver.findById(req.driver._id).select("driverId status");
     if (!parent || !driver || driver.status !== "approved") return res.status(409).json({ success: false, message: "The parent or approved driver account is no longer available." });
-    if (parent.driverId && normalizeDriverId(parent.driverId) !== driverId) return res.status(409).json({ success: false, message: "This parent is already linked to another driver." });
-
     const accepted = await DriverRequest.findOneAndUpdate(
       { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
       { $set: { status: "Assigned", matchingStatus: "Accepted", assignedDriverId: driverId, assignedAt: new Date(), respondedAt: new Date(), offerExpiresAt: null, rejectionReason: "" } },
       { new: true }
     );
     if (!accepted) return res.status(409).json({ success: false, message: "Another driver has already accepted this request, or the offer expired." });
+
+    parent.driverIds = [...new Set([...(parent.driverIds || []), parent.driverId, driverId].map((value) => normalizeDriverId(value)).filter(Boolean))];
+    parent.driverId = parent.driverId || driverId;
+    await parent.save();
 
     await Booking.updateOne({ _id: accepted.bookingId }, { $set: { assignedDriverId: driverId, status: "awaiting_payment" } });
     // Student/parent linkage is activated only after Razorpay confirms payment.

@@ -63,7 +63,7 @@ export async function reconcilePayment(payment, io, checkout) {
       if (booking?.status === "cancelled") { cancelledBooking = true; return; }
       if (!booking || booking.status !== "awaiting_payment" || !booking.assignedDriverId) throw new Error("Booking cannot be activated");
       const parent = await Parent.findById(booking.parentId).session(session);
-      if (!parent || (parent.driverId && parent.driverId !== booking.assignedDriverId)) throw new Error("Parent driver assignment changed; payment needs review");
+      if (!parent) throw new Error("Parent account was not found");
       const now = new Date();
       current.status = "PAID";
       current.paymentId = String(confirmed.id);
@@ -78,7 +78,8 @@ export async function reconcilePayment(payment, io, checkout) {
       const bookingChildIds = [...new Set((booking.childIds?.length ? booking.childIds : [booking.childId]).filter(Boolean).map(String))];
       const childResult = await Child.updateMany({ _id: { $in: bookingChildIds }, parentId: booking.parentId }, { $set: { driverId: booking.assignedDriverId, activeBookingId: booking._id } }, { session });
       if (!bookingChildIds.length || childResult.matchedCount !== bookingChildIds.length) throw new Error("One or more booking children were not found");
-      parent.driverId = booking.assignedDriverId;
+      parent.driverIds = [...new Set([...(parent.driverIds || []), parent.driverId, booking.assignedDriverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+      parent.driverId = parent.driverId || booking.assignedDriverId;
       await parent.save({ session });
       const childNames = (booking.children?.length ? booking.children : [booking.child]).map((item) => item?.name).filter(Boolean).join(", ");
       const notifications = await Notification.create([

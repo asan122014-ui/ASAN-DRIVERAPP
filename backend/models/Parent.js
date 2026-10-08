@@ -143,6 +143,12 @@ const parentSchema =
         uppercase: true,
       },
 
+      driverIds: {
+        type: [String],
+        default: [],
+        set: (values) => [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))],
+      },
+
       /* =====================================================
          PUSH NOTIFICATION TOKENS
       ===================================================== */

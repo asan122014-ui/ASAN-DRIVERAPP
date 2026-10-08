@@ -45,8 +45,6 @@ router.post("/quote", verifyParent, async (req, res) => {
   try {
     const { child, children: childInput, route, vehicleType = "AUTO", workingDays = 26 } = req.body || {};
     const normalizedChildren = normalizeChildren(childInput, child);
-    const activeBooking = await Booking.findOne({ parentId: req.parent._id, status: { $in: activeStatuses } }).select("_id status");
-    if (activeBooking) return res.status(409).json({ success: false, message: "You already have a booking in progress. Complete or cancel it before creating another booking.", bookingId: activeBooking._id, status: activeBooking.status });
     if (!validChildren(normalizedChildren) || !route?.pickup?.trim() || !route?.dropoff?.trim() || !route?.pickupTime || !route?.schoolPickupTime || !Number.isFinite(Number(route.distanceKm)) || Number(route.distanceKm) <= 0) {
       return res.status(400).json({ success: false, message: "Complete each child’s name, age and school, plus pickup, drop-off and a valid route distance" });
     }
@@ -70,13 +68,17 @@ router.post("/request", verifyParent, async (req, res) => {
     const normalizedChildren = normalizeChildren(childInput, child);
     if (!["existing", "new"].includes(driverChoice) || !validChildren(normalizedChildren) || !route?.pickup || !route?.dropoff || !route?.pickupTime || !route?.schoolPickupTime || !quote?.totalMonthly || Number(quote.childCount || 1) !== normalizedChildren.length) return res.status(400).json({ success: false, message: "Complete the child, route, price and driver choice first" });
     if (new Date(quote.expiresAt).getTime() <= Date.now()) return res.status(400).json({ success: false, message: "This quote has expired. Please calculate a new quote" });
-    const activeBooking = await Booking.findOne({ parentId: req.parent._id, status: { $in: activeStatuses } }).select("_id status");
-    if (activeBooking) return res.status(409).json({ success: false, message: "You already have a booking in progress. Complete or cancel it before creating another booking.", bookingId: activeBooking._id, status: activeBooking.status });
     let normalizedDriverId = "";
     if (driverChoice === "existing") {
       normalizedDriverId = String(requestedDriverId || "").trim().toUpperCase();
       const driver = await Driver.findOne({ driverId: normalizedDriverId }).select("driverId status");
       if (!driver || driver.status !== "approved") return res.status(404).json({ success: false, message: "Approved driver not found for that ASAN ID" });
+      const existingRequest = await Booking.findOne({ parentId: req.parent._id, requestedDriverId: normalizedDriverId, status: { $in: activeStatuses } }).select("_id status");
+      if (existingRequest) return res.status(409).json({ success: false, message: `You already have a booking request in progress with ASAN ID ${normalizedDriverId}. You can still request a different saved driver.` });
+      const knownDriverIds = [...new Set([...(req.parent.driverIds || []), req.parent.driverId, normalizedDriverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+      req.parent.driverIds = knownDriverIds;
+      req.parent.driverId = req.parent.driverId || normalizedDriverId;
+      await req.parent.save();
     }
     const childRecords = await Promise.all(normalizedChildren.map(async (item) => {
       let record = await Child.findOne({ parentId: req.parent._id, name: item.name, age: item.age, school: item.school });

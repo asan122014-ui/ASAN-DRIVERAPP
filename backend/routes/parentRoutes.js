@@ -37,6 +37,7 @@ const getSafeParent = (
   delete data.password;
   delete data.firebaseUid;
   delete data.__v;
+  data.driverIds = [...new Set([...(Array.isArray(data.driverIds) ? data.driverIds : []), data.driverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
 
   return data;
 };
@@ -742,8 +743,8 @@ router.put(
           });
       }
 
-      parent.driverId =
-        driver.driverId;
+      parent.driverIds = [...new Set([...(parent.driverIds || []), parent.driverId, driver.driverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+      parent.driverId = parent.driverId || driver.driverId;
 
       await parent.save();
 
@@ -992,15 +993,7 @@ router.post(
       const parent =
         req.parent;
 
-      if (
-        String(
-          parent.driverId ||
-            ""
-        ).toUpperCase() ===
-        String(
-          driver.driverId
-        ).toUpperCase()
-      ) {
+      if ([...(parent.driverIds || []), parent.driverId].filter(Boolean).some((id) => String(id).trim().toUpperCase() === String(driver.driverId).trim().toUpperCase())) {
         return res
           .status(200)
           .json({
@@ -1017,24 +1010,10 @@ router.post(
           });
       }
 
-      parent.driverId =
-        driver.driverId;
+      parent.driverIds = [...new Set([...(parent.driverIds || []), parent.driverId, driver.driverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+      parent.driverId = parent.driverId || driver.driverId;
 
       await parent.save();
-
-      await Child.updateMany(
-        {
-          parentId:
-            parent._id,
-        },
-
-        {
-          $set: {
-            driverId:
-              driver.driverId,
-          },
-        }
-      );
 
       return res
         .status(200)
@@ -1067,6 +1046,26 @@ router.post(
           message:
             "Failed to link Driver",
         });
+    }
+  }
+);
+
+router.delete(
+  "/link-driver/:driverId",
+  verifyParent,
+  async (req, res) => {
+    try {
+      const normalizedDriverId = String(req.params.driverId || "").trim().toUpperCase();
+      const parent = req.parent;
+      const currentIds = [...new Set([...(parent.driverIds || []), parent.driverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+      if (!currentIds.includes(normalizedDriverId)) return res.status(404).json({ success: false, message: "That driver ID is not saved to this profile" });
+      parent.driverIds = currentIds.filter((id) => id !== normalizedDriverId);
+      if (String(parent.driverId || "").trim().toUpperCase() === normalizedDriverId) parent.driverId = parent.driverIds[0] || null;
+      await parent.save();
+      return res.status(200).json({ success: true, message: "Driver ID removed from profile", data: getSafeParent(parent) });
+    } catch (error) {
+      console.error("UNLINK DRIVER ERROR:", error.message);
+      return res.status(500).json({ success: false, message: "Unable to remove this driver ID" });
     }
   }
 );
