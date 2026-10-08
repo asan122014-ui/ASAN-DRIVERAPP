@@ -110,7 +110,7 @@ router.post("/request", verifyParent, async (req, res) => {
 });
 
 router.get("/mine", verifyParent, async (req, res) => {
-  try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").populate("driverRequestId", "status matchingStatus assignedDriverId rejectionReason offerExpiresAt").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
+  try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").populate("driverRequestId", "status matchingStatus assignedDriverId rejectionReason offerExpiresAt").populate("paymentId", "amount currency status paymentId paidAt provider").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
   catch (error) { return res.status(500).json({ success: false, message: "Unable to load bookings" }); }
 });
 
