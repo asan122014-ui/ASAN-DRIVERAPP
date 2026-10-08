@@ -17,6 +17,7 @@ import {
 import verifyAdmin from "../middleware/verifyAdmin.js";
 import verifyDriver from "../middleware/verifyDriver.js";
 import verifyParent from "../middleware/verifyParent.js";
+import { createInvoicePaymentOrder, verifyInvoicePayment } from "../controllers/invoicePaymentController.js";
 
 const router =
   express.Router();
@@ -539,6 +540,22 @@ router.put(
   verifyAdmin,
 
   markInvoicePaid
+);
+
+/* =========================================================
+   PARENT RAZORPAY INVOICE CHECKOUT
+========================================================= */
+
+router.post(
+  "/:id/payment/order",
+  authorizeInvoiceAccess,
+  createInvoicePaymentOrder
+);
+
+router.post(
+  "/:id/payment/verify",
+  authorizeInvoiceAccess,
+  verifyInvoicePayment
 );
 
 /* =========================================================

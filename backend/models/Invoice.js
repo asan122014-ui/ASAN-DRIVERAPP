@@ -283,6 +283,17 @@ const invoiceSchema =
         trim: true,
       },
 
+      razorpayOrderLockToken: {
+        type: String,
+        default: null,
+        select: false,
+      },
+
+      razorpayOrderLockExpiresAt: {
+        type: Date,
+        default: null,
+      },
+
       /* =====================================================
          PDF
       ===================================================== */
