@@ -487,6 +487,11 @@ router.get(
    AUTHENTICATED DRIVER ONLY
 ========================================================= */
 
+// Keep these specific routes before /driver/:driverId so Express does not
+// interpret "payouts" as a driver's ASAN ID.
+router.get("/driver/payouts", verifyDriver, listDriverPayouts);
+router.get("/driver/payouts/:id/proof", verifyDriver, getDriverPayoutProof);
+
 router.get(
   "/driver/:driverId",
 
@@ -497,8 +502,6 @@ router.get(
   getDriverInvoices
 );
 
-router.get("/driver/payouts", verifyDriver, listDriverPayouts);
-router.get("/driver/payouts/:id/proof", verifyDriver, getDriverPayoutProof);
 router.get("/admin/driver-payouts", verifyAdmin, listAdminPayouts);
 router.put("/admin/driver-payouts/:id/paid", verifyAdmin, driverPayoutUpload.single("proof"), markDriverPayoutPaid);
 
