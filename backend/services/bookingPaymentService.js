@@ -4,6 +4,8 @@ import BookingPayment from "../models/BookingPayment.js";
 import Child from "../models/Child.js";
 import Parent from "../models/Parent.js";
 import Notification from "../models/Notification.js";
+import DriverPayout from "../models/DriverPayout.js";
+import { splitDriverPayoutAmount } from "./driverPayoutSchedule.js";
 import { razorpayClient, razorpayConfig } from "./razorpayService.js";
 import { confirmedRazorpayPayment, monthEnd, verifyCheckoutSignature } from "./paymentRules.js";
 
@@ -75,6 +77,14 @@ export async function reconcilePayment(payment, io, checkout) {
       booking.serviceEndsAt = monthEnd(now);
       booking.status = "active";
       await booking.save({ session });
+      const driverAmount = Math.round(Number(booking.quote?.distanceCharge || 0) * 100) / 100;
+      if (driverAmount > 0) {
+        const [firstInstallment, finalInstallment] = splitDriverPayoutAmount(driverAmount);
+        await DriverPayout.create([
+          { bookingId: booking._id, invoiceId: null, driverId: booking.assignedDriverId, installment: "mid_service", amount: firstInstallment },
+          { bookingId: booking._id, invoiceId: null, driverId: booking.assignedDriverId, installment: "service_complete", amount: finalInstallment },
+        ], { session, ordered: true });
+      }
       const bookingChildIds = [...new Set((booking.childIds?.length ? booking.childIds : [booking.childId]).filter(Boolean).map(String))];
       const childResult = await Child.updateMany({ _id: { $in: bookingChildIds }, parentId: booking.parentId }, { $set: { driverId: booking.assignedDriverId, activeBookingId: booking._id } }, { session });
       if (!bookingChildIds.length || childResult.matchedCount !== bookingChildIds.length) throw new Error("One or more booking children were not found");

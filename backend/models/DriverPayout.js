@@ -7,7 +7,8 @@ const payoutProofSchema = new mongoose.Schema({
 }, { _id: false });
 
 const driverPayoutSchema = new mongoose.Schema({
-  invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice", required: true },
+  invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice", default: null },
+  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
   driverId: { type: String, required: true, uppercase: true, trim: true },
   installment: { type: String, enum: ["mid_service", "service_complete"], required: true },
   amount: { type: Number, required: true, min: 0 },
@@ -17,7 +18,8 @@ const driverPayoutSchema = new mongoose.Schema({
   markedPaidBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
 }, { timestamps: true });
 
-driverPayoutSchema.index({ invoiceId: 1, installment: 1 }, { unique: true });
+driverPayoutSchema.index({ invoiceId: 1, installment: 1 }, { unique: true, partialFilterExpression: { invoiceId: { $type: "objectId" } } });
+driverPayoutSchema.index({ bookingId: 1, installment: 1 }, { unique: true, partialFilterExpression: { bookingId: { $type: "objectId" } } });
 driverPayoutSchema.index({ driverId: 1, createdAt: -1 });
 
 export default mongoose.models.DriverPayout || mongoose.model("DriverPayout", driverPayoutSchema);
