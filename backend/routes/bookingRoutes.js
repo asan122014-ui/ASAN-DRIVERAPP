@@ -1,6 +1,5 @@
 import express from "express";
 import mongoose from "mongoose";
-import axios from "axios";
 import Booking from "../models/Booking.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
@@ -9,12 +8,12 @@ import BookingPayment from "../models/BookingPayment.js";
 import verifyParent from "../middleware/verifyParent.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
+import { getTrafficRoute } from "../services/googleRouteService.js";
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
 const coordinates = (value) => ({ lat: Number(value?.lat), lng: Number(value?.lng) });
 const validCoordinates = (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng);
-const validMapPoint = (point) => validCoordinates(point) && Math.abs(point.lat) <= 90 && Math.abs(point.lng) <= 180;
 const normalizeChildren = (children, child) => {
   const source = Array.isArray(children) && children.length ? children : child ? [child] : [];
   return source.map((item) => ({
@@ -29,38 +28,6 @@ const normalizeChildren = (children, child) => {
 const validChildren = (children) => children.length > 0 && children.every((child) =>
   child.name && child.name.length <= 100 && Number.isInteger(child.age) && child.age >= 1 && child.age <= 17 && child.school && child.school.length <= 160
 ) && new Set(children.map((child) => `${child.name.toLocaleLowerCase()}|${child.school.toLocaleLowerCase()}`)).size === children.length;
-const getTrafficRoute = async (pickup, dropoff) => {
-  const key = process.env.GOOGLE_MAPS_SERVER_KEY || process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) {
-    const error = new Error("Server-side Google Maps route calculation is not configured");
-    error.code = "MAPS_ROUTE_UNAVAILABLE";
-    throw error;
-  }
-  if (!validMapPoint(pickup) || !validMapPoint(dropoff)) {
-    const error = new Error("Valid pickup and school map coordinates are required");
-    error.code = "INVALID_ROUTE_COORDINATES";
-    throw error;
-  }
-  const params = new URLSearchParams({ origins: `${pickup.lat},${pickup.lng}`, destinations: `${dropoff.lat},${dropoff.lng}`, departure_time: "now", traffic_model: "best_guess", key });
-  let response;
-  try {
-    response = await axios.get(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`, { timeout: 8000 });
-  } catch (cause) {
-    const error = new Error("Google Maps route lookup failed", { cause });
-    error.code = "MAPS_ROUTE_UNAVAILABLE";
-    throw error;
-  }
-  const element = response.data?.rows?.[0]?.elements?.[0];
-  const distanceMeters = Number(element?.distance?.value);
-  const durationSeconds = Number((element?.duration_in_traffic || element?.duration)?.value);
-  if (response.data?.status !== "OK" || element?.status !== "OK" || !Number.isFinite(distanceMeters) || distanceMeters <= 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    const error = new Error(`Google Maps could not calculate this driving route (${response.data?.status || element?.status || "unknown status"})`);
-    error.code = "MAPS_ROUTE_UNAVAILABLE";
-    throw error;
-  }
-  return { distanceMeters, distanceKm: distanceMeters / 1000, durationMinutes: Math.max(1, Math.round(durationSeconds / 60)), trafficAware: Boolean(element.duration_in_traffic) };
-};
-
 router.post("/route-estimate", verifyParent, async (req, res) => {
   try {
     const pickup = coordinates(req.body?.pickupCoordinates);
