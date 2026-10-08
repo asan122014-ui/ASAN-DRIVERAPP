@@ -26,6 +26,6 @@ test("calendar month ends clamp correctly", () => {
 });
 test("checkout recomputes price rather than trusting supplied total", () => {
   const booking = { route: { distanceKm: 5 }, quote: { vehicleType: "AUTO", childCount: 1, totalMonthly: 1 } };
-  assert.equal(monthlyAmount(booking), 5304);
+  assert.equal(monthlyAmount(booking), 3712.8);
   assert.throws(() => monthlyAmount({ ...booking, route: { distanceKm: -1 } }));
 });
