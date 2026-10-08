@@ -21,6 +21,7 @@ import cron from "node-cron";
 ========================================================= */
 
 import connectDB from "./config/db.js";
+import { getHealthStatus } from "./services/healthStatus.js";
 
 /* =========================================================
    MODELS
@@ -1580,20 +1581,15 @@ app.get(
     req,
     res
   ) => {
+    const health = getHealthStatus(
+      mongoose.connection.readyState
+    );
+
     return res
       .status(
-        200
+        health.httpStatus
       )
-      .json({
-        success:
-          true,
-
-        status:
-          "OK",
-
-        time:
-          new Date(),
-      });
+      .json(health.body);
   }
 );
 
