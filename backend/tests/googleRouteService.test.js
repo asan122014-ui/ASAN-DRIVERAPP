@@ -38,3 +38,45 @@ test("route estimate rejects invalid coordinates before calling Google", async (
     axios.post = originalPost;
   }
 });
+
+test("route estimate returns a clear configuration message when the API key is missing", async () => {
+  const previousServerKey = process.env.GOOGLE_MAPS_SERVER_KEY;
+  const previousApiKey = process.env.GOOGLE_MAPS_API_KEY;
+  delete process.env.GOOGLE_MAPS_SERVER_KEY;
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  try {
+    await assert.rejects(getTrafficRoute(pickup, dropoff), {
+      code: "MAPS_ROUTE_UNAVAILABLE",
+      publicMessage: "Driving distance is not configured on the server. Set GOOGLE_MAPS_SERVER_KEY in Render.",
+    });
+  } finally {
+    if (previousServerKey === undefined) delete process.env.GOOGLE_MAPS_SERVER_KEY;
+    else process.env.GOOGLE_MAPS_SERVER_KEY = previousServerKey;
+    if (previousApiKey === undefined) delete process.env.GOOGLE_MAPS_API_KEY;
+    else process.env.GOOGLE_MAPS_API_KEY = previousApiKey;
+  }
+});
+
+test("route estimate explains when Google rejects the server key or API access", async () => {
+  const originalPost = axios.post;
+  const originalConsoleError = console.error;
+  const previousKey = process.env.GOOGLE_MAPS_SERVER_KEY;
+  process.env.GOOGLE_MAPS_SERVER_KEY = "test-server-key";
+  console.error = () => {};
+  axios.post = async () => {
+    const error = new Error("Request failed with status code 403");
+    error.response = { status: 403, data: { error: { message: "API key not authorized" } } };
+    throw error;
+  };
+  try {
+    await assert.rejects(getTrafficRoute(pickup, dropoff), {
+      code: "MAPS_ROUTE_UNAVAILABLE",
+      publicMessage: "Google Maps denied the route request. Enable Routes API and billing, then allow Routes API for the server key in Render.",
+    });
+  } finally {
+    axios.post = originalPost;
+    console.error = originalConsoleError;
+    if (previousKey === undefined) delete process.env.GOOGLE_MAPS_SERVER_KEY;
+    else process.env.GOOGLE_MAPS_SERVER_KEY = previousKey;
+  }
+});

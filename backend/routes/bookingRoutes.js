@@ -37,7 +37,7 @@ router.post("/route-estimate", verifyParent, async (req, res) => {
   } catch (error) {
     console.error("BOOKING ROUTE ESTIMATE ERROR", error.message);
     const status = error.code === "INVALID_ROUTE_COORDINATES" ? 400 : 503;
-    return res.status(status).json({ success: false, message: status === 400 ? error.message : "Accurate driving distance is temporarily unavailable. Please try again shortly." });
+    return res.status(status).json({ success: false, message: status === 400 ? error.message : error.publicMessage || "Accurate driving distance is temporarily unavailable. Please try again shortly." });
   }
 });
 
@@ -60,7 +60,7 @@ router.post("/quote", verifyParent, async (req, res) => {
   } catch (error) {
     console.error("BOOKING QUOTE ERROR", error);
     const status = error.code === "INVALID_ROUTE_COORDINATES" ? 400 : error.code === "MAPS_ROUTE_UNAVAILABLE" || error.response ? 503 : 500;
-    return res.status(status).json({ success: false, message: status === 503 ? "Accurate driving distance is temporarily unavailable. Please try again shortly." : status === 400 ? error.message : "Unable to calculate the price" });
+    return res.status(status).json({ success: false, message: status === 503 ? error.publicMessage || "Accurate driving distance is temporarily unavailable. Please try again shortly." : status === 400 ? error.message : "Unable to calculate the price" });
   }
 });
 

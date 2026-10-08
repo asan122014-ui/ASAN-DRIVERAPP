@@ -13,6 +13,7 @@ export async function getTrafficRoute(pickup, dropoff) {
   if (!key) {
     const error = new Error("Server-side Google Maps route calculation is not configured");
     error.code = "MAPS_ROUTE_UNAVAILABLE";
+    error.publicMessage = "Driving distance is not configured on the server. Set GOOGLE_MAPS_SERVER_KEY in Render.";
     throw error;
   }
 
@@ -41,6 +42,11 @@ export async function getTrafficRoute(pickup, dropoff) {
     console.error("GOOGLE ROUTES API ERROR", JSON.stringify({ status: googleStatus || "network_error", message: googleMessage || cause.message }));
     const error = new Error("Google Maps route lookup failed", { cause });
     error.code = "MAPS_ROUTE_UNAVAILABLE";
+    if (googleStatus === 401 || googleStatus === 403) {
+      error.publicMessage = "Google Maps denied the route request. Enable Routes API and billing, then allow Routes API for the server key in Render.";
+    } else if (googleStatus === 429) {
+      error.publicMessage = "Google Maps route quota is exhausted. Check the Routes API quota and billing.";
+    }
     throw error;
   }
 
@@ -51,6 +57,7 @@ export async function getTrafficRoute(pickup, dropoff) {
     console.error("GOOGLE ROUTES API EMPTY ROUTE", JSON.stringify({ routeCount: response.data?.routes?.length || 0 }));
     const error = new Error("Google Maps returned no drivable route for the selected locations");
     error.code = "MAPS_ROUTE_UNAVAILABLE";
+    error.publicMessage = "Google Maps could not find a driving route between these locations. Check the selected map pins.";
     throw error;
   }
   return { distanceMeters, distanceKm: distanceMeters / 1000, durationMinutes: Math.max(1, Math.round(durationSeconds / 60)), trafficAware: true };
