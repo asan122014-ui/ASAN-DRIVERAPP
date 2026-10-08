@@ -18,6 +18,8 @@ import verifyAdmin from "../middleware/verifyAdmin.js";
 import verifyDriver from "../middleware/verifyDriver.js";
 import verifyParent from "../middleware/verifyParent.js";
 import { createInvoicePaymentOrder, verifyInvoicePayment } from "../controllers/invoicePaymentController.js";
+import { getDriverPayoutProof, listAdminPayouts, listDriverPayouts, markDriverPayoutPaid } from "../controllers/driverPayoutController.js";
+import { driverPayoutUpload } from "../config/cloudinary.js";
 
 const router =
   express.Router();
@@ -494,6 +496,11 @@ router.get(
 
   getDriverInvoices
 );
+
+router.get("/driver/payouts", verifyDriver, listDriverPayouts);
+router.get("/driver/payouts/:id/proof", verifyDriver, getDriverPayoutProof);
+router.get("/admin/driver-payouts", verifyAdmin, listAdminPayouts);
+router.put("/admin/driver-payouts/:id/paid", verifyAdmin, driverPayoutUpload.single("proof"), markDriverPayoutPaid);
 
 /* =========================================================
    GENERATE SINGLE INVOICE

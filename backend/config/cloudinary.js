@@ -168,6 +168,18 @@ const studentVerificationStorage =
     }),
   });
 
+const driverPayoutStorage =
+  new CloudinaryStorage({
+    cloudinary,
+    params: async () => ({
+      folder: "asan/driver-payout-proofs",
+      resource_type: "image",
+      type: "authenticated",
+      allowed_formats: ["jpg", "jpeg", "png", "webp"],
+      public_id: generatePublicId(),
+    }),
+  });
+
 /* =========================================================
    DRIVER UPLOAD
 ========================================================= */
@@ -206,6 +218,12 @@ const studentVerificationUpload =
     fileFilter,
   });
 
+const driverPayoutUpload = multer({
+  storage: driverPayoutStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter,
+});
+
 /* =========================================================
    EXPORTS
 ========================================================= */
@@ -214,4 +232,5 @@ export {
   cloudinary,
   driverUpload,
   studentVerificationUpload,
+  driverPayoutUpload,
 };
