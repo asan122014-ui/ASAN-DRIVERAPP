@@ -5,7 +5,7 @@ export function monthlyAmount(booking) {
   const vehicle = booking.quote?.vehicleType;
   const children = Number(booking.quote?.childCount);
   if (!Number.isFinite(distance) || distance <= 0 || !["AUTO", "VAN"].includes(vehicle) || !Number.isInteger(children) || children < 1) throw new Error("Invalid booking price inputs");
-  return Math.round((distance * 2 * (vehicle === "AUTO" ? 14 : 16) * 26 + (children - 1) * 500) * 1.02 * 100) / 100;
+  return Math.round((distance * 2 * (vehicle === "AUTO" ? 20 : 30) * 26 + (children - 1) * 500) * 1.02 * 100) / 100;
 }
 
 export function verifyCheckoutSignature(orderId, paymentId, signature, secret) {

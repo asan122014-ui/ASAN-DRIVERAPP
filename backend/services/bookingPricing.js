@@ -6,7 +6,7 @@ export function quoteForDistance(distanceKm, vehicleType = "AUTO", childCount = 
   const children = Number(childCount);
   if (!Number.isFinite(distance) || distance <= 0 || !Number.isInteger(children) || children < 1 || !Number.isInteger(days) || days < 1) throw new Error("Invalid pricing inputs");
   const normalizedVehicle = String(vehicleType).toUpperCase();
-  const ratePerKm = normalizedVehicle === "VAN" ? 16 : normalizedVehicle === "AUTO" ? 14 : null;
+  const ratePerKm = normalizedVehicle === "VAN" ? 30 : normalizedVehicle === "AUTO" ? 20 : null;
   if (!ratePerKm) throw new Error("Vehicle type must be AUTO or VAN");
   const distanceCharge = distance * 2 * ratePerKm * days;
   const dailyDistanceCharge = distance * 2 * ratePerKm;
