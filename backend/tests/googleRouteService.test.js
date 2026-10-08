@@ -20,6 +20,7 @@ test("route estimate uses traffic-aware Google Routes API and parses distance an
     assert.deepEqual(route, { distanceMeters: 12345, distanceKm: 12.345, durationMinutes: 30, trafficAware: true });
     assert.equal(request[0], "https://routes.googleapis.com/directions/v2:computeRoutes");
     assert.equal(request[1].routingPreference, "TRAFFIC_AWARE");
+    assert.equal(Object.hasOwn(request[1], "departureTime"), false);
     assert.equal(request[2].headers["X-Goog-Api-Key"], "test-server-key");
     assert.equal(request[2].headers["X-Goog-FieldMask"], "routes.distanceMeters,routes.duration");
   } finally {

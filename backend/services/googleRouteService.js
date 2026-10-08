@@ -26,7 +26,6 @@ export async function getTrafficRoute(pickup, dropoff) {
       destination: { location: { latLng: { latitude: dropoff.lat, longitude: dropoff.lng } } },
       travelMode: "DRIVE",
       routingPreference: "TRAFFIC_AWARE",
-      departureTime: new Date().toISOString(),
       computeAlternativeRoutes: false,
       languageCode: "en-US",
       units: "METRIC",
