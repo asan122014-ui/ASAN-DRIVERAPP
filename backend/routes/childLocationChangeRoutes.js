@@ -1,6 +1,5 @@
 import express from "express";
 import mongoose from "mongoose";
-import axios from "axios";
 import verifyParent from "../middleware/verifyParent.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
 import Child from "../models/Child.js";
@@ -9,6 +8,7 @@ import Notification from "../models/Notification.js";
 import ChildLocationChangeRequest from "../models/ChildLocationChangeRequest.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
 import { priceLocationChange } from "../services/locationChangePricing.js";
+import { getTrafficRoute } from "../services/googleRouteService.js";
 import { razorpayClient, razorpayConfig } from "../services/razorpayService.js";
 import { confirmedRazorpayPayment, verifyCheckoutSignature } from "../services/paymentRules.js";
 
@@ -17,23 +17,27 @@ const validId = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
 const fail = (res, error) => {
   console.error("CHILD LOCATION CHANGE ERROR", error?.message || error);
   const status = Number(error?.status) || 500;
-  return res.status(status).json({ success: false, message: status < 500 ? error.message : "Unable to process the location change right now. Please try again later." });
+  const message = status < 500 ? error.message : error.publicMessage || "Unable to process the location change right now. Please try again later.";
+  return res.status(status).json({ success: false, message });
 };
 
 async function getRoute(pickup, dropoff) {
   if (![pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng].every((value) => Number.isFinite(Number(value)))) {
     const error = new Error("Both home and school map locations must be set before changing this route."); error.status = 400; throw error;
   }
-  if (!process.env.GOOGLE_MAPS_API_KEY) { const error = new Error("Route calculation is temporarily unavailable."); error.status = 503; throw error; }
-  const { data } = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
-    params: { origins: `${pickup.lat},${pickup.lng}`, destinations: `${dropoff.lat},${dropoff.lng}`, departure_time: "now", key: process.env.GOOGLE_MAPS_API_KEY },
-    timeout: 10000,
-  });
-  const item = data?.rows?.[0]?.elements?.[0];
-  if (data?.status !== "OK" || item?.status !== "OK" || !Number.isFinite(item?.distance?.value)) {
-    const error = new Error("Google Maps could not calculate this route. Check the pinned locations and try again."); error.status = 422; throw error;
+  try {
+    const route = await getTrafficRoute(
+      { lat: Number(pickup.lat), lng: Number(pickup.lng) },
+      { lat: Number(dropoff.lat), lng: Number(dropoff.lng) },
+    );
+    return { distanceKm: route.distanceKm, durationMinutes: route.durationMinutes };
+  } catch (cause) {
+    const error = new Error(cause.publicMessage || "Google Maps could not calculate this route. Check the pinned locations and try again.", { cause });
+    error.status = cause.code === "INVALID_ROUTE_COORDINATES" ? 400 : 503;
+    error.code = cause.code || "MAPS_ROUTE_UNAVAILABLE";
+    error.publicMessage = cause.publicMessage;
+    throw error;
   }
-  return { distanceKm: Math.round(item.distance.value / 100) / 10, durationMinutes: Math.max(1, Math.round((item.duration_in_traffic?.value || item.duration?.value || 0) / 60)) };
 }
 
 async function parentNotification(request, title, message) {
