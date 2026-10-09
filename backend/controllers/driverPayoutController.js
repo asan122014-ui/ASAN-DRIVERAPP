@@ -7,6 +7,38 @@ import ChildLocationChangeRequest from "../models/ChildLocationChangeRequest.js"
 import { splitDriverPayoutAmount } from "../services/driverPayoutSchedule.js";
 import { cloudinary } from "../config/cloudinary.js";
 
+let payoutIndexMigration;
+const ensureDriverPayoutIndexes = async () => {
+  if (!payoutIndexMigration) {
+    payoutIndexMigration = (async () => {
+      const indexes = await DriverPayout.collection.indexes();
+      const legacyInvoiceInstallmentIndex = indexes.find((index) => {
+        const keys = Object.keys(index.key || {});
+        return index.unique
+          && !index.partialFilterExpression
+          && keys.length === 2
+          && index.key.invoiceId === 1
+          && index.key.installment === 1;
+      });
+
+      // The original index treated null invoice IDs as one unique value, which
+      // prevented multiple booking and route-change payouts without invoices.
+      if (legacyInvoiceInstallmentIndex) {
+        await DriverPayout.collection.dropIndex(legacyInvoiceInstallmentIndex.name);
+      }
+
+      await DriverPayout.collection.createIndex(
+        { invoiceId: 1, installment: 1 },
+        { unique: true, partialFilterExpression: { invoiceId: { $type: "objectId" } } },
+      );
+    })().catch((error) => {
+      payoutIndexMigration = null;
+      throw error;
+    });
+  }
+  return payoutIndexMigration;
+};
+
 export const ensureDriverPayouts = async (invoices, bookings = []) => {
   const ensureOne = async (filter, values) => {
     try {
@@ -106,6 +138,7 @@ const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
 
 export const listDriverPayouts = async (req, res) => {
   try {
+    await ensureDriverPayoutIndexes();
     const driverId = String(req.driver.driverId || "").trim().toUpperCase();
     const invoices = await Invoice.find({ driverId }).select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").lean();
     const bookings = await Booking.find({ assignedDriverId: driverId, status: { $in: ["active", "expired"] }, paymentId: { $ne: null } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
@@ -165,6 +198,7 @@ export const getDriverPayoutProof = async (req, res) => {
 
 export const listAdminPayouts = async (req, res) => {
   try {
+    await ensureDriverPayoutIndexes();
     const invoices = await Invoice.find().select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").sort({ createdAt: -1 }).lean();
     // Keep paid service and route-change payout history visible after a ride expires.
     const bookings = await Booking.find({ status: { $in: ["active", "expired"] }, paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
