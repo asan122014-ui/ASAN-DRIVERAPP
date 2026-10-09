@@ -67,6 +67,10 @@ async function applyLocation(request, child, booking, session) {
       booking.renewalQuote = request.nextQuote;
       booking.renewalEffectiveAt = booking.serviceEndsAt || null;
     } else if (request.amountDue > 0) booking.quote = request.nextQuote;
+    else if (request.nextQuote && request.newMonthlyPrice !== request.oldMonthlyPrice) {
+      booking.renewalQuote = request.nextQuote;
+      booking.renewalEffectiveAt = booking.serviceEndsAt || null;
+    }
     await booking.save(session ? { session } : undefined);
   }
   request.status = "completed";
@@ -155,11 +159,15 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
       await parentNotification(request, "Location updated", "Your approved location change is active. Your next booking will use the updated route.");
       return res.json({ success: true, data: { status: "completed", distanceKm: route.distanceKm, amountDue: 0, message: "Location updated. Your next booking will use the new route." } });
     }
-    const price = priceLocationChange({ oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, vehicleType: booking.quote?.vehicleType || "AUTO", childCount: booking.quote?.childCount || 1, workingDays: booking.quote?.workingDays || 26, currentQuote: booking.quote });
+    const price = priceLocationChange({ oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, vehicleType: booking.quote?.vehicleType || "AUTO", childCount: booking.quote?.childCount || 1, workingDays: booking.quote?.workingDays || 26, currentQuote: booking.quote, serviceStartsAt: booking.serviceStartsAt || booking.startDate, serviceEndsAt: booking.serviceEndsAt });
     const oldQuote = Number(price.previous.totalMonthly);
     const nextQuote = price.next;
     request.oldMonthlyPrice = oldQuote;
     request.newMonthlyPrice = nextQuote.totalMonthly;
+    request.addedDistanceKm = price.addedDistanceKm;
+    request.remainingServiceDays = price.remainingServiceDays;
+    request.distanceChargeDue = price.distanceChargeDue;
+    request.platformFeeDue = price.platformFeeDue;
     request.amountDue = price.amountDue;
     request.driverAmountDue = price.driverAmountDue;
     request.nextQuote = nextQuote;
@@ -167,12 +175,12 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
       if (request.amountDue < 1) return res.status(400).json({ success: false, message: "The route adjustment is below the payment provider’s ₹1 minimum. Please contact the institute to finish this small adjustment." });
       request.status = "awaiting_payment";
       await request.save();
-      return res.json({ success: true, data: { status: request.status, requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, currentMonthlyPrice: oldQuote, newMonthlyPrice: nextQuote.totalMonthly, amountDue: request.amountDue, message: "The new route increases the monthly price. Pay the difference to apply it." } });
+      return res.json({ success: true, data: { status: request.status, requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, newMonthlyPrice: nextQuote.totalMonthly, amountDue: request.amountDue, message: `The route adds ${request.addedDistanceKm.toFixed(2)} km. You are charged only for this extra distance over the remaining ${request.remainingServiceDays.toFixed(1)} service days.` } });
     }
     await applyLocation(request, child, booking);
-    const message = nextQuote.totalMonthly < oldQuote ? `The route is shorter. Your current service stays at ₹${oldQuote.toFixed(2)}; the revised monthly price of ₹${nextQuote.totalMonthly.toFixed(2)} applies from your next renewal.` : "Location updated with no price increase.";
+    const message = nextQuote.totalMonthly < oldQuote ? `The route is shorter. Your current service stays at ₹${oldQuote.toFixed(2)}; the revised monthly price of ₹${nextQuote.totalMonthly.toFixed(2)} applies from your next renewal.` : nextQuote.totalMonthly > oldQuote ? `There is no extra charge for the remaining service period. The revised monthly price of ₹${nextQuote.totalMonthly.toFixed(2)} applies from your next renewal.` : "Location updated with no price increase.";
     await parentNotification(request, "Location updated", message);
-    return res.json({ success: true, data: { status: "completed", requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, currentMonthlyPrice: oldQuote, nextMonthlyPrice: nextQuote.totalMonthly, amountDue: 0, message } });
+    return res.json({ success: true, data: { status: "completed", requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, nextMonthlyPrice: nextQuote.totalMonthly, amountDue: 0, message } });
   } catch (error) { return fail(res, error); }
 });
 
