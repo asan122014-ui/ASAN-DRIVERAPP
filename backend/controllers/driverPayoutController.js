@@ -103,7 +103,7 @@ export const listDriverPayouts = async (req, res) => {
   try {
     const driverId = String(req.driver.driverId || "").trim().toUpperCase();
     const invoices = await Invoice.find({ driverId }).select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").lean();
-    const bookings = await Booking.find({ assignedDriverId: driverId, status: "active", paymentId: { $ne: null } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
+    const bookings = await Booking.find({ assignedDriverId: driverId, status: { $in: ["active", "expired"] }, paymentId: { $ne: null } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
     await ensureDriverPayouts(invoices, bookings);
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
@@ -161,7 +161,8 @@ export const getDriverPayoutProof = async (req, res) => {
 export const listAdminPayouts = async (req, res) => {
   try {
     const invoices = await Invoice.find().select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").sort({ createdAt: -1 }).lean();
-    const bookings = await Booking.find({ status: "active", paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
+    // Keep paid service and route-change payout history visible after a ride expires.
+    const bookings = await Booking.find({ status: { $in: ["active", "expired"] }, paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
     await ensureDriverPayouts(invoices, bookings);
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
