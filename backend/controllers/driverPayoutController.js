@@ -167,15 +167,14 @@ export const listAdminPayouts = async (req, res) => {
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
-    // Route changes are their own paid transactions. Include them even when the
-    // monthly booking is no longer active or its standard payment was recorded
-    // through a separate invoice.
-    const assignedBookings = await Booking.find({ assignedDriverId: { $ne: "" } }).select("_id assignedDriverId").lean();
-    const assignedBookingIds = assignedBookings.map((booking) => booking._id);
-    const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
-    const locationChanges = assignedBookingIds.length
-      ? await ChildLocationChangeRequest.find({ bookingId: { $in: assignedBookingIds }, status: "completed", paymentId: { $ne: "" } }).sort({ appliedAt: -1, updatedAt: -1 }).lean()
+    // Route changes are their own paid transactions. Follow each change's
+    // booking link directly, including when the booking has expired.
+    const locationChanges = await ChildLocationChangeRequest.find({ status: "completed", paymentId: { $type: "string", $ne: "" }, bookingId: { $ne: null } }).sort({ appliedAt: -1, updatedAt: -1 }).lean();
+    const changeBookingIds = [...new Set(locationChanges.map((change) => String(change.bookingId)))];
+    const assignedBookings = changeBookingIds.length
+      ? await Booking.find({ _id: { $in: changeBookingIds } }).select("_id assignedDriverId").lean()
       : [];
+    const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
     const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();

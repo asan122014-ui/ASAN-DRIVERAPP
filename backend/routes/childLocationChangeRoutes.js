@@ -6,6 +6,7 @@ import Child from "../models/Child.js";
 import Booking from "../models/Booking.js";
 import Notification from "../models/Notification.js";
 import ChildLocationChangeRequest from "../models/ChildLocationChangeRequest.js";
+import { ensureLocationChangePayouts } from "../controllers/driverPayoutController.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
 import { priceLocationChange } from "../services/locationChangePricing.js";
 import { getTrafficRoute } from "../services/googleRouteService.js";
@@ -116,6 +117,9 @@ async function completePaidLocationChange(request, paymentId, req) {
   };
   request.nextQuote = nextQuote;
   await applyLocation(request, child, booking);
+  // Persist driver installments as soon as the parent's route adjustment is
+  // confirmed, so admin and driver history use the same payout records.
+  await ensureLocationChangePayouts([request], new Map([[String(booking._id), booking.assignedDriverId]]));
   await parentNotification(request, "Location updated", `Your location change is active. The location adjustment of ₹${request.amountDue.toFixed(2)} was paid successfully.`);
   await driverLocationChangeNotice(request, booking, child, req);
   req.app.get("io")?.to(String(request.parentId)).emit("child_location_change_updated", { requestId: String(request._id), status: "completed", amountDue: request.amountDue });
