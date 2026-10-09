@@ -46,6 +46,37 @@ async function parentNotification(request, title, message) {
   } catch (error) { console.warn("Location change notification could not be saved:", error.message); }
 }
 
+async function completePaidLocationChange(request, paymentId, req) {
+  if (request.status === "completed" && request.paymentId === paymentId) {
+    return { status: "completed", paid: true, monthlyPrice: request.newMonthlyPrice };
+  }
+  const child = await Child.findOne({ _id: request.childId, parentId: request.parentId });
+  const booking = request.bookingId ? await Booking.findOne({ _id: request.bookingId, parentId: request.parentId, status: "active" }) : null;
+  if (!child || !booking) {
+    const error = new Error("The active ride changed. Contact the institute before retrying.");
+    error.status = 409;
+    throw error;
+  }
+  request.paymentId = paymentId;
+  request.paidAt = request.paidAt || new Date();
+  const oldQuote = booking.quote?.totalMonthly ? Number(booking.quote.totalMonthly) : request.oldMonthlyPrice;
+  const nextQuote = {
+    ...(request.nextQuote || quoteForDistance(request.newDistanceKm, booking.quote?.vehicleType || "AUTO", booking.quote?.childCount || 1, booking.quote?.workingDays || 26)),
+    expiresAt: booking.quote?.expiresAt || request.nextQuote?.expiresAt || new Date(Date.now() + 15 * 60 * 1000),
+  };
+  request.nextQuote = nextQuote;
+  await applyLocation(request, child, booking);
+  await parentNotification(request, "Location updated", `Your location change is active. The location adjustment of ₹${request.amountDue.toFixed(2)} was paid successfully.`);
+  if (booking.assignedDriverId && request.driverAmountDue > 0) {
+    try {
+      const driverNotice = await Notification.create({ driver: booking.assignedDriverId, recipientType: "driver", title: "Route price adjustment received", message: `The parent paid the route adjustment for ${child.name || "the child"}. Distance charges: ₹${request.driverAmountDue.toFixed(2)}. Platform charges are handled separately.`, type: "payment_received", notificationKey: "LOCATION_CHANGE_PAID", meta: { requestId: String(request._id), bookingId: String(booking._id), distanceCharge: request.driverAmountDue } });
+      req.app.get("io")?.to(booking.assignedDriverId).emit("new_notification", driverNotice.toObject());
+    } catch (notificationError) { console.warn("Driver route price notification could not be saved:", notificationError.message); }
+  }
+  req.app.get("io")?.to(String(request.parentId)).emit("child_location_change_updated", { requestId: String(request._id), status: "completed", amountDue: request.amountDue });
+  return { status: "completed", paid: true, previousMonthlyPrice: oldQuote, monthlyPrice: nextQuote.totalMonthly };
+}
+
 async function applyLocation(request, child, booking, session) {
   const isHome = request.locationType === "home";
   if (isHome) {
@@ -161,11 +192,17 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
     }
     const price = priceLocationChange({ oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, vehicleType: booking.quote?.vehicleType || "AUTO", childCount: booking.quote?.childCount || 1, workingDays: booking.quote?.workingDays || 26, currentQuote: booking.quote, serviceStartsAt: booking.serviceStartsAt || booking.startDate, serviceEndsAt: booking.serviceEndsAt });
     const oldQuote = Number(price.previous.totalMonthly);
-    const nextQuote = price.next;
+    // Booking.quote.expiresAt is required by the Booking schema even after a
+    // booking is active. Keep the existing quote expiry when replacing prices.
+    const nextQuote = {
+      ...price.next,
+      expiresAt: booking.quote?.expiresAt || new Date(Date.now() + 15 * 60 * 1000),
+    };
     request.oldMonthlyPrice = oldQuote;
     request.newMonthlyPrice = nextQuote.totalMonthly;
     request.addedDistanceKm = price.addedDistanceKm;
     request.remainingServiceDays = price.remainingServiceDays;
+    request.extraDistanceDailyCharge = price.extraDistanceDailyCharge;
     request.distanceChargeDue = price.distanceChargeDue;
     request.platformFeeDue = price.platformFeeDue;
     request.amountDue = price.amountDue;
@@ -175,12 +212,12 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
       if (request.amountDue < 1) return res.status(400).json({ success: false, message: "The route adjustment is below the payment provider’s ₹1 minimum. Please contact the institute to finish this small adjustment." });
       request.status = "awaiting_payment";
       await request.save();
-      return res.json({ success: true, data: { status: request.status, requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, newMonthlyPrice: nextQuote.totalMonthly, amountDue: request.amountDue, message: `The route adds ${request.addedDistanceKm.toFixed(2)} km. You are charged only for this extra distance over the remaining ${request.remainingServiceDays.toFixed(1)} service days.` } });
+      return res.json({ success: true, data: { status: request.status, requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, extraDistanceDailyCharge: request.extraDistanceDailyCharge, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, newMonthlyPrice: nextQuote.totalMonthly, amountDue: request.amountDue, message: `The route adds ${request.addedDistanceKm.toFixed(2)} km. You are charged only for this extra distance over the remaining ${request.remainingServiceDays.toFixed(1)} service days.` } });
     }
     await applyLocation(request, child, booking);
     const message = nextQuote.totalMonthly < oldQuote ? `The route is shorter. Your current service stays at ₹${oldQuote.toFixed(2)}; the revised monthly price of ₹${nextQuote.totalMonthly.toFixed(2)} applies from your next renewal.` : nextQuote.totalMonthly > oldQuote ? `There is no extra charge for the remaining service period. The revised monthly price of ₹${nextQuote.totalMonthly.toFixed(2)} applies from your next renewal.` : "Location updated with no price increase.";
     await parentNotification(request, "Location updated", message);
-    return res.json({ success: true, data: { status: "completed", requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, nextMonthlyPrice: nextQuote.totalMonthly, amountDue: 0, message } });
+    return res.json({ success: true, data: { status: "completed", requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, extraDistanceDailyCharge: request.extraDistanceDailyCharge, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, nextMonthlyPrice: nextQuote.totalMonthly, amountDue: 0, message } });
   } catch (error) { return fail(res, error); }
 });
 
@@ -221,6 +258,7 @@ router.post("/:requestId/revise", verifyParent, async (req, res) => {
     request.newDistanceKm = 0;
     request.addedDistanceKm = 0;
     request.remainingServiceDays = 0;
+    request.extraDistanceDailyCharge = 0;
     request.oldMonthlyPrice = 0;
     request.newMonthlyPrice = 0;
     request.distanceChargeDue = 0;
@@ -240,7 +278,11 @@ router.post("/:requestId/verify", verifyParent, async (req, res) => {
     if (!validId(req.params.requestId)) return res.status(400).json({ success: false, message: "Invalid request ID." });
     const { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature } = req.body || {};
     if (![orderId, paymentId, signature].every((value) => typeof value === "string" && value)) return res.status(400).json({ success: false, message: "Payment confirmation is incomplete." });
-    const request = await ChildLocationChangeRequest.findOne({ _id: req.params.requestId, parentId: req.parent._id, status: "awaiting_payment" });
+    const request = await ChildLocationChangeRequest.findOne({ _id: req.params.requestId, parentId: req.parent._id });
+    if (request?.status === "completed" && request.paymentOrderId === orderId && request.paymentId === paymentId) {
+      return res.json({ success: true, data: { status: "completed", paid: true, monthlyPrice: request.newMonthlyPrice } });
+    }
+    if (request?.status !== "awaiting_payment") return res.status(409).json({ success: false, message: "This location adjustment is no longer awaiting payment." });
     if (!request || request.paymentOrderId !== orderId) return res.status(409).json({ success: false, message: "Payment order does not match this location request." });
     const config = razorpayConfig();
     if (!verifyCheckoutSignature(orderId, paymentId, signature, config.keySecret)) return res.status(400).json({ success: false, message: "Payment signature could not be verified." });
@@ -249,24 +291,27 @@ router.post("/:requestId/verify", verifyParent, async (req, res) => {
     const payments = (await client.orders.fetchPayments(orderId)).items || [];
     const confirmed = confirmedRazorpayPayment(order, payments, { orderId, amount: request.amountDue });
     if (!confirmed || String(confirmed.id) !== paymentId) return res.status(409).json({ success: false, message: "Payment is not captured yet. Please check again shortly." });
-    const child = await Child.findOne({ _id: request.childId, parentId: req.parent._id });
-    const booking = request.bookingId ? await Booking.findOne({ _id: request.bookingId, parentId: req.parent._id, status: "active" }) : null;
-    if (!child || !booking) return res.status(409).json({ success: false, message: "The active ride changed. Contact the institute before retrying." });
-    request.paymentId = paymentId;
-    request.paidAt = new Date();
-    const oldQuote = booking.quote?.totalMonthly ? Number(booking.quote.totalMonthly) : request.oldMonthlyPrice;
-    const nextQuote = quoteForDistance(request.newDistanceKm, booking.quote?.vehicleType || "AUTO", booking.quote?.childCount || 1, booking.quote?.workingDays || 26);
-    request.nextQuote = nextQuote;
-    await applyLocation(request, child, booking);
-    await parentNotification(request, "Location updated", `Your location change is active. The monthly price adjustment of ₹${request.amountDue.toFixed(2)} was paid successfully.`);
-    if (booking.assignedDriverId && request.driverAmountDue > 0) {
-      try {
-        const driverNotice = await Notification.create({ driver: booking.assignedDriverId, recipientType: "driver", title: "Route price adjustment received", message: `The parent paid the route adjustment for ${child.name || "the child"}. Distance charges: ₹${request.driverAmountDue.toFixed(2)}. Platform charges are handled separately.`, type: "payment_received", notificationKey: "LOCATION_CHANGE_PAID", meta: { requestId: String(request._id), bookingId: String(booking._id), distanceCharge: request.driverAmountDue } });
-        req.app.get("io")?.to(booking.assignedDriverId).emit("new_notification", driverNotice.toObject());
-      } catch (notificationError) { console.warn("Driver route price notification could not be saved:", notificationError.message); }
-    }
-    req.app.get("io")?.to(String(request.parentId)).emit("child_location_change_updated", { requestId: String(request._id), status: "completed", amountDue: request.amountDue });
-    return res.json({ success: true, data: { status: "completed", paid: true, previousMonthlyPrice: oldQuote, monthlyPrice: nextQuote.totalMonthly } });
+    const data = await completePaidLocationChange(request, paymentId, req);
+    return res.json({ success: true, data });
+  } catch (error) { return fail(res, error); }
+});
+
+// Recover safely when Razorpay captured payment but the browser lost the
+// verification response. The server independently confirms the stored order.
+router.post("/:requestId/reconcile", verifyParent, async (req, res) => {
+  try {
+    if (!validId(req.params.requestId)) return res.status(400).json({ success: false, message: "Invalid request ID." });
+    const request = await ChildLocationChangeRequest.findOne({ _id: req.params.requestId, parentId: req.parent._id });
+    if (!request) return res.status(404).json({ success: false, message: "Location request not found." });
+    if (request.status === "completed" && request.paymentId) return res.json({ success: true, data: { status: "completed", paid: true, monthlyPrice: request.newMonthlyPrice } });
+    if (request.status !== "awaiting_payment" || !request.paymentOrderId) return res.status(409).json({ success: false, message: "This location adjustment is not awaiting payment." });
+    const client = razorpayClient();
+    const order = await client.orders.fetch(request.paymentOrderId);
+    const payments = (await client.orders.fetchPayments(request.paymentOrderId)).items || [];
+    const confirmed = confirmedRazorpayPayment(order, payments, { orderId: request.paymentOrderId, amount: request.amountDue });
+    if (!confirmed) return res.status(409).json({ success: false, message: "Razorpay has not confirmed a captured payment for this adjustment yet." });
+    const data = await completePaidLocationChange(request, String(confirmed.id), req);
+    return res.json({ success: true, data });
   } catch (error) { return fail(res, error); }
 });
 

@@ -19,6 +19,7 @@ const schema = new mongoose.Schema({
   newDistanceKm: { type: Number, default: 0 },
   addedDistanceKm: { type: Number, default: 0 },
   remainingServiceDays: { type: Number, default: 0 },
+  extraDistanceDailyCharge: { type: Number, default: 0 },
   distanceChargeDue: { type: Number, default: 0 },
   platformFeeDue: { type: Number, default: 0 },
   oldMonthlyPrice: { type: Number, default: 0 },
