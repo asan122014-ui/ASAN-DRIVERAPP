@@ -167,9 +167,14 @@ export const listAdminPayouts = async (req, res) => {
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
-    const driverByBookingId = new Map(bookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
-    const locationChanges = bookingIds.length
-      ? await ChildLocationChangeRequest.find({ bookingId: { $in: bookingIds }, status: "completed", paymentId: { $ne: "" } }).sort({ appliedAt: -1, updatedAt: -1 }).lean()
+    // Route changes are their own paid transactions. Include them even when the
+    // monthly booking is no longer active or its standard payment was recorded
+    // through a separate invoice.
+    const assignedBookings = await Booking.find({ assignedDriverId: { $ne: "" } }).select("_id assignedDriverId").lean();
+    const assignedBookingIds = assignedBookings.map((booking) => booking._id);
+    const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
+    const locationChanges = assignedBookingIds.length
+      ? await ChildLocationChangeRequest.find({ bookingId: { $in: assignedBookingIds }, status: "completed", paymentId: { $ne: "" } }).sort({ appliedAt: -1, updatedAt: -1 }).lean()
       : [];
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
