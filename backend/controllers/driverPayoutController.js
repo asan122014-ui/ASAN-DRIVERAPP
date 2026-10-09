@@ -112,7 +112,7 @@ export const ensureLocationChangePayouts = async (locationChanges, driverByBooki
 const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
   const routeChange = payout.locationChangeRequestId;
   const remainingDaysLabel = routeChange && !driverFacing && Number(routeChange.remainingServiceDays) > 0
-    ? ` · ${Number(routeChange.remainingServiceDays)} remaining service days`
+    ? ` · ${Number(routeChange.remainingServiceDays).toFixed(1)} remaining service days`
     : "";
   const serviceName = routeChange
     ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change${remainingDaysLabel}`
