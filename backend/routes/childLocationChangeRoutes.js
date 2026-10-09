@@ -199,6 +199,42 @@ router.post("/:requestId/order", verifyParent, async (req, res) => {
   } catch (error) { return fail(res, error); }
 });
 
+// Parent: replace an unpaid proposed location while retaining the approved request.
+router.post("/:requestId/revise", verifyParent, async (req, res) => {
+  try {
+    if (!validId(req.params.requestId)) return res.status(400).json({ success: false, message: "Invalid request ID." });
+    const request = await ChildLocationChangeRequest.findOne({ _id: req.params.requestId, parentId: req.parent._id, status: "awaiting_payment" });
+    if (!request) return res.status(409).json({ success: false, message: "There is no unpaid location change to revise." });
+    if (request.paymentOrderId.startsWith("order_")) {
+      const client = razorpayClient();
+      const order = await client.orders.fetch(request.paymentOrderId);
+      const attempts = (await client.orders.fetchPayments(request.paymentOrderId)).items || [];
+      if (order.status === "paid" || attempts.some((payment) => ["authorized", "captured"].includes(payment.status))) {
+        return res.status(409).json({ success: false, message: "A payment for this location is already processing. Continue with payment or contact support before changing the location again." });
+      }
+    }
+    request.status = "approved";
+    request.proposedAddress = "";
+    request.proposedCoordinates = undefined;
+    request.proposedDurationMinutes = 0;
+    request.oldDistanceKm = 0;
+    request.newDistanceKm = 0;
+    request.addedDistanceKm = 0;
+    request.remainingServiceDays = 0;
+    request.oldMonthlyPrice = 0;
+    request.newMonthlyPrice = 0;
+    request.distanceChargeDue = 0;
+    request.platformFeeDue = 0;
+    request.amountDue = 0;
+    request.driverAmountDue = 0;
+    request.nextQuote = null;
+    request.bookingId = null;
+    request.paymentOrderId = "";
+    await request.save();
+    return res.json({ success: true, data: request, message: "Choose a new point on the map. The previous location remains active until the new adjustment is paid." });
+  } catch (error) { return fail(res, error); }
+});
+
 router.post("/:requestId/verify", verifyParent, async (req, res) => {
   try {
     if (!validId(req.params.requestId)) return res.status(400).json({ success: false, message: "Invalid request ID." });
