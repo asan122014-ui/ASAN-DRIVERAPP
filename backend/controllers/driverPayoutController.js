@@ -57,12 +57,17 @@ export const ensureLocationChangePayouts = async (locationChanges, driverByBooki
     const total = Number(change.driverAmountDue || 0);
     if (!change.paymentId || change.status !== "completed" || !driverId || !Number.isFinite(total) || total <= 0) continue;
     const [mid, final] = splitDriverPayoutAmount(total);
-    const common = { locationChangeRequestId: change._id, driverId };
     for (const [installment, amount] of [["mid_service", mid], ["service_complete", final]]) {
       try {
         await DriverPayout.updateOne(
-          { ...common, installment },
-          { $setOnInsert: { ...common, invoiceId: null, bookingId: null, installment, amount } },
+          // Match the unique index exactly. Including driverId in this filter can
+          // make an existing route-change installment look missing and trigger a
+          // duplicate-key upsert when a booking's assigned driver was corrected.
+          { locationChangeRequestId: change._id, installment },
+          {
+            $set: { driverId, amount },
+            $setOnInsert: { invoiceId: null, bookingId: null },
+          },
           { upsert: true },
         );
       } catch (error) {
@@ -178,13 +183,6 @@ export const listAdminPayouts = async (req, res) => {
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
     const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
-    console.info("ADMIN DRIVER PAYOUT SUMMARY", {
-      completedPaidRouteChanges: locationChanges.length,
-      routeBookingsFound: assignedBookings.length,
-      routeChangesWithDriver: locationChanges.filter((change) => Boolean(driverByBookingId.get(String(change.bookingId)))).length,
-      routeChangesWithDistanceAmount: locationChanges.filter((change) => Number(change.driverAmountDue || 0) > 0).length,
-      persistedRoutePayoutRows: payouts.filter((payout) => Boolean(payout.locationChangeRequestId)).length,
-    });
     return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })) });
   } catch (error) {
     console.error("ADMIN PAYOUT LIST ERROR:", error);
