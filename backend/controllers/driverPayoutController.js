@@ -72,7 +72,7 @@ export const ensureLocationChangePayouts = async (locationChanges, driverByBooki
   }
 };
 
-const payoutDisplayFields = (payout) => {
+const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
   const routeChange = payout.locationChangeRequestId;
   const serviceName = routeChange
     ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change`
@@ -80,20 +80,20 @@ const payoutDisplayFields = (payout) => {
   const serviceDate = payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt || routeChange?.appliedAt || routeChange?.paidAt;
   return {
     ...payout,
+    locationChangeRequestId: driverFacing && routeChange ? String(routeChange._id) : payout.locationChangeRequestId,
     payoutType: routeChange ? "location_adjustment" : "service",
     serviceName,
     serviceMonth: payout.invoiceId?.month || (serviceDate ? new Date(serviceDate).toISOString().slice(0, 7) : ""),
     serviceReference: payout.invoiceId?.invoiceNumber || (routeChange?._id ? `RC-${String(routeChange._id).slice(-6).toUpperCase()}` : payout.bookingId?._id ? `BK-${String(payout.bookingId._id).slice(-6).toUpperCase()}` : ""),
     routeChange: routeChange ? {
+      requestId: String(routeChange._id),
       locationType: routeChange.locationType,
       address: routeChange.proposedAddress,
       oldDistanceKm: routeChange.oldDistanceKm,
       newDistanceKm: routeChange.newDistanceKm,
       remainingServiceDays: routeChange.remainingServiceDays,
-      parentAmountPaid: routeChange.amountDue,
       driverDistanceCharge: routeChange.driverAmountDue,
-      platformFee: routeChange.platformFeeDue,
-      parentPaidAt: routeChange.paidAt,
+      ...(!driverFacing ? { parentAmountPaid: routeChange.amountDue, platformFee: routeChange.platformFeeDue, parentPaidAt: routeChange.paidAt } : {}),
     } : null,
     proofAvailable: payout.proofAvailable ?? Boolean(payout.proof),
   };
@@ -127,15 +127,13 @@ export const listDriverPayouts = async (req, res) => {
       newDistanceKm: Number(change.newDistanceKm || 0),
       addedDistanceKm: Number(change.addedDistanceKm || 0),
       remainingServiceDays: Number(change.remainingServiceDays || 0),
-      parentAmountPaid: change.paymentId ? Number(change.amountDue || 0) : 0,
       distanceCharge: change.paymentId ? Number(change.driverAmountDue || 0) : 0,
-      platformFee: change.paymentId ? Number(change.platformFeeDue || 0) : 0,
+      paid: Boolean(change.paymentId),
       newMonthlyPrice: Number(change.newMonthlyPrice || 0),
-      paymentId: change.paymentId || "",
       paidAt: change.paidAt || null,
       appliedAt: change.appliedAt || change.updatedAt,
     }));
-    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })), locationAdjustments });
+    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) }, { driverFacing: true })), locationAdjustments });
   } catch (error) {
     console.error("DRIVER PAYOUT LIST ERROR:", error);
     return res.status(500).json({ success: false, message: "Unable to load driver payments" });
