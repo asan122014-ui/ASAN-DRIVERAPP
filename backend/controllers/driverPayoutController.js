@@ -129,8 +129,7 @@ const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
       oldDistanceKm: routeChange.oldDistanceKm,
       newDistanceKm: routeChange.newDistanceKm,
       remainingServiceDays: routeChange.remainingServiceDays,
-      driverDistanceCharge: routeChange.driverAmountDue,
-      ...(!driverFacing ? { parentAmountPaid: routeChange.amountDue, platformFee: routeChange.platformFeeDue, parentPaidAt: routeChange.paidAt } : {}),
+      ...(driverFacing ? { driverDistanceCharge: routeChange.driverAmountDue } : {}),
     } : null,
     proofAvailable: payout.proofAvailable ?? Boolean(payout.proof),
   };
