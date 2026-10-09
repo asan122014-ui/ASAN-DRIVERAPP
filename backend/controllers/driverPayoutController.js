@@ -111,8 +111,11 @@ export const ensureLocationChangePayouts = async (locationChanges, driverByBooki
 
 const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
   const routeChange = payout.locationChangeRequestId;
+  const remainingDaysLabel = routeChange && !driverFacing && Number(routeChange.remainingServiceDays) > 0
+    ? ` · ${Number(routeChange.remainingServiceDays)} remaining service days`
+    : "";
   const serviceName = routeChange
-    ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change`
+    ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change${remainingDaysLabel}`
     : payout.invoiceId?.childId?.name || (payout.bookingId?.children || []).map((child) => child.name).filter(Boolean).join(", ") || payout.bookingId?.child?.name || "Monthly ride service";
   const serviceDate = payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt || routeChange?.appliedAt || routeChange?.paidAt;
   return {
@@ -122,14 +125,14 @@ const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
     serviceName,
     serviceMonth: payout.invoiceId?.month || (serviceDate ? new Date(serviceDate).toISOString().slice(0, 7) : ""),
     serviceReference: payout.invoiceId?.invoiceNumber || (routeChange?._id ? `RC-${String(routeChange._id).slice(-6).toUpperCase()}` : payout.bookingId?._id ? `BK-${String(payout.bookingId._id).slice(-6).toUpperCase()}` : ""),
-    routeChange: routeChange ? {
+    routeChange: routeChange && driverFacing ? {
       requestId: String(routeChange._id),
       locationType: routeChange.locationType,
       address: routeChange.proposedAddress,
       oldDistanceKm: routeChange.oldDistanceKm,
       newDistanceKm: routeChange.newDistanceKm,
       remainingServiceDays: routeChange.remainingServiceDays,
-      ...(driverFacing ? { driverDistanceCharge: routeChange.driverAmountDue } : {}),
+      driverDistanceCharge: routeChange.driverAmountDue,
     } : null,
     proofAvailable: payout.proofAvailable ?? Boolean(payout.proof),
   };
