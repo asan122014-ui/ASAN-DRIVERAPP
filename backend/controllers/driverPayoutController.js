@@ -51,6 +51,54 @@ export const ensureBookingPayouts = async (bookings) => {
   }
 };
 
+export const ensureLocationChangePayouts = async (locationChanges, driverByBookingId) => {
+  for (const change of locationChanges) {
+    const driverId = String(driverByBookingId.get(String(change.bookingId)) || "").trim().toUpperCase();
+    const total = Number(change.driverAmountDue || 0);
+    if (!change.paymentId || change.status !== "completed" || !driverId || !Number.isFinite(total) || total <= 0) continue;
+    const [mid, final] = splitDriverPayoutAmount(total);
+    const common = { locationChangeRequestId: change._id, driverId };
+    for (const [installment, amount] of [["mid_service", mid], ["service_complete", final]]) {
+      try {
+        await DriverPayout.updateOne(
+          { ...common, installment },
+          { $setOnInsert: { ...common, invoiceId: null, bookingId: null, installment, amount } },
+          { upsert: true },
+        );
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
+    }
+  }
+};
+
+const payoutDisplayFields = (payout) => {
+  const routeChange = payout.locationChangeRequestId;
+  const serviceName = routeChange
+    ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change`
+    : payout.invoiceId?.childId?.name || (payout.bookingId?.children || []).map((child) => child.name).filter(Boolean).join(", ") || payout.bookingId?.child?.name || "Monthly ride service";
+  const serviceDate = payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt || routeChange?.appliedAt || routeChange?.paidAt;
+  return {
+    ...payout,
+    payoutType: routeChange ? "location_adjustment" : "service",
+    serviceName,
+    serviceMonth: payout.invoiceId?.month || (serviceDate ? new Date(serviceDate).toISOString().slice(0, 7) : ""),
+    serviceReference: payout.invoiceId?.invoiceNumber || (routeChange?._id ? `RC-${String(routeChange._id).slice(-6).toUpperCase()}` : payout.bookingId?._id ? `BK-${String(payout.bookingId._id).slice(-6).toUpperCase()}` : ""),
+    routeChange: routeChange ? {
+      locationType: routeChange.locationType,
+      address: routeChange.proposedAddress,
+      oldDistanceKm: routeChange.oldDistanceKm,
+      newDistanceKm: routeChange.newDistanceKm,
+      remainingServiceDays: routeChange.remainingServiceDays,
+      parentAmountPaid: routeChange.amountDue,
+      driverDistanceCharge: routeChange.driverAmountDue,
+      platformFee: routeChange.platformFeeDue,
+      parentPaidAt: routeChange.paidAt,
+    } : null,
+    proofAvailable: payout.proofAvailable ?? Boolean(payout.proof),
+  };
+};
+
 export const listDriverPayouts = async (req, res) => {
   try {
     const driverId = String(req.driver.driverId || "").trim().toUpperCase();
@@ -60,12 +108,15 @@ export const listDriverPayouts = async (req, res) => {
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
-    const payouts = await DriverPayout.find({ driverId, $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).sort({ createdAt: -1, installment: 1 }).lean();
     const assignedBookings = await Booking.find({ assignedDriverId: driverId }).select("_id").lean();
     const assignedBookingIds = assignedBookings.map((booking) => booking._id);
     const locationChanges = assignedBookingIds.length
       ? await ChildLocationChangeRequest.find({ bookingId: { $in: assignedBookingIds }, status: "completed" }).sort({ appliedAt: -1, updatedAt: -1 }).lean()
       : [];
+    const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), driverId]));
+    await ensureLocationChangePayouts(locationChanges, driverByBookingId);
+    const locationChangeIds = locationChanges.map((change) => change._id);
+    const payouts = await DriverPayout.find({ driverId, $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ createdAt: -1, installment: 1 }).lean();
     const locationAdjustments = locationChanges.map((change) => ({
       _id: String(change._id),
       bookingId: String(change.bookingId),
@@ -84,7 +135,7 @@ export const listDriverPayouts = async (req, res) => {
       paidAt: change.paidAt || null,
       appliedAt: change.appliedAt || change.updatedAt,
     }));
-    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => ({ ...payout, serviceName: payout.invoiceId?.childId?.name || (payout.bookingId?.children || []).map((child) => child.name).filter(Boolean).join(", ") || payout.bookingId?.child?.name || "Monthly ride service", serviceMonth: payout.invoiceId?.month || ((payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt) ? new Date(payout.bookingId.startDate || payout.bookingId.serviceStartsAt).toISOString().slice(0, 7) : ""), serviceReference: payout.invoiceId?.invoiceNumber || (payout.bookingId?._id ? `BK-${String(payout.bookingId._id).slice(-6).toUpperCase()}` : ""), proofAvailable: Boolean(proof) })), locationAdjustments });
+    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })), locationAdjustments });
   } catch (error) {
     console.error("DRIVER PAYOUT LIST ERROR:", error);
     return res.status(500).json({ success: false, message: "Unable to load driver payments" });
@@ -117,8 +168,14 @@ export const listAdminPayouts = async (req, res) => {
     await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
-    const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
-    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => ({ ...payout, serviceName: payout.invoiceId?.childId?.name || (payout.bookingId?.children || []).map((child) => child.name).filter(Boolean).join(", ") || payout.bookingId?.child?.name || "Monthly ride service", serviceMonth: payout.invoiceId?.month || ((payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt) ? new Date(payout.bookingId.startDate || payout.bookingId.serviceStartsAt).toISOString().slice(0, 7) : ""), serviceReference: payout.invoiceId?.invoiceNumber || (payout.bookingId?._id ? `BK-${String(payout.bookingId._id).slice(-6).toUpperCase()}` : ""), proofAvailable: Boolean(proof) })) });
+    const driverByBookingId = new Map(bookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
+    const locationChanges = bookingIds.length
+      ? await ChildLocationChangeRequest.find({ bookingId: { $in: bookingIds }, status: "completed", paymentId: { $ne: "" } }).sort({ appliedAt: -1, updatedAt: -1 }).lean()
+      : [];
+    await ensureLocationChangePayouts(locationChanges, driverByBookingId);
+    const locationChangeIds = locationChanges.map((change) => change._id);
+    const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
+    return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })) });
   } catch (error) {
     console.error("ADMIN PAYOUT LIST ERROR:", error);
     return res.status(500).json({ success: false, message: "Unable to load driver payouts" });
