@@ -2,7 +2,6 @@ import express from "express";
 import mongoose from "mongoose";
 import verifyParent from "../middleware/verifyParent.js";
 import verifyAdmin from "../middleware/verifyAdmin.js";
-import verifyDriver from "../middleware/verifyDriver.js";
 import Child from "../models/Child.js";
 import Booking from "../models/Booking.js";
 import Notification from "../models/Notification.js";
@@ -21,41 +20,6 @@ const fail = (res, error) => {
   const message = status < 500 ? error.message : error.publicMessage || "Unable to process the location change right now. Please try again later.";
   return res.status(status).json({ success: false, message });
 };
-
-// Driver: show route changes for bookings assigned to the authenticated driver.
-router.get("/driver", verifyDriver, async (req, res) => {
-  try {
-    const driverId = String(req.driver?.driverId || "").trim().toUpperCase();
-    if (!driverId) return res.status(403).json({ success: false, message: "An assigned driver account is required." });
-    const bookings = await Booking.find({ assignedDriverId: driverId }).select("_id").lean();
-    const bookingIds = bookings.map((booking) => booking._id);
-    if (!bookingIds.length) return res.json({ success: true, data: [] });
-    const changes = await ChildLocationChangeRequest.find({ bookingId: { $in: bookingIds }, status: "completed" })
-      .sort({ appliedAt: -1, updatedAt: -1 })
-      .lean();
-    return res.json({
-      success: true,
-      data: changes.map((change) => ({
-        _id: String(change._id),
-        bookingId: String(change.bookingId),
-        childName: change.childName || "Child",
-        locationType: change.locationType,
-        address: change.proposedAddress,
-        oldDistanceKm: Number(change.oldDistanceKm || 0),
-        newDistanceKm: Number(change.newDistanceKm || 0),
-        addedDistanceKm: Number(change.addedDistanceKm || 0),
-        remainingServiceDays: Number(change.remainingServiceDays || 0),
-        parentAmountPaid: change.paymentId ? Number(change.amountDue || 0) : 0,
-        distanceCharge: change.paymentId ? Number(change.driverAmountDue || 0) : 0,
-        platformFee: change.paymentId ? Number(change.platformFeeDue || 0) : 0,
-        newMonthlyPrice: Number(change.newMonthlyPrice || 0),
-        paymentId: change.paymentId || "",
-        paidAt: change.paidAt || null,
-        appliedAt: change.appliedAt || change.updatedAt,
-      })),
-    });
-  } catch (error) { return fail(res, error); }
-});
 
 async function getRoute(pickup, dropoff) {
   if (![pickup?.lat, pickup?.lng, dropoff?.lat, dropoff?.lng].every((value) => Number.isFinite(Number(value)))) {
