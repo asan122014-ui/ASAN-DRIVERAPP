@@ -178,6 +178,13 @@ export const listAdminPayouts = async (req, res) => {
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
     const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
+    console.info("ADMIN DRIVER PAYOUT SUMMARY", {
+      completedPaidRouteChanges: locationChanges.length,
+      routeBookingsFound: assignedBookings.length,
+      routeChangesWithDriver: locationChanges.filter((change) => Boolean(driverByBookingId.get(String(change.bookingId)))).length,
+      routeChangesWithDistanceAmount: locationChanges.filter((change) => Number(change.driverAmountDue || 0) > 0).length,
+      persistedRoutePayoutRows: payouts.filter((payout) => Boolean(payout.locationChangeRequestId)).length,
+    });
     return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })) });
   } catch (error) {
     console.error("ADMIN PAYOUT LIST ERROR:", error);
