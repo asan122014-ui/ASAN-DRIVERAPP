@@ -97,8 +97,7 @@ async function applyLocation(request, child, booking, session) {
     if (request.newMonthlyPrice < request.oldMonthlyPrice) {
       booking.renewalQuote = request.nextQuote;
       booking.renewalEffectiveAt = booking.serviceEndsAt || null;
-    } else if (request.amountDue > 0) booking.quote = request.nextQuote;
-    else if (request.nextQuote && request.newMonthlyPrice !== request.oldMonthlyPrice) {
+    } else if (request.nextQuote && request.newMonthlyPrice !== request.oldMonthlyPrice) {
       booking.renewalQuote = request.nextQuote;
       booking.renewalEffectiveAt = booking.serviceEndsAt || null;
     }

@@ -4,8 +4,10 @@ import { randomUUID } from "node:crypto";
 import verifyParent from "../middleware/verifyParent.js";
 import Booking from "../models/Booking.js";
 import BookingPayment from "../models/BookingPayment.js";
+import ChildLocationChangeRequest from "../models/ChildLocationChangeRequest.js";
 import { razorpayClient, razorpayConfig } from "../services/razorpayService.js";
 import { monthlyAmount } from "../services/paymentRules.js";
+import { quoteForDistance } from "../services/bookingPricing.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
 
 const router = express.Router();
@@ -27,8 +29,15 @@ router.get("/:id", async (req, res) => {
   try {
     const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-    const payment = await BookingPayment.findOne({ bookingId: booking._id }).select("amount currency status orderId paymentId paidAt environment provider");
-    return res.json({ success: true, data: { booking, payment } });
+    const payment = await BookingPayment.findOne({ bookingId: booking._id }).select("amount currency status orderId paymentId paidAt environment provider quoteSnapshot routeSnapshot");
+    const locationChanges = await ChildLocationChangeRequest.find({ bookingId: booking._id, status: "completed" }).sort({ appliedAt: 1 }).select("locationType oldDistanceKm newDistanceKm addedDistanceKm remainingServiceDays extraDistanceDailyCharge distanceChargeDue platformFeeDue amountDue newMonthlyPrice paymentId paidAt appliedAt proposedAddress").lean();
+    const locationPayments = locationChanges.filter((change) => change.paymentId && change.paidAt && Number(change.amountDue) > 0);
+    const firstLocationChange = locationChanges[0];
+    const monthlyRideDistanceKm = Number(payment?.routeSnapshot?.distanceKm ?? firstLocationChange?.oldDistanceKm ?? booking.route?.distanceKm ?? 0);
+    const monthlyRideQuote = payment?.quoteSnapshot || (firstLocationChange && Number(booking.quote?.totalMonthly) !== Number(payment?.amount)
+      ? quoteForDistance(monthlyRideDistanceKm, booking.quote?.vehicleType || "AUTO", booking.quote?.childCount || 1, booking.quote?.workingDays || 26)
+      : booking.quote);
+    return res.json({ success: true, data: { booking, payment, monthlyRide: { distanceKm: monthlyRideDistanceKm, quote: monthlyRideQuote, amountPaid: payment?.amount || 0, paidAt: payment?.paidAt || null, paymentId: payment?.paymentId || "" }, locationPayments } });
   } catch (error) { return fail(res, error); }
 });
 
@@ -76,6 +85,12 @@ router.post("/:id/order", async (req, res) => {
       }
     }
     if (payment.provider !== "razorpay" || payment.environment !== config.mode || Math.round(payment.amount * 100) !== amountPaise) return res.status(409).json({ success: false, message: "This booking has an older payment attempt or a different price. Please contact support." });
+    if (!payment.quoteSnapshot || !payment.routeSnapshot) {
+      const bookingSnapshot = booking.toObject();
+      payment.quoteSnapshot ||= bookingSnapshot.quote;
+      payment.routeSnapshot ||= bookingSnapshot.route;
+      await payment.save();
+    }
     if (payment.status === "PAID") return res.json({ success: true, data: { paid: true } });
     if (payment.orderId.startsWith("order_")) {
       const result = await reconcilePayment(payment, req.app.get("io"));

@@ -8,6 +8,8 @@ const schema = new mongoose.Schema({
   idempotencyKey: { type: String, required: true },
   attempt: { type: Number, default: 1 },
   amount: { type: Number, required: true, min: 1 },
+  quoteSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  routeSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   currency: { type: String, default: "INR" },
   environment: { type: String, enum: ["sandbox", "production"], required: true },
   status: { type: String, enum: ["CREATING", "CREATED", "ACTIVE", "PENDING", "FAILED", "EXPIRED", "TERMINATED", "CANCELLED", "REFUNDING", "REFUNDED", "REFUND_FAILED", "PAID"], default: "CREATING" },
