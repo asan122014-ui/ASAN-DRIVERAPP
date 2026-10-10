@@ -834,43 +834,6 @@ router.get(
           driver.lastLocation
         );
 
-      const activeTrips = await Trips.find({
-        driverId: req.linkedDriverId,
-        status: "in_transit",
-      })
-        .select("tripType child students createdAt")
-        .sort({ createdAt: 1 })
-        .lean();
-
-      const orderedChildIds = activeTrips[0]?.students?.length
-        ? activeTrips[0].students
-        : activeTrips.map((trip) => trip.child).filter(Boolean);
-
-      const activeChildren = orderedChildIds.length
-        ? await Child.find({ _id: { $in: orderedChildIds } })
-            .select("_id parentId status location dropLocationCoords")
-            .lean()
-        : [];
-
-      const childrenById = new Map(
-        activeChildren.map((child) => [String(child._id), child])
-      );
-
-      const routeStops = orderedChildIds
-        .map((childId, index) => {
-          const child = childrenById.get(String(childId));
-          if (!child) return null;
-          return {
-            childId: String(child._id),
-            parentId: String(child.parentId || ""),
-            status: child.status,
-            location: child.location || null,
-            dropLocationCoords: child.dropLocationCoords || null,
-            stopOrder: index + 1,
-          };
-        })
-        .filter(Boolean);
-
       return res
         .status(200)
         .json({
@@ -1251,6 +1214,43 @@ router.get(
         hasValidLiveLocation(
           driver.lastLocation
         );
+
+      const activeTrips = await Trips.find({
+        driverId: req.linkedDriverId,
+        status: "in_transit",
+      })
+        .select("tripType child students createdAt")
+        .sort({ createdAt: 1 })
+        .lean();
+
+      const orderedChildIds = activeTrips[0]?.students?.length
+        ? activeTrips[0].students
+        : activeTrips.map((trip) => trip.child).filter(Boolean);
+
+      const activeChildren = orderedChildIds.length
+        ? await Child.find({ _id: { $in: orderedChildIds } })
+            .select("_id parentId status location dropLocationCoords")
+            .lean()
+        : [];
+
+      const childrenById = new Map(
+        activeChildren.map((child) => [String(child._id), child])
+      );
+
+      const routeStops = orderedChildIds
+        .map((childId, index) => {
+          const child = childrenById.get(String(childId));
+          if (!child) return null;
+          return {
+            childId: String(child._id),
+            parentId: String(child.parentId || ""),
+            status: child.status,
+            location: child.location || null,
+            dropLocationCoords: child.dropLocationCoords || null,
+            stopOrder: index + 1,
+          };
+        })
+        .filter(Boolean);
 
       return res
         .status(200)
