@@ -13,6 +13,7 @@ import { getTrafficRoute } from "../services/googleRouteService.js";
 import { razorpayClient, razorpayConfig } from "../services/razorpayService.js";
 import { confirmedRazorpayPayment, verifyCheckoutSignature } from "../services/paymentRules.js";
 import { canWaiveLocationCharge, validLocationAccessCode } from "../services/developerLocationAccess.js";
+import { locationChangePoints } from "../services/locationChangePoints.js";
 
 const router = express.Router();
 router.get("/developer-access", verifyParent, (req, res) => {
@@ -61,17 +62,20 @@ async function driverLocationChangeNotice(request, booking, child, req) {
   const parentPaid = Number(request.paymentId ? request.amountDue : 0);
   const driverDistanceCharge = Number(request.paymentId ? request.driverAmountDue : 0);
   const platformFee = Number(request.paymentId ? request.platformFeeDue : 0);
-  const label = request.locationType === "home" ? "home pickup" : "school drop-off";
+  const label = request.locationType === "both" ? "home pickup and school drop-off" : request.locationType === "home" ? "home pickup" : "school drop-off";
   const amountText = request.paymentId
     ? `The parent paid ₹${parentPaid.toFixed(2)} total for ${remainingDays.toFixed(1)} remaining service days: ₹${driverDistanceCharge.toFixed(2)} in distance charges and ₹${platformFee.toFixed(2)} platform fee.`
     : "No additional payment was required for this route update.";
-  const message = `${child?.name || request.childName || "A child"}’s ${label} changed to ${request.proposedAddress}. Route distance: ${oldDistance.toFixed(2)} km → ${newDistance.toFixed(2)} km${addedDistance > 0 ? ` (+${addedDistance.toFixed(2)} km)` : ""}. ${amountText} The revised monthly price from the next renewal is ₹${Number(request.newMonthlyPrice || 0).toFixed(2)}.`;
+  const message = `${child?.name || request.childName || "A child"}’s ${label} changed to ${request.proposedAddress}${request.locationType === "both" ? ` (home), ${request.proposedSchoolAddress} (school)` : ""}. Route distance: ${oldDistance.toFixed(2)} km → ${newDistance.toFixed(2)} km${addedDistance > 0 ? ` (+${addedDistance.toFixed(2)} km)` : ""}. ${amountText} The revised monthly price from the next renewal is ₹${Number(request.newMonthlyPrice || 0).toFixed(2)}.`;
   const meta = {
     requestId: String(request._id),
     bookingId: String(booking._id),
     childName: child?.name || request.childName || "Child",
     locationType: request.locationType,
     address: request.proposedAddress,
+    schoolAddress: request.proposedSchoolAddress,
+    homeCoordinates: request.locationType === "both" ? request.proposedCoordinates : undefined,
+    schoolCoordinates: request.proposedSchoolCoordinates,
     oldDistanceKm: oldDistance,
     newDistanceKm: newDistance,
     addedDistanceKm: addedDistance,
@@ -131,13 +135,14 @@ async function completePaidLocationChange(request, paymentId, req) {
 }
 
 async function applyLocation(request, child, booking, session) {
-  const isHome = request.locationType === "home";
+  const isHome = ["home", "both"].includes(request.locationType);
   if (isHome) {
     child.pickupLocation = request.proposedAddress;
     child.location = request.proposedCoordinates;
-  } else {
-    child.dropoffLocation = request.proposedAddress;
-    child.dropLocationCoords = request.proposedCoordinates;
+  }
+  if (["school", "both"].includes(request.locationType)) {
+    child.dropoffLocation = request.locationType === "both" ? request.proposedSchoolAddress : request.proposedAddress;
+    child.dropLocationCoords = request.locationType === "both" ? request.proposedSchoolCoordinates : request.proposedCoordinates;
   }
   child.routeDistance = request.newDistanceKm;
   child.estimatedDuration = request.proposedDurationMinutes || child.estimatedDuration || 0;
@@ -146,7 +151,7 @@ async function applyLocation(request, child, booking, session) {
     booking.route.distanceKm = request.newDistanceKm;
     booking.route.durationMinutes = request.proposedDurationMinutes || booking.route.durationMinutes;
     if (isHome) { booking.route.pickup = request.proposedAddress; booking.route.pickupCoordinates = request.proposedCoordinates; }
-    else { booking.route.dropoff = request.proposedAddress; booking.route.dropoffCoordinates = request.proposedCoordinates; }
+    if (["school", "both"].includes(request.locationType)) { booking.route.dropoff = child.dropoffLocation; booking.route.dropoffCoordinates = child.dropLocationCoords; }
     if (request.newMonthlyPrice < request.oldMonthlyPrice) {
       booking.renewalQuote = request.nextQuote;
       booking.renewalEffectiveAt = booking.serviceEndsAt || null;
@@ -177,10 +182,10 @@ router.post("/children/:childId", verifyParent, async (req, res) => {
     if (!validId(req.params.childId)) return res.status(400).json({ success: false, message: "Invalid child ID." });
     const locationType = String(req.body?.locationType || "").toLowerCase();
     const reason = String(req.body?.reason || "").trim();
-    if (!["home", "school"].includes(locationType) || reason.length < 5 || reason.length > 1000) return res.status(400).json({ success: false, message: "Choose a location and explain the reason in at least 5 characters." });
+    if (!["home", "school", "both"].includes(locationType) || reason.length < 5 || reason.length > 1000) return res.status(400).json({ success: false, message: "Choose a location and explain the reason in at least 5 characters." });
     const child = await Child.findOne({ _id: req.params.childId, parentId: req.parent._id });
     if (!child) return res.status(404).json({ success: false, message: "Child not found." });
-    const open = await ChildLocationChangeRequest.findOne({ childId: child._id, locationType, status: { $in: ["pending", "approved", "awaiting_payment"] } });
+    const open = await ChildLocationChangeRequest.findOne({ childId: child._id, locationType: { $in: locationType === "both" ? ["home", "school", "both"] : [locationType, "both"] }, status: { $in: ["pending", "approved", "awaiting_payment"] } });
     if (open) return res.status(409).json({ success: false, message: "A request for this location is already in progress." });
     const request = await ChildLocationChangeRequest.create({ parentId: req.parent._id, childId: child._id, parentName: req.parent.name || "", parentPhone: req.parent.phone || "", childName: child.name || "", locationType, reason });
     return res.status(201).json({ success: true, data: request, message: "Your request will be processed by the end of the day, and an agent will call to confirm the location change." });
@@ -222,16 +227,13 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
     if (!request || request.status !== "approved") return res.status(409).json({ success: false, message: "An approved location change request is required." });
     const child = await Child.findOne({ _id: request.childId, parentId: req.parent._id });
     if (!child) return res.status(404).json({ success: false, message: "Child not found." });
-    const address = String(req.body?.address || "").trim();
-    const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
-    if (!address || address.length > 500 || !Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) return res.status(400).json({ success: false, message: "Select a valid location on the map." });
-    const proposed = { lat, lng };
-    const pickup = request.locationType === "home" ? proposed : { lat: child.location?.lat, lng: child.location?.lng };
-    const dropoff = request.locationType === "school" ? proposed : { lat: child.dropLocationCoords?.lat, lng: child.dropLocationCoords?.lng };
-    const route = await getRoute(pickup, dropoff);
+    const points = locationChangePoints(request.locationType, req.body, child);
+    const route = await getRoute(points.pickup, points.dropoff);
     const booking = await Booking.findOne({ parentId: req.parent._id, status: "active", $or: [{ childId: child._id }, { childIds: child._id }] }).sort({ serviceEndsAt: -1 });
-    request.proposedAddress = address;
-    request.proposedCoordinates = proposed;
+    request.proposedAddress = points.proposedAddress;
+    request.proposedCoordinates = points.proposedCoordinates;
+    request.proposedSchoolAddress = points.proposedSchoolAddress;
+    request.proposedSchoolCoordinates = points.proposedSchoolCoordinates;
     request.oldDistanceKm = Number(booking?.route?.distanceKm ?? child.routeDistance ?? 0);
     request.newDistanceKm = route.distanceKm;
     request.proposedDurationMinutes = route.durationMinutes;
@@ -331,6 +333,8 @@ router.post("/:requestId/revise", verifyParent, async (req, res) => {
     request.status = "approved";
     request.proposedAddress = "";
     request.proposedCoordinates = undefined;
+    request.proposedSchoolAddress = "";
+    request.proposedSchoolCoordinates = undefined;
     request.proposedDurationMinutes = 0;
     request.oldDistanceKm = 0;
     request.newDistanceKm = 0;

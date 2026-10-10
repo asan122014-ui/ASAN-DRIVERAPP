@@ -115,7 +115,7 @@ const payoutDisplayFields = (payout, { driverFacing = false } = {}) => {
     ? ` · ${Number(routeChange.remainingServiceDays).toFixed(1)} remaining service days`
     : "";
   const serviceName = routeChange
-    ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change${remainingDaysLabel}`
+    ? `${routeChange.childName || "Child"} · ${routeChange.locationType === "both" ? "Home and school" : routeChange.locationType === "both" ? "Home and school" : routeChange.locationType === "home" ? "Home pickup" : "School drop-off"} route change${remainingDaysLabel}`
     : payout.invoiceId?.childId?.name || (payout.bookingId?.children || []).map((child) => child.name).filter(Boolean).join(", ") || payout.bookingId?.child?.name || "Monthly ride service";
   const serviceDate = payout.bookingId?.startDate || payout.bookingId?.serviceStartsAt || routeChange?.appliedAt || routeChange?.paidAt;
   return {
