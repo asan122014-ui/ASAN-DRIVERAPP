@@ -12,8 +12,12 @@ import { priceLocationChange } from "../services/locationChangePricing.js";
 import { getTrafficRoute } from "../services/googleRouteService.js";
 import { razorpayClient, razorpayConfig } from "../services/razorpayService.js";
 import { confirmedRazorpayPayment, verifyCheckoutSignature } from "../services/paymentRules.js";
+import { canWaiveLocationCharge, validLocationAccessCode } from "../services/developerLocationAccess.js";
 
 const router = express.Router();
+router.get("/developer-access", verifyParent, (req, res) => {
+  return res.json({ success: true, data: { allowed: canWaiveLocationCharge(req.parent) } });
+});
 const validId = (value) => mongoose.Types.ObjectId.isValid(String(value || ""));
 const fail = (res, error) => {
   console.error("CHILD LOCATION CHANGE ERROR", error?.message || error);
@@ -267,6 +271,31 @@ router.post("/:requestId/location", verifyParent, async (req, res) => {
     await parentNotification(request, "Location updated", message);
     await driverLocationChangeNotice(request, booking, child, req);
     return res.json({ success: true, data: { status: "completed", requestId: String(request._id), oldDistanceKm: request.oldDistanceKm, newDistanceKm: route.distanceKm, addedDistanceKm: request.addedDistanceKm, remainingServiceDays: request.remainingServiceDays, extraDistanceDailyCharge: request.extraDistanceDailyCharge, distanceChargeDue: request.distanceChargeDue, platformFeeDue: request.platformFeeDue, currentMonthlyPrice: oldQuote, nextMonthlyPrice: nextQuote.totalMonthly, amountDue: 0, message } });
+  } catch (error) { return fail(res, error); }
+});
+
+router.post("/:requestId/developer-apply", verifyParent, async (req, res) => {
+  try {
+    if (!validLocationAccessCode(req.parent, req.body?.code)) return res.status(403).json({ success: false, message: "This code is unavailable for your account." });
+    if (!validId(req.params.requestId)) return res.status(400).json({ success: false, message: "Invalid request ID." });
+    const request = await ChildLocationChangeRequest.findOne({ _id: req.params.requestId, parentId: req.parent._id });
+    if (request?.status === "completed" && request.chargeWaivedAt) return res.json({ success: true, data: { status: "completed" }, message: "Location changed." });
+    if (request?.status !== "awaiting_payment") return res.status(409).json({ success: false, message: "Choose an approved new location first." });
+    if (request.paymentOrderId || request.paymentId) return res.status(409).json({ success: false, message: "A payment has already been started. Resolve it before using this code." });
+    const child = await Child.findOne({ _id: request.childId, parentId: req.parent._id });
+    const booking = await Booking.findOne({ _id: request.bookingId, parentId: req.parent._id, status: "active" });
+    if (!child || !booking) return res.status(409).json({ success: false, message: "The active booking is no longer available." });
+    request.waivedAmount = request.amountDue;
+    request.chargeWaivedAt = new Date();
+    request.amountDue = 0;
+    request.distanceChargeDue = 0;
+    request.platformFeeDue = 0;
+    request.driverAmountDue = 0;
+    await applyLocation(request, child, booking);
+    await parentNotification(request, "Location changed", "Your new location is active.");
+    await driverLocationChangeNotice(request, booking, child, req);
+    req.app.get("io")?.to(String(request.parentId)).emit("child_location_change_updated", { requestId: String(request._id), status: "completed", amountDue: 0 });
+    return res.json({ success: true, data: { status: "completed", amountDue: 0 }, message: "Location changed." });
   } catch (error) { return fail(res, error); }
 });
 

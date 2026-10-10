@@ -31,6 +31,8 @@ const schema = new mongoose.Schema({
   paymentOrderId: { type: String, default: "" },
   paymentId: { type: String, default: "" },
   paidAt: { type: Date, default: null },
+  waivedAmount: { type: Number, default: 0 },
+  chargeWaivedAt: { type: Date, default: null },
   appliedAt: { type: Date, default: null },
 }, { timestamps: true });
 
