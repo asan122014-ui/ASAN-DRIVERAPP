@@ -1013,6 +1013,11 @@ export const startTripService =
                       "Home",
               },
 
+              routeDistanceKm:
+                Number.isFinite(Number(child.routeDistance)) && Number(child.routeDistance) > 0
+                  ? Number(child.routeDistance)
+                  : null,
+
               startTime,
             };
           }
@@ -1645,7 +1650,7 @@ export const getParentTripsService =
         );
       }
 
-      return await Trips.find({
+      const trips = await Trips.find({
         parent:
           parentId,
       })
@@ -1655,9 +1660,34 @@ export const getParentTripsService =
         })
         .populate(
           "child",
-          "name status pickupLocation dropoffLocation school grade"
+          "name status pickupLocation dropoffLocation school grade routeDistance"
         )
         .lean();
+
+      const driverIds = [
+        ...new Set(
+          trips
+            .map((trip) => normalizeDriverId(trip.driverId))
+            .filter(Boolean)
+        ),
+      ];
+      const drivers = await Driver.find({ driverId: { $in: driverIds } })
+        .select("driverId name profilePhoto vehicleNumber vehicleType")
+        .lean();
+      const driversById = new Map(
+        drivers.map((driver) => [normalizeDriverId(driver.driverId), driver])
+      );
+
+      return trips.map((trip) => ({
+        ...trip,
+        driver: driversById.get(normalizeDriverId(trip.driverId)) || null,
+        routeDistanceKm:
+          Number.isFinite(Number(trip.routeDistanceKm)) && Number(trip.routeDistanceKm) > 0
+            ? Number(trip.routeDistanceKm)
+            : Number.isFinite(Number(trip.child?.routeDistance)) && Number(trip.child?.routeDistance) > 0
+              ? Number(trip.child.routeDistance)
+              : null,
+      }));
     } catch (
       error
     ) {

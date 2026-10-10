@@ -93,6 +93,12 @@ const tripSchema = new mongoose.Schema(
       },
     },
 
+    routeDistanceKm: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
     amount: {
       type: Number,
       default: 0,
