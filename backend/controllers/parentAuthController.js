@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { isParentPlayReviewAccount, verifyParentPlayReviewCode } from "../services/parentPlayReviewAccess.js";
 
 import Parent from "../models/Parent.js";
 import Otp from "../models/Otp.js";
@@ -798,6 +799,11 @@ export const sendLoginOtp =
          SEND OTP
       =================================================== */
 
+      if (isParentPlayReviewAccount(parent)) {
+        return res.status(200).json({ success: true, reviewAccess: true,
+          message: "Enter the review access code provided in Play Console." });
+      }
+
       const result =
         await createAndSendOtp({
           email,
@@ -919,8 +925,11 @@ export const verifyLoginOtp =
          VERIFY OTP
       =================================================== */
 
-      const verification =
-        await verifyStoredOtp({
+      const reviewParent = await Parent.findByEmail(email);
+      const verification = isParentPlayReviewAccount(reviewParent)
+        ? { valid: verifyParentPlayReviewCode(reviewParent, otp), status: 400,
+            message: "Invalid review access code" }
+        : await verifyStoredOtp({
           email,
           otp,
 

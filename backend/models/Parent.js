@@ -171,6 +171,11 @@ const parentSchema =
         default: true,
       },
 
+      isPlayReviewAccount: {
+        type: Boolean,
+        default: false,
+      },
+
       /* =====================================================
          PROFILE PHOTO
       ===================================================== */
