@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { isPlayReviewAccount, verifyPlayReviewCode } from "../services/playReviewAccess.js";
 
 import Driver from "../models/Driver.js";
 import RejectedDriver from "../models/RejectedDriver.js";
@@ -2150,6 +2151,11 @@ export const sendLoginOtp =
          SEND
       =================================================== */
 
+      if (isPlayReviewAccount(driver)) {
+        return res.status(200).json({ success: true, reviewAccess: true,
+          message: "Enter the review access code provided in Play Console." });
+      }
+
       const result =
         await createAndSendDriverOtp({
           email,
@@ -2273,17 +2279,12 @@ export const verifyLoginOtp =
          VERIFY
       =================================================== */
 
-      const verification =
-        await verifyStoredDriverOtp({
-          email,
-          otp,
-
-          purpose:
-            DRIVER_LOGIN_PURPOSE,
-
-          consume:
-            true,
-        });
+      const reviewDriver = await Driver.findByEmail(email);
+      const verification = isPlayReviewAccount(reviewDriver)
+        ? { valid: verifyPlayReviewCode(reviewDriver, otp), status: 400,
+            message: "Invalid review access code" }
+        : await verifyStoredDriverOtp({ email, otp,
+            purpose: DRIVER_LOGIN_PURPOSE, consume: true });
 
       if (
         !verification.valid

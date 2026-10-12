@@ -69,6 +69,8 @@ const driverSchema =
          PERSONAL DETAILS
       ===================================================== */
 
+      isPlayReviewAccount: { type: Boolean, default: false, immutable: true },
+
       name: {
         type: String,
         required: true,
