@@ -39,15 +39,18 @@ const ensureDriverPayoutIndexes = async () => {
   return payoutIndexMigration;
 };
 
+async function writeMissingPayouts(operations) {
+  if (!operations.length) return;
+  try { await DriverPayout.bulkWrite(operations, { ordered: false }); }
+  catch (error) {
+    // Concurrent payment activation may already have inserted an installment.
+    if (!error.writeErrors?.length || error.writeErrors.some((item) => item.code !== 11000)) throw error;
+  }
+}
+
 export const ensureDriverPayouts = async (invoices, bookings = []) => {
-  const ensureOne = async (filter, values) => {
-    try {
-      await DriverPayout.updateOne(filter, { $setOnInsert: values }, { upsert: true });
-    } catch (error) {
-      // A simultaneous driver/admin request may win the unique invoice/installment insert.
-      if (error?.code !== 11000) throw error;
-    }
-  };
+  const operations = [];
+  const ensureOne = async (filter, values) => { operations.push({ updateOne: { filter, update: { $setOnInsert: values }, upsert: true } }); };
   for (const invoice of invoices) {
     const invoiceChildId = String(invoice.childId?._id || invoice.childId || "");
     const pairedBooking = bookings.some((booking) => {
@@ -65,22 +68,21 @@ export const ensureDriverPayouts = async (invoices, bookings = []) => {
     await ensureOne({ ...common, installment: "mid_service" }, { ...common, installment: "mid_service", amount: mid });
     await ensureOne({ ...common, installment: "service_complete" }, { ...common, installment: "service_complete", amount: final });
   }
+  await writeMissingPayouts(operations);
 };
 
 export const ensureBookingPayouts = async (bookings) => {
+  const operations = [];
   for (const booking of bookings) {
     const total = Number(booking.quote?.distanceCharge || 0);
     if (!Number.isFinite(total) || total <= 0) continue;
     const [mid, final] = splitDriverPayoutAmount(total);
     const common = { bookingId: booking._id, driverId: String(booking.assignedDriverId).trim().toUpperCase() };
     for (const [installment, amount] of [["mid_service", mid], ["service_complete", final]]) {
-      try {
-        await DriverPayout.updateOne({ ...common, installment }, { $setOnInsert: { ...common, invoiceId: null, installment, amount } }, { upsert: true });
-      } catch (error) {
-        if (error?.code !== 11000) throw error;
-      }
+      operations.push({ updateOne: { filter: { ...common, installment }, update: { $setOnInsert: { ...common, invoiceId: null, installment, amount } }, upsert: true } });
     }
   }
+  await writeMissingPayouts(operations);
 };
 
 export const ensureLocationChangePayouts = async (locationChanges, driverByBookingId) => {
@@ -144,8 +146,6 @@ export const listDriverPayouts = async (req, res) => {
     const driverId = String(req.driver.driverId || "").trim().toUpperCase();
     const invoices = await Invoice.find({ driverId }).select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").lean();
     const bookings = await Booking.find({ assignedDriverId: driverId, status: { $in: ["active", "expired"] }, paymentId: { $ne: null } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
-    await ensureDriverPayouts(invoices, bookings);
-    await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
     const assignedBookings = await Booking.find({ assignedDriverId: driverId }).select("_id").lean();
@@ -204,8 +204,6 @@ export const listAdminPayouts = async (req, res) => {
     const invoices = await Invoice.find().select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").sort({ createdAt: -1 }).lean();
     // Keep paid service and route-change payout history visible after a ride expires.
     const bookings = await Booking.find({ status: { $in: ["active", "expired"] }, paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
-    await ensureDriverPayouts(invoices, bookings);
-    await ensureBookingPayouts(bookings);
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
     // Route changes are their own paid transactions. Follow each change's

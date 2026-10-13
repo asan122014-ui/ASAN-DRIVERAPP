@@ -1,3 +1,5 @@
+import { startPushDeliveryWorker } from "./jobs/deliverPushNotifications.js";
+import { startPayoutReconciliationWorker } from "./jobs/reconcileDriverPayouts.js";
 /* =========================================================
    ENVIRONMENT VARIABLES
 ========================================================= */
@@ -1704,6 +1706,8 @@ connectDB()
 
       startBookingOfferExpiryWorker(io);
       startBookingServiceExpiryWorker(io);
+      startPushDeliveryWorker();
+      startPayoutReconciliationWorker();
 
       /* =====================================================
          VERIFICATION PHOTO CLEANUP

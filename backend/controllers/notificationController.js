@@ -311,6 +311,11 @@ export const getNotifications =
          FETCH ALL DRIVER NOTIFICATIONS
       =================================================== */
 
+      if (req.query.countOnly === "true") {
+        const unreadCount = await Notification.countDocuments({ ...filter, read: false });
+        return res.json({ success: true, unreadCount, count: unreadCount, data: [] });
+      }
+
       const notifications =
         await Notification.find(
           filter
@@ -464,6 +469,11 @@ export const getAllNotifications =
          FETCH
       =================================================== */
 
+      if (req.query.countOnly === "true") {
+        const unreadCount = await Notification.countDocuments({ ...filter, read: false });
+        return res.json({ success: true, unreadCount, count: unreadCount, data: [] });
+      }
+
       const notifications =
         await Notification.find(
           filter
@@ -546,6 +556,11 @@ export const getParentNotifications =
             message:
               "Parent authentication required",
           });
+      }
+
+      if (req.query.countOnly === "true") {
+        const unreadCount = await Notification.countDocuments({ parent: parent._id, recipientType: "parent", read: false });
+        return res.json({ success: true, unreadCount, count: unreadCount, data: [] });
       }
 
       const notifications =

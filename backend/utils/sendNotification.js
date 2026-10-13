@@ -1,3 +1,5 @@
+import PushDelivery from "../models/PushDelivery.js";
+import { wakePushDeliveryWorker } from "../jobs/deliverPushNotifications.js";
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
 import Driver from "../models/Driver.js";
@@ -1066,64 +1068,24 @@ export const sendNotification =
          PARENT FCM
       =================================================== */
 
-      if (
-        parentTemplate
-      ) {
-        await sendParentFCM({
-          tokens:
-            parentTokens,
-
-          title:
-            parentTitle,
-
-          message:
-            parentMessage,
-
-          driverId,
-
-          childId,
-
-          notificationKey:
-            normalizedKey,
-
-          type:
-            resolvedType,
-
-          priority,
-        });
+      const deliveries = [];
+      const data = {
+        driverId: String(driverId || ""), childId: String(childId || ""),
+        notificationKey: String(normalizedKey), type: String(resolvedType), priority: String(priority),
+      };
+      for (const [recipientType, tokens, title, body, template] of [
+        ["parent", parentTokens, parentTitle, parentMessage, parentTemplate],
+        ["driver", driverTokens, driverTitle, driverMessage, driverTemplate],
+      ]) {
+        if (!template) continue;
+        for (const chunk of chunkArray(tokens)) {
+          deliveries.push({ recipientType, tokens: chunk, notification: { title, body }, data });
+        }
       }
-
-      /* ===================================================
-         DRIVER FCM
-      =================================================== */
-
-      if (
-        driverTemplate
-      ) {
-        await sendDriverFCM({
-          driver,
-
-          tokens:
-            driverTokens,
-
-          title:
-            driverTitle,
-
-          message:
-            driverMessage,
-
-          driverId,
-
-          childId,
-
-          notificationKey:
-            normalizedKey,
-
-          type:
-            resolvedType,
-
-          priority,
-        });
+      // Durable enqueue is awaited; Firebase delivery is handled outside the HTTP request.
+      if (deliveries.length) {
+        await PushDelivery.insertMany(deliveries);
+        wakePushDeliveryWorker();
       }
 
       /* ===================================================
