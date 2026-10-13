@@ -95,16 +95,17 @@ router.post("/request", verifyParent, async (req, res) => {
     booking.driverRequestId = request._id;
     await booking.save();
     const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");
-    const dispatch = await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") });
+    const dispatch = driverChoice === "existing"
+      ? await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") })
+      : { request, offersSent: 0 };
+    req.app.get("io")?.to("admin").emit("driver_request_created", { requestId: String(request._id) });
     const latestBooking = await Booking.findById(booking._id);
     const requestSentToDriver = driverChoice === "existing" && dispatch.offersSent > 0 && dispatch.request?.matchingStatus === "Offered";
     const message = driverChoice === "existing"
       ? requestSentToDriver
         ? `Ride request sent to ASAN ID ${normalizedDriverId}. Waiting for the driver to respond.`
         : dispatch.request?.rejectionReason || `The request could not be sent to ASAN ID ${normalizedDriverId}. Please contact the institute.`
-      : dispatch.offersSent
-        ? "Your request has been sent to nearby drivers"
-        : "Your request is in the institute review queue";
+      : "Your request is in the institute review queue";
     return res.status(201).json({ success: true, message, data: { booking: latestBooking, request: dispatch.request, targetDriverId: normalizedDriverId || null, offerSent: driverChoice === "existing" ? requestSentToDriver : dispatch.offersSent > 0 } });
   } catch (error) { console.error("BOOKING REQUEST ERROR", error); return res.status(500).json({ success: false, message: "Unable to create the booking request" }); }
 });
@@ -203,13 +204,13 @@ router.put("/mine/:id/retry-search", verifyParent, async (req, res) => {
     booking.requestedDriverId = "";
     booking.status = "driver_searching";
     await booking.save();
-    const { dispatchNextOfferBatch } = await import("../services/bookingMatchingService.js");
-    const dispatch = await dispatchNextOfferBatch({ requestId: request._id, io: req.app.get("io") });
+
+    req.app.get("io")?.to("admin").emit("driver_request_created", { requestId: String(request._id) });
     const refreshedBooking = await Booking.findById(booking._id).populate("driverRequestId", "status matchingStatus rejectionReason");
-    return res.json({ success: true, message: dispatch.offersSent ? "Your request is now being sent to nearby drivers" : "The institute will continue matching your request", data: refreshedBooking });
+    return res.json({ success: true, message: "Your request is with the institute. An administrator will select a driver.", data: refreshedBooking });
   } catch (error) {
     console.error("RETRY DRIVER SEARCH ERROR", error);
-    return res.status(500).json({ success: false, message: "Unable to start nearby driver search" });
+    return res.status(500).json({ success: false, message: "Unable to request an admin-assigned driver" });
   }
 });
 

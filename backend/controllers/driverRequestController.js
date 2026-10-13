@@ -1,3 +1,4 @@
+import { dispatchSelectedDriverOffer } from "../services/bookingMatchingService.js";
 import mongoose from "mongoose";
 
 import DriverRequest from "../models/DriverRequest.js";
@@ -1088,6 +1089,12 @@ export const assignDriver =
       /* ===================================================
          TRANSACTION
       =================================================== */
+
+      const bookingRequest = await DriverRequest.findById(id).select("bookingId");
+      if (bookingRequest?.bookingId) {
+        const result = await dispatchSelectedDriverOffer({ requestId: id, driverId: normalizedDriverId, io: req.app.get("io") });
+        return res.json({ success: true, message: "Ride request sent to the driver. Waiting for acceptance.", data: result.request });
+      }
 
       await session.withTransaction(
         async () => {

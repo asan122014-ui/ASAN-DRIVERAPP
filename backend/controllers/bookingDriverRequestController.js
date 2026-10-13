@@ -4,13 +4,14 @@ import Driver from "../models/Driver.js";
 import DriverRequest from "../models/DriverRequest.js";
 import Notification from "../models/Notification.js";
 import Parent from "../models/Parent.js";
-import { dispatchNextOfferBatch } from "../services/bookingMatchingService.js";
+import { dispatchNextOfferBatch, dispatchSelectedDriverOffer } from "../services/bookingMatchingService.js";
 
 const normalizeDriverId = (value) => String(value || "").trim().toUpperCase();
 
 const loadOfferForDriver = async (requestId, driverId) => {
   const driverRequest = await DriverRequest.findById(requestId);
   if (!driverRequest || driverRequest.status !== "Pending") return { error: "This ride request is no longer open.", status: 409 };
+  if ((driverRequest.rejectedDriverIds || []).includes(driverId)) return { error: "You already declined this request.", status: 409 };
   if (driverRequest.matchingStatus !== "Offered" || !(driverRequest.currentOfferDriverIds || []).includes(driverId)) return { error: "This ride request is not currently offered to you.", status: 403 };
   if (driverRequest.offerExpiresAt && driverRequest.offerExpiresAt.getTime() <= Date.now()) return { error: "This ride offer has expired.", status: 410 };
   return { driverRequest };
@@ -36,7 +37,7 @@ export const getDriverBookingOffers = async (req, res) => {
         $or: [{ requestedDriverId: { $exists: false } }, { requestedDriverId: "" }],
       }, { $set: { requestedDriverId: driverId, requestType: "existing_driver" } });
     }
-    const requests = await DriverRequest.find({ status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] })
+    const requests = await DriverRequest.find({ status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, rejectedDriverIds: { $nin: [driverId] }, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] })
       .populate("bookingId")
       .populate("childId", "name school grade")
       .sort({ createdAt: -1 });
@@ -108,7 +109,7 @@ export const acceptDriverBookingOffer = async (req, res) => {
     const driver = await Driver.findById(req.driver._id).select("driverId status");
     if (!parent || !driver || driver.status !== "approved") return res.status(409).json({ success: false, message: "The parent or approved driver account is no longer available." });
     const accepted = await DriverRequest.findOneAndUpdate(
-      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
+      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, rejectedDriverIds: { $nin: [driverId] }, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
       { $set: { status: "Assigned", matchingStatus: "Accepted", assignedDriverId: driverId, assignedAt: new Date(), respondedAt: new Date(), offerExpiresAt: null, rejectionReason: "" } },
       { new: true }
     );
@@ -151,7 +152,7 @@ export const rejectDriverBookingOffer = async (req, res) => {
     if (loaded.error) return res.status(loaded.status).json({ success: false, message: loaded.error });
     const request = loaded.driverRequest;
     const rejected = await DriverRequest.findOneAndUpdate(
-      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
+      { _id: request._id, status: "Pending", matchingStatus: "Offered", currentOfferDriverIds: driverId, rejectedDriverIds: { $nin: [driverId] }, $or: [{ offerExpiresAt: null }, { offerExpiresAt: { $gt: new Date() } }] },
       { $addToSet: { rejectedDriverIds: driverId }, $set: { respondedAt: new Date() } },
       { new: true }
     );
@@ -161,8 +162,10 @@ export const rejectDriverBookingOffer = async (req, res) => {
     if (allResponded && rejected.requestType === "new_driver") {
       rejected.matchingStatus = "Searching";
       rejected.offerExpiresAt = null;
+      rejected.currentOfferDriverIds = [];
+      rejected.rejectionReason = "The selected driver declined. Waiting for admin to choose another driver.";
       await rejected.save();
-      nextBatch = await dispatchNextOfferBatch({ requestId: rejected._id, io: req.app.get("io") });
+      req.app.get("io")?.to("admin").emit("booking_matching_exhausted", { requestId: String(rejected._id), bookingId: String(rejected.bookingId) });
     }
     else if (allResponded) {
       rejected.matchingStatus = "Exhausted";
@@ -181,12 +184,12 @@ export const rejectDriverBookingOffer = async (req, res) => {
 
 export const adminDispatchBookingRequest = async (req, res) => {
   try {
-    const result = await dispatchNextOfferBatch({ requestId: req.params.id, io: req.app.get("io") });
+    const result = await dispatchSelectedDriverOffer({ requestId: req.params.id, driverId: req.body?.driverId, io: req.app.get("io") });
     if (!result.request) return res.status(404).json({ success: false, message: "Booking request not found" });
     if (!result.offersSent) return res.status(409).json({ success: false, message: result.request.rejectionReason || "No eligible drivers were found", data: result.request });
-    return res.json({ success: true, message: `${result.offersSent} nearby driver offer${result.offersSent === 1 ? "" : "s"} sent`, data: result.request });
+    return res.json({ success: true, message: "Ride request sent to the selected driver. Waiting for acceptance.", data: result.request });
   } catch (error) {
     console.error("ADMIN BOOKING DISPATCH ERROR", error);
-    return res.status(500).json({ success: false, message: "Unable to send driver offers" });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : "Unable to send driver offers" });
   }
 };
