@@ -1,3 +1,4 @@
+import { expireAdminOffers } from "../services/adminOfferExpiry.js";
 import DriverRequest from "../models/DriverRequest.js";
 import { dispatchNextOfferBatch } from "../services/bookingMatchingService.js";
 
@@ -10,9 +11,11 @@ export const startBookingOfferExpiryWorker = (io) => {
     if (running) return;
     running = true;
     try {
+      await expireAdminOffers(io);
       const expired = await DriverRequest.find({
         status: "Pending",
         matchingStatus: "Offered",
+        requestType: "existing_driver",
         offerExpiresAt: { $lte: new Date() },
       }).select("_id requestType parentId").limit(50);
       for (const request of expired) {

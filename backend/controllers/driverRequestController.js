@@ -1,3 +1,4 @@
+import { expireAdminOffers } from "../services/adminOfferExpiry.js";
 import { dispatchSelectedDriverOffer } from "../services/bookingMatchingService.js";
 import mongoose from "mongoose";
 
@@ -811,6 +812,7 @@ export const getAllRequests =
     res
   ) => {
     try {
+      await expireAdminOffers(req.app.get("io"));
       const requests =
         await DriverRequest.find()
           .populate(

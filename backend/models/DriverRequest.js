@@ -97,6 +97,8 @@ const driverRequestSchema =
         default: [],
       },
 
+      delayedDriverIds: { type: [String], default: [] },
+
       offerExpiresAt: {
         type: Date,
         default: null,

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { adminOfferDeadline, expireAdminOffers } from "./adminOfferExpiry.js";
 import { assertAdminOfferAllowed } from "./adminBookingOfferPolicy.js";
 import PushDelivery from "../models/PushDelivery.js";
 import { wakePushDeliveryWorker } from "../jobs/deliverPushNotifications.js";
@@ -92,7 +93,7 @@ export const dispatchNextOfferBatch = async ({ requestId, io }) => {
       await request.save();
       return { request, offersSent: (request.currentOfferDriverIds || []).length };
     }
-    request.rejectedDriverIds = [...new Set([...(request.rejectedDriverIds || []), ...(request.currentOfferDriverIds || [])])];
+    request.delayedDriverIds = [...new Set([...(request.delayedDriverIds || []), ...(request.currentOfferDriverIds || [])])];
     request.currentOfferDriverIds = [];
     request.matchingStatus = "Searching";
   }
@@ -137,6 +138,7 @@ export const dispatchNextOfferBatch = async ({ requestId, io }) => {
 };
 
 export async function dispatchSelectedDriverOffer({ requestId, driverId, io }) {
+  await expireAdminOffers(io);
   const normalizedId = normalizeDriverId(driverId);
   if (!normalizedId) { const error = new Error("Choose a driver"); error.statusCode = 400; throw error; }
   const driver = await Driver.findOne({ driverId: normalizedId, status: "approved" });
@@ -149,7 +151,7 @@ export async function dispatchSelectedDriverOffer({ requestId, driverId, io }) {
       assertAdminOfferAllowed(request, booking, driver);
       offered = await DriverRequest.findOneAndUpdate(
         { _id: request._id, status: "Pending", matchingStatus: { $ne: "Offered" } },
-        { $set: { matchingStatus: "Offered", currentOfferDriverIds: [normalizedId], offerExpiresAt: null, rejectionReason: "", respondedAt: null }, $addToSet: { offeredDriverIds: normalizedId } },
+        { $set: { matchingStatus: "Offered", currentOfferDriverIds: [normalizedId], offerExpiresAt: adminOfferDeadline(), rejectionReason: "", respondedAt: null }, $addToSet: { offeredDriverIds: normalizedId } },
         { new: true, session }
       );
       if (!offered) { const error = new Error("This request has already changed. Refresh and try again."); error.statusCode = 409; throw error; }
