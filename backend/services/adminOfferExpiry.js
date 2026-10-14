@@ -12,12 +12,12 @@ export async function expireAdminOffers(io) {
   // Apply the same deadline to outstanding offers created before this change.
   await DriverRequest.updateMany({ status: "Pending", requestType: "new_driver", matchingStatus: "Offered", offerExpiresAt: null }, [
     { $set: { offerExpiresAt: { $add: ["$updatedAt", ADMIN_OFFER_DURATION_MS] } } },
-  ]);
+  ], { updatePipeline: true });
   const expired = await DriverRequest.find({ status: "Pending", requestType: "new_driver", matchingStatus: "Offered", offerExpiresAt: { $lte: now } }).select("_id bookingId").limit(100);
   for (const request of expired) {
     const result = await DriverRequest.updateOne({ _id: request._id, status: "Pending", matchingStatus: "Offered", offerExpiresAt: { $lte: now } }, [
       { $set: { ...delayedOfferUpdate, delayedDriverIds: { $setUnion: [{ $ifNull: ["$delayedDriverIds", []] }, "$currentOfferDriverIds"] } } },
-    ]);
+    ], { updatePipeline: true });
     if (result.modifiedCount) io?.to("admin").emit("booking_matching_exhausted", { requestId: String(request._id), bookingId: String(request.bookingId) });
   }
 }

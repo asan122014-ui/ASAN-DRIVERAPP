@@ -11,13 +11,19 @@ test("expiry unlocks pending offers and cannot overwrite an accepted request", a
   const originals = { find: DriverRequest.find, updateMany: DriverRequest.updateMany, updateOne: DriverRequest.updateOne };
   const events = [];
   try {
-    DriverRequest.updateMany = async (filter) => { assert.equal(filter.requestType, "new_driver"); };
+    DriverRequest.updateMany = async (filter, pipeline, options) => {
+      const query = originals.updateMany.call(DriverRequest, filter, pipeline, options);
+      assert.equal(query.mongooseOptions().updatePipeline, true);
+      assert.equal(filter.requestType, "new_driver");
+    };
     DriverRequest.find = (filter) => {
       assert.equal(filter.status, "Pending"); assert.equal(filter.matchingStatus, "Offered");
       assert.equal(filter.requestType, "new_driver"); assert.ok(filter.offerExpiresAt.$lte instanceof Date);
       return { select: () => ({ limit: async () => [{ _id: "expired", bookingId: "booking" }, { _id: "accepted", bookingId: "booking2" }] }) };
     };
-    DriverRequest.updateOne = async (filter, pipeline) => {
+    DriverRequest.updateOne = async (filter, pipeline, options) => {
+      const query = originals.updateOne.call(DriverRequest, filter, pipeline, options);
+      assert.equal(query.mongooseOptions().updatePipeline, true);
       assert.equal(filter.status, "Pending"); assert.equal(filter.matchingStatus, "Offered");
       const update = pipeline[0].$set;
       assert.equal(update.matchingStatus, "Searching"); assert.deepEqual(update.currentOfferDriverIds, []);

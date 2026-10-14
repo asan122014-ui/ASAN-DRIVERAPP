@@ -812,7 +812,12 @@ export const getAllRequests =
     res
   ) => {
     try {
-      await expireAdminOffers(req.app.get("io"));
+      try {
+        await expireAdminOffers(req.app.get("io"));
+      } catch (error) {
+        // Request visibility must survive a secondary expiry-worker failure.
+        console.error("ADMIN OFFER EXPIRY ERROR", error.message);
+      }
       const requests =
         await DriverRequest.find()
           .populate(
