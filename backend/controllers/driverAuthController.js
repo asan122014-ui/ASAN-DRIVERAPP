@@ -1,3 +1,4 @@
+import { registrationErrors, normalizeCredential } from "../services/driverRegistrationValidation.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { isPlayReviewAccount, verifyPlayReviewCode } from "../services/playReviewAccess.js";
@@ -1538,6 +1539,12 @@ export const verifyRegisterOtp =
           .trim()
           .toUpperCase();
 
+      const fieldErrors = registrationErrors({ name: normalizedName, phone, email, licenseNumber, vehicleNumber, vehicleType, vehicleModel });
+      if (Object.keys(fieldErrors).length) {
+        await cleanupUploadedFiles(req.files);
+        return res.status(400).json({ success: false, message: Object.values(fieldErrors)[0], errors: fieldErrors });
+      }
+
       /* ===================================================
          PHONE
       =================================================== */
@@ -1838,7 +1845,7 @@ export const verifyRegisterOtp =
           },
 
           vehicleNumber:
-            normalizedVehicleNumber,
+            normalizeCredential(normalizedVehicleNumber),
 
           vehicleType:
             normalizedVehicleType,
@@ -1847,7 +1854,7 @@ export const verifyRegisterOtp =
             normalizedVehicleModel,
 
           licenseNumber:
-            normalizedLicenseNumber,
+            normalizeCredential(normalizedLicenseNumber),
 
           licenseFront:
             getFilePath(
