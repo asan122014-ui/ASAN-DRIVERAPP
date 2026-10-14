@@ -1,4 +1,6 @@
-import test from "node:test";
+import test, { mock } from "node:test";
+process.env.PARENT_COUPON_EMAILS = "bhattagiri.neeharika@gmail.com";
+mock.timers.enable({ apis: ["Date"], now: new Date("2026-10-14T00:00:00Z") });
 import assert from "node:assert/strict";
 import { canWaiveLocationCharge, validLocationAccessCode } from "../services/developerLocationAccess.js";
 import { readFileSync } from "node:fs";

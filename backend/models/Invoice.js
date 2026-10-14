@@ -19,6 +19,7 @@ const PAYMENT_METHODS = [
   "Card",
   "Net Banking",
   "Manual",
+  "Coupon",
 ];
 
 const PAYMENT_STATUSES = [
@@ -532,6 +533,8 @@ invoiceSchema.set(
 /* =========================================================
    MODEL
 ========================================================= */
+
+invoiceSchema.add({ couponCode: { type: String, default: "" }, couponAppliedAt: { type: Date, default: null }, waivedAmount: { type: Number, default: 0 }, couponOriginalAmounts: { type: mongoose.Schema.Types.Mixed, default: null } });
 
 const Invoice =
   mongoose.models.Invoice ||

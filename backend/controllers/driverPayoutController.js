@@ -52,6 +52,7 @@ export const ensureDriverPayouts = async (invoices, bookings = []) => {
   const operations = [];
   const ensureOne = async (filter, values) => { operations.push({ updateOne: { filter, update: { $setOnInsert: values }, upsert: true } }); };
   for (const invoice of invoices) {
+    if (invoice.couponAppliedAt) continue;
     const invoiceChildId = String(invoice.childId?._id || invoice.childId || "");
     const pairedBooking = bookings.some((booking) => {
       const bookingMonth = (booking.startDate || booking.serviceStartsAt)

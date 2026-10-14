@@ -17,6 +17,7 @@ import {
 import verifyAdmin from "../middleware/verifyAdmin.js";
 import verifyDriver from "../middleware/verifyDriver.js";
 import verifyParent from "../middleware/verifyParent.js";
+import { applyInvoiceCoupon } from "../controllers/invoiceCouponController.js";
 import { createInvoicePaymentOrder, verifyInvoicePayment } from "../controllers/invoicePaymentController.js";
 import { getDriverPayoutProof, listAdminPayouts, listDriverPayouts, markDriverPayoutPaid } from "../controllers/driverPayoutController.js";
 import { driverPayoutUpload } from "../config/cloudinary.js";
@@ -555,6 +556,8 @@ router.put(
 /* =========================================================
    PARENT RAZORPAY INVOICE CHECKOUT
 ========================================================= */
+
+router.post("/:id/payment/coupon", authorizeInvoiceAccess, applyInvoiceCoupon);
 
 router.post(
   "/:id/payment/order",

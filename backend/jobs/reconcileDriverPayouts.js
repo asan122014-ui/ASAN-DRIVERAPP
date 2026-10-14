@@ -9,7 +9,7 @@ export function startPayoutReconciliationWorker() {
     running = true;
     try {
       const [invoices, bookings] = await Promise.all([
-        Invoice.find().select("_id driverId baseAmount totalAmount month childId").lean(),
+        Invoice.find().select("_id driverId baseAmount totalAmount month childId couponAppliedAt").lean(),
         Booking.find({ status: { $in: ["active", "expired"] }, paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote childIds childId startDate serviceStartsAt").lean(),
       ]);
       await ensureDriverPayouts(invoices, bookings);
