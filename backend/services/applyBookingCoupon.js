@@ -1,3 +1,4 @@
+import { deliverBookingNotice } from "./bookingNotifications.js";
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import Booking from "../models/Booking.js";
@@ -11,6 +12,7 @@ import { validParentCoupon, assertCouponBooking } from "./parentPaymentCoupon.js
 export async function applyBookingCoupon(parent, bookingId, code, io) {
   const session = await mongoose.startSession();
   let booking;
+  let bookingNotices = [];
   try {
     await session.withTransaction(async () => {
       if (!validParentCoupon(parent, code)) { const error = new Error("Coupon is invalid, expired, or unavailable for this account."); error.status = 403; throw error; }
@@ -33,12 +35,13 @@ export async function applyBookingCoupon(parent, bookingId, code, io) {
       const result = await Child.updateMany({ _id: { $in: childIds }, parentId: parent._id }, { $set: { driverId: booking.assignedDriverId, activeBookingId: booking._id } }, { session });
       if (!childIds.length || result.matchedCount !== childIds.length) throw new Error("Booking children were not found");
       await Parent.updateOne({ _id: parent._id }, { $addToSet: { driverIds: booking.assignedDriverId } }, { session });
-      await Notification.create([
+      bookingNotices = await Notification.create([
         { parent: parent._id, recipientType: "parent", title: "Coupon applied", message: "Your monthly ride service is active. No payment was collected.", type: "general", notificationKey: "BOOKING_COUPON_APPLIED", meta: { bookingId: String(booking._id) } },
         { driver: booking.assignedDriverId, recipientType: "driver", title: "Ride service activated", message: "The parent used a payment-waiver coupon. No payment was collected for this booking.", type: "general", notificationKey: "BOOKING_COUPON_APPLIED", meta: { bookingId: String(booking._id) } },
       ], { session, ordered: true });
     });
   } finally { await session.endSession(); }
+  for (const notice of bookingNotices) await deliverBookingNotice(notice, io);
   const payload = { bookingId: String(booking._id), status: booking.status, serviceEndsAt: booking.serviceEndsAt };
   io?.to(String(parent._id)).emit("booking_status_updated", payload);
   io?.to(booking.assignedDriverId).emit("booking_service_activated", payload);

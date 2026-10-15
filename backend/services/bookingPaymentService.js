@@ -1,3 +1,4 @@
+import { deliverBookingNotice } from "./bookingNotifications.js";
 import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import BookingPayment from "../models/BookingPayment.js";
@@ -52,6 +53,7 @@ export async function reconcilePayment(payment, io, checkout) {
   const session = await mongoose.startSession();
   let activated;
   let driverNotification;
+  let bookingNotices = [];
   let cancelledBooking;
   try {
     await session.withTransaction(async () => {
@@ -96,6 +98,7 @@ export async function reconcilePayment(payment, io, checkout) {
         { parent: parent._id, recipientType: "parent", title: "Payment received", message: "Your monthly ride service is now active.", type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id) } },
         { driver: booking.assignedDriverId, recipientType: "driver", title: "Parent payment confirmed", message: `The parent paid for ${childNames || "the child"}. Distance charge: ₹${Number(booking.quote.distanceCharge).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for the month. The ride service is active.`, type: "payment_received", notificationKey: "BOOKING_PAID", meta: { bookingId: String(booking._id), distanceCharge: booking.quote.distanceCharge } },
       ], { session, ordered: true });
+      bookingNotices = notifications;
       driverNotification = notifications[1];
       activated = booking;
     });
@@ -125,6 +128,7 @@ export async function reconcilePayment(payment, io, checkout) {
     return { paid: false, status: claimed ? "REFUNDED" : "REFUNDING", order };
   }
   if (activated) {
+    for (const notice of bookingNotices) await deliverBookingNotice(notice, io);
     const payload = { bookingId: String(activated._id), status: "active", serviceEndsAt: activated.serviceEndsAt };
     io?.to(String(activated.parentId)).emit("booking_status_updated", payload);
     io?.to(activated.assignedDriverId).emit("booking_service_activated", payload);

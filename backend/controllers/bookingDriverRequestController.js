@@ -1,3 +1,4 @@
+import { deliverBookingNotice, notifyBookingStatus } from "../services/bookingNotifications.js";
 import Booking from "../models/Booking.js";
 import Child from "../models/Child.js";
 import Driver from "../models/Driver.js";
@@ -135,6 +136,7 @@ export const acceptDriverBookingOffer = async (req, res) => {
       priority: "high",
       meta: { bookingId: String(booking?._id || ""), requestId: String(accepted._id), driverId, monthlyPrice: booking?.quote?.totalMonthly },
     });
+    await deliverBookingNotice(notice, io);
     const parentPayload = { requestId: String(accepted._id), bookingId: String(accepted.bookingId), driverId, status: "awaiting_payment", monthlyPrice: booking?.quote?.totalMonthly, title: notice.title, message: notice.message };
     io?.to(String(parent._id)).emit("booking_driver_accepted", parentPayload);
     io?.to("admin").emit("booking_driver_accepted", parentPayload);
@@ -175,6 +177,7 @@ export const rejectDriverBookingOffer = async (req, res) => {
       await rejected.save();
       req.app.get("io")?.to(String(rejected.parentId)).emit("booking_driver_declined", { requestId: String(rejected._id), bookingId: String(rejected.bookingId) });
     }
+    await notifyBookingStatus({ parent: rejected.parentId, recipientType: "parent", title: "Driver declined your request", message: rejected.requestType === "new_driver" ? "The selected driver declined. We are looking for another driver." : "The driver declined your ride request. You can request another driver.", type: "driver_request_rejected", notificationKey: "BOOKING_DRIVER_DECLINED", meta: { bookingId: String(rejected.bookingId), driverId } }, req.app.get("io"));
     return res.json({ success: true, message: "Offer declined", data: { request: nextBatch?.request || rejected, nextOffersSent: nextBatch?.offersSent || 0 } });
   } catch (error) {
     console.error("REJECT BOOKING OFFER ERROR", error);

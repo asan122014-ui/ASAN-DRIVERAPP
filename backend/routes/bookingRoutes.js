@@ -1,3 +1,4 @@
+import { notifyBookingStatus } from "../services/bookingNotifications.js";
 import express from "express";
 import { overlappingBookingChildren } from "../services/bookingChildOverlap.js";
 import mongoose from "mongoose";
@@ -172,9 +173,11 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     if (payment) await BookingPayment.updateOne({ _id: payment._id, status: { $ne: "PAID" } }, { $set: { status: "CANCELLED" } });
 
     const io = req.app.get("io");
-    for (const driverId of offeredDriverIds) {
+    for (const driverId of new Set(offeredDriverIds)) {
+      await notifyBookingStatus({ driver: driverId, recipientType: "driver", title: "Booking cancelled by parent", message: "The parent cancelled this ride booking. This request is no longer active.", type: "general", notificationKey: "BOOKING_CANCELLED", meta: { bookingId: String(booking._id), requestId: String(booking.driverRequestId) } }, io);
       io?.to(String(driverId)).emit("booking_request_cancelled", { requestId: String(cancelledRequest?._id || booking.driverRequestId), bookingId: String(booking._id) });
     }
+    await notifyBookingStatus({ parent: req.parent._id, recipientType: "parent", title: "Booking cancelled", message: "Your ride booking has been cancelled.", type: "general", notificationKey: "BOOKING_CANCELLED", meta: { bookingId: String(booking._id) } }, io);
     io?.to(String(req.parent._id)).emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
     io?.to("admin").emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
     return res.json({ success: true, message: payment ? "Booking cancelled. If a payment was completed at the same time, it will be refunded automatically." : "Booking request cancelled", data: cancelledBooking });
