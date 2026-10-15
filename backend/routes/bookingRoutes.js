@@ -1,4 +1,5 @@
 import express from "express";
+import { overlappingBookingChildren } from "../services/bookingChildOverlap.js";
 import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import Child from "../models/Child.js";
@@ -73,8 +74,9 @@ router.post("/request", verifyParent, async (req, res) => {
       normalizedDriverId = String(requestedDriverId || "").trim().toUpperCase();
       const driver = await Driver.findOne({ driverId: normalizedDriverId }).select("driverId status");
       if (!driver || driver.status !== "approved") return res.status(404).json({ success: false, message: "Approved driver not found for that ASAN ID" });
-      const existingRequest = await Booking.findOne({ parentId: req.parent._id, requestedDriverId: normalizedDriverId, status: { $in: activeStatuses } }).select("_id status");
-      if (existingRequest) return res.status(409).json({ success: false, message: `You already have a booking request in progress with ASAN ID ${normalizedDriverId}. You can still request a different saved driver.` });
+      const existingBookings = await Booking.find({ parentId: req.parent._id, $or: [{ requestedDriverId: normalizedDriverId }, { assignedDriverId: normalizedDriverId }], status: { $in: activeStatuses } }).select("child children").lean();
+      const overlapping = overlappingBookingChildren(normalizedChildren, existingBookings);
+      if (overlapping.length) return res.status(409).json({ success: false, message: `An ongoing booking with ASAN ID ${normalizedDriverId} already includes: ${overlapping.map((item) => item.name).join(", ")}. Remove those children from this request to book for other children.` });
       const knownDriverIds = [...new Set([...(req.parent.driverIds || []), req.parent.driverId, normalizedDriverId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
       req.parent.driverIds = knownDriverIds;
       req.parent.driverId = req.parent.driverId || normalizedDriverId;
