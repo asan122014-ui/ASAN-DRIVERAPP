@@ -1,3 +1,4 @@
+import { startWaivedCheckoutWorker } from "./jobs/reconcileWaivedCheckouts.js";
 import { startPushDeliveryWorker } from "./jobs/deliverPushNotifications.js";
 import { startPayoutReconciliationWorker } from "./jobs/reconcileDriverPayouts.js";
 /* =========================================================
@@ -1708,6 +1709,7 @@ connectDB()
       startBookingServiceExpiryWorker(io);
       startPushDeliveryWorker();
       startPayoutReconciliationWorker();
+      startWaivedCheckoutWorker(io);
 
       /* =====================================================
          VERIFICATION PHOTO CLEANUP

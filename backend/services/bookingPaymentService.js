@@ -64,7 +64,7 @@ export async function reconcilePayment(payment, io, checkout) {
       if (current.status === "PAID") return;
       if (current.orderId !== payment.orderId) throw new Error("Payment order changed; retry verification");
       const booking = await Booking.findById(payment.bookingId).session(session);
-      if (booking?.status === "cancelled") { cancelledBooking = true; return; }
+      if (booking?.status === "cancelled" || booking?.couponAppliedAt) { cancelledBooking = true; return; }
       if (!booking || booking.status !== "awaiting_payment" || !booking.assignedDriverId) throw new Error("Booking cannot be activated");
       const parent = await Parent.findById(booking.parentId).session(session);
       if (!parent) throw new Error("Parent account was not found");
@@ -113,7 +113,7 @@ export async function reconcilePayment(payment, io, checkout) {
       try {
         await client.payments.refund(String(confirmed.id), {
           amount: Math.round(Number(payment.amount) * 100),
-          notes: { booking_id: String(payment.bookingId), reason: "Booking cancelled before payment confirmation" },
+          notes: { booking_id: String(payment.bookingId), reason: "Booking cancelled or waived before payment confirmation" },
         });
         await BookingPayment.updateOne({ _id: claimed._id, status: "REFUNDING" }, { $set: { status: "REFUNDED" } });
         io?.to(String(payment.parentId)).emit("booking_payment_refunded", { bookingId: String(payment.bookingId), status: "REFUNDED" });
