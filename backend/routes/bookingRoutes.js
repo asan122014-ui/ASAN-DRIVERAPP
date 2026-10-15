@@ -1,3 +1,4 @@
+import { removeCancelledBookingChildren } from "../services/cancelledBookingChildren.js";
 import { notifyBookingStatus } from "../services/bookingNotifications.js";
 import express from "express";
 import { overlappingBookingChildren } from "../services/bookingChildOverlap.js";
@@ -124,7 +125,10 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     const cancellableStatuses = ["awaiting_driver", "driver_searching", "awaiting_payment"];
     const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-    if (booking.status === "cancelled") return res.json({ success: true, message: "Booking is already cancelled", data: booking });
+    if (booking.status === "cancelled") {
+      const removedChildIds = await removeCancelledBookingChildren(booking);
+      return res.json({ success: true, message: "Booking is already cancelled", data: booking, removedChildIds });
+    }
     if (!cancellableStatuses.includes(booking.status)) return res.status(409).json({ success: false, message: "This booking can no longer be cancelled from the dashboard" });
 
     const payment = booking.status === "awaiting_payment" ? await BookingPayment.findOne({ bookingId: booking._id, parentId: req.parent._id }) : null;
@@ -172,6 +176,7 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     }
     if (payment) await BookingPayment.updateOne({ _id: payment._id, status: { $ne: "PAID" } }, { $set: { status: "CANCELLED" } });
 
+    const removedChildIds = await removeCancelledBookingChildren(cancelledBooking);
     const io = req.app.get("io");
     for (const driverId of new Set(offeredDriverIds)) {
       await notifyBookingStatus({ driver: driverId, recipientType: "driver", title: "Booking cancelled by parent", message: "The parent cancelled this ride booking. This request is no longer active.", type: "general", notificationKey: "BOOKING_CANCELLED", meta: { bookingId: String(booking._id), requestId: String(booking.driverRequestId) } }, io);
@@ -180,7 +185,7 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
     await notifyBookingStatus({ parent: req.parent._id, recipientType: "parent", title: "Booking cancelled", message: "Your ride booking has been cancelled.", type: "general", notificationKey: "BOOKING_CANCELLED", meta: { bookingId: String(booking._id) } }, io);
     io?.to(String(req.parent._id)).emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
     io?.to("admin").emit("booking_status_updated", { bookingId: String(cancelledBooking._id), status: cancelledBooking.status });
-    return res.json({ success: true, message: payment ? "Booking cancelled. If a payment was completed at the same time, it will be refunded automatically." : "Booking request cancelled", data: cancelledBooking });
+    return res.json({ success: true, message: payment ? "Booking cancelled. If a payment was completed at the same time, it will be refunded automatically." : "Booking request cancelled", data: cancelledBooking, removedChildIds });
   } catch (error) {
     console.error("CANCEL BOOKING ERROR", error);
     const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
