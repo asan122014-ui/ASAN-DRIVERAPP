@@ -4,6 +4,7 @@ import Driver from "../models/Driver.js";
 import { parentMessaging, driverMessaging } from "../config/firebaseAdmin.js";
 
 import { classifyPushResults } from "../services/pushDeliveryResults.js";
+import { commitAnnouncementPushOutcome } from '../services/announcementPushOutcome.js';
 
 let wakeWorker;
 export function wakePushDeliveryWorker() { if (wakeWorker) setImmediate(wakeWorker); }
@@ -33,7 +34,8 @@ export function startPushDeliveryWorker() {
           });
           const { invalid, retry } = classifyPushResults(job.tokens, response.responses);
           // Persist only unsuccessful tokens so successful deliveries aren't retried.
-          if (retry.length) await PushDelivery.updateOne({ _id: job._id }, { $set: { tokens: retry, availableAt: new Date(Date.now() + Math.min(300000, 1000 * 2 ** Math.min(job.attempts, 8))) } });
+          if (job.announcementDeliveryId) await commitAnnouncementPushOutcome(job, { invalid, retry }, response.responses.filter(result => result.success).length);
+          else if (retry.length) await PushDelivery.updateOne({ _id: job._id }, { $set: { tokens: retry, availableAt: new Date(Date.now() + Math.min(300000, 1000 * 2 ** Math.min(job.attempts, 8))) } });
           else await PushDelivery.deleteOne({ _id: job._id });
           if (invalid.length) {
             const model = job.recipientType === "parent" ? Parent : Driver;

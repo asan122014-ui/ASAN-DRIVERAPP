@@ -60,6 +60,7 @@ import parentRoutes from "./routes/parentRoutes.js";
 import driverRoutes from "./routes/driver.js";
 import tripRoutes from "./routes/trip.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import announcementRoutes from "./routes/announcementRoutes.js";
 import studentRoutes from "./routes/student.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import childRoutes from "./routes/child.js";
@@ -234,6 +235,8 @@ if (
 /* =========================================================
    COMPATIBILITY AUTH ROUTES
 ========================================================= */
+
+app.use('/api/admin/announcements', announcementRoutes);
 
 app.use(
   "/api/auth",

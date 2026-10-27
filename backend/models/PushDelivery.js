@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const schema = new mongoose.Schema({
+  announcementDeliveryId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnouncementDelivery', default: null },
   recipientType: { type: String, enum: ["parent", "driver"], required: true },
   tokens: [String],
   notification: { title: String, body: String },
