@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { validCampusLocation } from './campusLocation.js';
 import express from 'express';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
@@ -367,6 +368,7 @@ app.post('/auth/signup', async (req, res) => {
     let assignedInstituteLocation = null;
 
     if (assignedRole === 'Institute Admin') {
+      if (!validCampusLocation(instituteLocation)) return res.status(400).json({ message: 'Select and confirm your institute location on the map.' });
       if (!instituteName || !instituteName.trim()) {
         return res.status(400).json({ message: 'Please write your Institute / School name.' });
       }
@@ -381,7 +383,7 @@ app.post('/auth/signup', async (req, res) => {
       } else {
         // Generate unique access code e.g. ASAN-738291
         assignedInstituteCode = `ASAN-${Math.floor(100000 + Math.random() * 900000)}`;
-        const locObj = (instituteLocation && instituteLocation.lat && instituteLocation.lng) ? {
+        const locObj = (validCampusLocation(instituteLocation)) ? {
           lat: Number(instituteLocation.lat),
           lng: Number(instituteLocation.lng),
           address: instituteLocation.address || ''

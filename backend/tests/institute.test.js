@@ -58,3 +58,10 @@ test('Institute API remains scoped on the shared database', async t => {
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('campus location rejects typed-only locations and invalid coordinates', async () => {
+  const { validCampusLocation } = await import('../institute/campusLocation.js');
+  for (const location of [null, 'My School', {lat:17,lng:78}, {lat:'17',lng:'78',address:'School'}, {lat:91,lng:78,address:'School'}, {lat:17,lng:181,address:'School'}, {lat:NaN,lng:78,address:'School'}]) assert.equal(validCampusLocation(location), false);
+  assert.equal(validCampusLocation({lat:0,lng:0,address:'Selected address'}), true);
+  assert.equal(validCampusLocation({lat:17.385,lng:78.4867,address:'Hyderabad'}), true);
+});
