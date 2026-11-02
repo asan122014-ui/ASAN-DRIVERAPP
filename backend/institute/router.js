@@ -742,7 +742,7 @@ app.delete('/records/:module/:id', requireSession, requireModule, async (req, re
 
 // Student Assignment Endpoint: Student → Pickup Point → Route → Vehicle → Driver
 app.post('/students/assign', requireSession, async (req, res) => {
-  const { studentId, pickupPoint, routeName, vehicleNumber, driverName } = req.body || {};
+  const { studentId, pickupPoint, pickupCoordinates, routeName, vehicleNumber, driverName } = req.body || {};
   if (!studentId || !routeName) return res.status(400).json({ message: 'Student and Route are required.' });
 
   const store = await readStore(req);
@@ -750,7 +750,9 @@ app.post('/students/assign', requireSession, async (req, res) => {
   const student = students.find(s => s.id === studentId || s.data?.['Student ID'] === studentId);
   if (!student) return res.status(404).json({ message: 'Student not found.' });
 
+  if (pickupCoordinates && !validCampusLocation({ ...pickupCoordinates, address: pickupPoint })) return res.status(400).json({ message: 'Select a valid pickup point on the map.' });
   student.data['Pickup point'] = pickupPoint || student.data['Pickup point'];
+  if (pickupCoordinates) student.data['Pickup point coordinates'] = pickupCoordinates;
   student.data['Assigned route'] = routeName;
   student.data['Assigned vehicle'] = vehicleNumber || student.data['Assigned vehicle'];
   student.data['Transportation status'] = 'Active';
@@ -761,6 +763,7 @@ app.post('/students/assign', requireSession, async (req, res) => {
   if (parent) {
     parent.data.Route = routeName;
     parent.data['Pickup point'] = pickupPoint || parent.data['Pickup point'];
+    if (pickupCoordinates) parent.data['Pickup point coordinates'] = pickupCoordinates;
   }
 
   await writeStore(store, req);
