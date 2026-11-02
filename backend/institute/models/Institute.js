@@ -1,0 +1,46 @@
+import mongoose from 'mongoose';
+
+const instituteSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Institute name is required'],
+      unique: true,
+      trim: true
+    },
+    code: {
+      type: String,
+      required: [true, 'Institute access code is required'],
+      unique: true,
+      uppercase: true,
+      trim: true
+    },
+    adminEmail: {
+      type: String,
+      required: true,
+      lowercase: true,
+      trim: true
+    },
+    location: {
+      lat: {
+        type: Number,
+        default: 12.9716
+      },
+      lng: {
+        type: Number,
+        default: 77.6245
+      },
+      address: {
+        type: String,
+        default: ''
+      }
+    }
+  },
+  {
+    timestamps: true
+  }
+);
+
+const Institute = mongoose.models.InstituteOrganization || mongoose.model('InstituteOrganization', instituteSchema, 'institutes');
+
+export default Institute;
