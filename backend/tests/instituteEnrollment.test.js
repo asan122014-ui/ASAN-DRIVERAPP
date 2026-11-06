@@ -15,7 +15,10 @@ test('Institute import rejects duplicate identities, missing driver documents an
   assert.throws(() => normalizeBatch([parent, { ...parent, email: 'parent@example.com' }]), /Duplicate/);
   assert.throws(() => normalizeBatch(new Array(101).fill(parent)), /100/);
   assert.throws(() => normalizeEnrollment({ ...parent, kind: 'driver', vehicleNumber: 'TS09AB1234', vehicleType: 'Van', licenseNumber: 'TS0920200012345' }), /licenseFront/);
-  assert.throws(() => normalizeEnrollment({ kind: 'child', name: 'Test Child' }), /reference/);
+  assert.throws(() => normalizeEnrollment({ kind: 'child', name: 'Test Child' }), /email/);
+  const student = { kind: 'child', name: 'Test Student', parentEmail: 'parent@example.com', pickupAddress: 'Hyderabad', pickup: home, pickupTime: '07:50', dropoffTime: '15:10' };
+  assert.equal(normalizeEnrollment(student).reference, '');
+  assert.throws(() => normalizeBatch([student, { ...student, name: 'test   student' }]), /Duplicate/);
   const row = normalizeEnrollment({ ...parent, kind: 'driver', vehicleNumber: 'TS09AB1234', vehicleType: 'Van', licenseNumber: 'TS0920200012345', documents: Object.fromEntries(documentFields.map(field => [field, '507f1f77bcf86cd799439011'])) });
   assert.equal(Object.keys(row.documents).length, 7);
 });

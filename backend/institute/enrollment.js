@@ -47,7 +47,17 @@ async function enroll(row, institute, user, session) {
     if (!parent) throw enrollmentError(`Parent ${row.parentEmail} must be enrolled in this institute first.`);
     const driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
     if (row.driverEmail && !driver) throw enrollmentError(`Driver ${row.driverEmail} is not active in this institute.`);
-    const previous = await Child.findOne({ instituteId: institute._id, instituteReference: row.reference }).session(session);
+    const normalizeName = value => String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
+    let previous;
+    if (row.reference) {
+      previous = await Child.findOne({ instituteId: institute._id, instituteReference: row.reference }).session(session);
+    } else {
+      const siblings = await Child.find({ instituteId: institute._id, parentId: parent._id, accountSource: 'institute' }).session(session);
+      const matches = siblings.filter(child => normalizeName(child.name) === normalizeName(row.name));
+      if (matches.length > 1) throw enrollmentError('Multiple students with this name belong to this parent. Ask ASAN Admin to review the saved records.', 409);
+      previous = matches[0];
+      row.reference = previous?.instituteReference || `STU-${crypto.createHash('sha256').update(`${institute._id}:${parent._id}:${normalizeName(row.name)}`).digest('hex').slice(0, 20).toUpperCase()}`;
+    }
     if (previous && String(previous.parentId) !== String(parent._id)) throw enrollmentError(`Student ${row.reference} belongs to a different parent. Contact ASAN Admin to transfer.`);
     const oldDriverId = previous?.driverId;
     if (previous && await Trips.exists({ status: 'in_transit', $or: [{ child: previous._id }, { students: previous._id }] }).session(session)) throw enrollmentError(`${row.name} has a ride in progress. Update the assignment after the ride ends.`, 409);

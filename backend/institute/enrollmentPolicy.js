@@ -12,7 +12,7 @@ export function normalizeEnrollment(input) {
   if (row.name.length < 2 || row.name.length > 100) throw enrollmentError('Name must contain 2–100 characters.');
   if (!/^[\p{L}\p{M}][\p{L}\p{M} '\u2019.-]*$/u.test(row.name)) throw enrollmentError('Names must use letters and spaces, without numbers.');
   if (kind === 'child') {
-    if (!row.reference || row.reference.length > 100) throw enrollmentError('A stable student admission/reference number is required.');
+    if (row.reference.length > 100) throw enrollmentError('The saved student identifier is invalid.');
     row.parentEmail = email(input.parentEmail);
     row.driverEmail = input.driverEmail ? email(input.driverEmail) : '';
     row.grade = text(input.grade);
@@ -59,8 +59,9 @@ export function normalizeBatch(rows) {
   return rows.map((input, index) => {
     try {
       const row = normalizeEnrollment(input);
-      const key = `${row.kind}:${row.email || row.reference}`;
-      if (identities.has(key)) throw enrollmentError('Duplicate email or student reference in this file.');
+      const identity = row.email || row.reference || `${row.parentEmail}:${row.name.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')}`;
+      const key = `${row.kind}:${identity}`;
+      if (identities.has(key)) throw enrollmentError('Duplicate account or student for the same parent in this file.');
       identities.add(key);
       return row;
     } catch (error) { throw enrollmentError(`Row ${index + 2}: ${error.message}`); }
