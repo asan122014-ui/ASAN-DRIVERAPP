@@ -39,6 +39,11 @@ const invoiceSchema =
          PARENT
       ===================================================== */
 
+      billingSource: { type: String, enum: ['distance', 'institute_fixed'], default: 'distance', index: true },
+      instituteId: { type: mongoose.Schema.Types.ObjectId, ref: 'InstituteOrganization', default: null, index: true },
+      instituteName: { type: String, default: '' },
+      routeName: { type: String, default: '' },
+
       parentId: {
         type:
           mongoose.Schema.Types

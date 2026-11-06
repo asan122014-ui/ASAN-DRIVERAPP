@@ -1,3 +1,5 @@
+import FinanceInvoice from '../models/Invoice.js';
+import financeRoutes from './financeRoutes.js';
 import DriverAccount from '../models/Driver.js';
 import ParentAccount from '../models/Parent.js';
 import ChildAccount from '../models/Child.js';
@@ -205,13 +207,17 @@ async function buildDashboard(req) {
   const vehiclesOffline = Math.max(0, totalVehicles - vehiclesRunning - vehiclesMaintenance);
   const activeEmergencyAlerts = emergency.filter(e => e.data?.Status === 'Responding' || e.data?.Status === 'Open').length;
 
-  // Payments calculations - dynamically computed from actual records
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const totalFees = payments.reduce((acc, p) => acc + (parseFloat(p.data?.['Amount (₹)']) || 0), 0);
-  const collectedAmount = payments.filter(p => p.data?.['Payment status'] === 'Paid').reduce((acc, p) => acc + (parseFloat(p.data?.['Amount (₹)']) || 0), 0);
-  const pendingAmount = payments.filter(p => p.data?.['Payment status'] === 'Pending' || p.data?.['Payment status'] === 'Partially paid').reduce((acc, p) => acc + (parseFloat(p.data?.['Amount (₹)']) || 0), 0);
-  const overdueAmount = payments.filter(p => p.data?.['Payment status'] === 'Overdue').reduce((acc, p) => acc + (parseFloat(p.data?.['Amount (₹)']) || 0), 0);
-  const todayRevenue = payments.filter(p => p.data?.['Payment date'] === todayStr).reduce((acc, p) => acc + (parseFloat(p.data?.['Amount (₹)']) || 0), 0);
+  // Use the same verified invoices paid through the Parent app.
+  const bills = await FinanceInvoice.find({ instituteName: userInstitute, billingSource: 'institute_fixed' }).select('totalAmount status paymentStatus paidAt dueDate').lean();
+  const amount = bill => Number(bill.totalAmount || 0);
+  const paid = bill => bill.status === 'Paid' && bill.paymentStatus === 'Success';
+  const outstanding = bill => ['Pending', 'Overdue', 'Processing'].includes(bill.status);
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const totalFees = bills.filter(bill => bill.status !== 'Cancelled').reduce((sum, bill) => sum + amount(bill), 0);
+  const collectedAmount = bills.filter(paid).reduce((sum, bill) => sum + amount(bill), 0);
+  const pendingAmount = bills.filter(outstanding).reduce((sum, bill) => sum + amount(bill), 0);
+  const overdueAmount = bills.filter(bill => outstanding(bill) && new Date(bill.dueDate) < new Date()).reduce((sum, bill) => sum + amount(bill), 0);
+  const todayRevenue = bills.filter(bill => paid(bill) && bill.paidAt && new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(bill.paidAt)) === todayStr).reduce((sum, bill) => sum + amount(bill), 0);
 
   // Compute alerts dynamically from live records
   const alerts = [];
@@ -603,6 +609,7 @@ app.post('/auth/change-password', requireSession, async (req, res) => {
 });
 
 app.use('/enrollment', requireSession, enrollmentRoutes);
+app.use('/finance', requireSession, financeRoutes);
 
 app.get('/auth/me', requireSession, async (req, res) => {
   res.json({ user: req.user });
@@ -791,8 +798,7 @@ app.post('/students/assign', requireSession, async (req, res) => {
     if (pickupCoordinates) parent.data['Pickup point coordinates'] = pickupCoordinates;
   }
 
-  await writeStore(store, req);
-  res.json({ message: 'Student assigned successfully.', student: student.data });
+  return res.status(409).json({ message: 'Enroll this student through App enrollment before assigning a route and monthly fee.' });
 });
 
 // Route Stop Management

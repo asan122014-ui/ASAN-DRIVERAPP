@@ -52,7 +52,7 @@ export const ensureDriverPayouts = async (invoices, bookings = []) => {
   const operations = [];
   const ensureOne = async (filter, values) => { operations.push({ updateOne: { filter, update: { $setOnInsert: values }, upsert: true } }); };
   for (const invoice of invoices) {
-    if (invoice.couponAppliedAt) continue;
+    if (invoice.couponAppliedAt || invoice.billingSource === 'institute_fixed') continue;
     const invoiceChildId = String(invoice.childId?._id || invoice.childId || "");
     const pairedBooking = bookings.some((booking) => {
       const bookingMonth = (booking.startDate || booking.serviceStartsAt)
@@ -145,7 +145,7 @@ export const listDriverPayouts = async (req, res) => {
   try {
     await ensureDriverPayoutIndexes();
     const driverId = String(req.driver.driverId || "").trim().toUpperCase();
-    const invoices = await Invoice.find({ driverId }).select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").lean();
+    const invoices = await Invoice.find({ driverId }).select("_id driverId baseAmount totalAmount invoiceNumber month childId billingSource").populate("childId", "name").lean();
     const bookings = await Booking.find({ assignedDriverId: driverId, status: { $in: ["active", "expired"] }, paymentId: { $ne: null } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
     const invoiceIds = invoices.map((invoice) => invoice._id);
     const bookingIds = bookings.map((booking) => booking._id);
@@ -157,7 +157,7 @@ export const listDriverPayouts = async (req, res) => {
     const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), driverId]));
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
-    const payouts = await DriverPayout.find({ driverId, $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ createdAt: -1, installment: 1 }).lean();
+    const payouts = await DriverPayout.find({ driverId, $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId billingSource", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ createdAt: -1, installment: 1 }).lean();
     const locationAdjustments = locationChanges.map((change) => ({
       _id: String(change._id),
       bookingId: String(change.bookingId),
@@ -202,7 +202,7 @@ export const getDriverPayoutProof = async (req, res) => {
 export const listAdminPayouts = async (req, res) => {
   try {
     await ensureDriverPayoutIndexes();
-    const invoices = await Invoice.find().select("_id driverId baseAmount totalAmount invoiceNumber month childId").populate("childId", "name").sort({ createdAt: -1 }).lean();
+    const invoices = await Invoice.find().select("_id driverId baseAmount totalAmount invoiceNumber month childId billingSource").populate("childId", "name").sort({ createdAt: -1 }).lean();
     // Keep paid service and route-change payout history visible after a ride expires.
     const bookings = await Booking.find({ status: { $in: ["active", "expired"] }, paymentId: { $ne: null }, assignedDriverId: { $ne: "" } }).select("_id assignedDriverId quote children child childIds childId startDate serviceStartsAt").lean();
     const invoiceIds = invoices.map((invoice) => invoice._id);
@@ -217,7 +217,7 @@ export const listAdminPayouts = async (req, res) => {
     const driverByBookingId = new Map(assignedBookings.map((booking) => [String(booking._id), booking.assignedDriverId]));
     await ensureLocationChangePayouts(locationChanges, driverByBookingId);
     const locationChangeIds = locationChanges.map((change) => change._id);
-    const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
+    const payouts = await DriverPayout.find({ $or: [{ invoiceId: { $in: invoiceIds } }, { bookingId: { $in: bookingIds } }, { locationChangeRequestId: { $in: locationChangeIds } }] }).populate({ path: "invoiceId", select: "invoiceNumber month childId billingSource", populate: { path: "childId", select: "name" } }).populate({ path: "bookingId", select: "children child startDate serviceStartsAt" }).populate({ path: "locationChangeRequestId", select: "childName locationType proposedAddress oldDistanceKm newDistanceKm remainingServiceDays amountDue driverAmountDue platformFeeDue paidAt appliedAt" }).sort({ driverId: 1, createdAt: -1 }).lean();
     return res.json({ success: true, count: payouts.length, data: payouts.map(({ proof, ...payout }) => payoutDisplayFields({ ...payout, proofAvailable: Boolean(proof) })) });
   } catch (error) {
     console.error("ADMIN PAYOUT LIST ERROR:", error);

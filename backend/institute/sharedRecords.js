@@ -1,3 +1,5 @@
+import Invoice from '../models/Invoice.js';
+import { instituteBillingMonth } from './fixedFees.js';
 import Driver from '../models/Driver.js';
 import Parent from '../models/Parent.js';
 import Child from '../models/Child.js';
@@ -48,8 +50,8 @@ export async function linkRecord(module, data, instituteName) {
 
 export async function refreshLinkedRecords(module, records, instituteName) {
   const models = { Drivers: [Driver, 'Driver', 'name phone email driverId status'],
-    Parents: [Parent, 'Parent', 'name phone email'],
-    Students: [Child, 'Child', 'name grade school parentId status instituteReference'] };
+    Parents: [Parent, 'Parent', 'name phone email accountSource'],
+    Students: [Child, 'Child', 'name grade school parentId status instituteReference monthlyTransportFee assignedRouteName assignedVehicleNumber accountSource'] };
   if (!models[module]) return records;
   // Also resolves links for migrated rows and accounts registered after a row
   // was entered. A read never creates or modifies a user's app account.
@@ -67,15 +69,28 @@ export async function refreshLinkedRecords(module, records, instituteName) {
   }
   const parentIds = module === 'Students' ? [...core.values()].map(item => item.parentId).filter(Boolean) : [];
   const parents = new Map((parentIds.length ? await Parent.find({ _id: { $in: parentIds } }).select('_id name phone email').lean() : []).map(parent => [String(parent._id), parent]));
+  const managed = [...core.values()].filter(item => item.accountSource === 'institute');
+  const invoiceFilter = module === 'Students' ? { childId: { $in: managed.map(item => item._id) } } : { parentId: { $in: managed.map(item => item._id) } };
+  const bills = managed.length && ['Students', 'Parents'].includes(module) ? await Invoice.find({ ...invoiceFilter, billingSource: 'institute_fixed', month: instituteBillingMonth() }).select('childId parentId status paymentStatus').lean() : [];
   for (const row of records) {
     const match = core.get(String(row.coreLink?.id));
     if (!match) continue;
     if (module === 'Students' && text(match.school) !== text(instituteName)) continue;
     row.linkStatus = 'Linked to ASAN app';
     if (module === 'Drivers') Object.assign(row.data, { 'Driver name': match.name, 'Phone number': match.phone, Email: match.email, 'ASAN ID': match.driverId, 'App approval status': match.status });
-    if (module === 'Parents') Object.assign(row.data, { 'Parent name': match.name, Phone: match.phone, Email: match.email });
+    if (module === 'Parents') {
+      Object.assign(row.data, { 'Parent name': match.name, Phone: match.phone, Email: match.email });
+      if (match.accountSource === 'institute') {
+        const current = bills.filter(bill => String(bill.parentId) === String(match._id) && bill.status !== 'Cancelled');
+        row.data['Payment status'] = !current.length ? 'Not billed' : current.every(bill => bill.status === 'Paid' && bill.paymentStatus === 'Success') ? 'Paid' : 'Pending';
+      }
+    }
     if (module === 'Students') {
       const parent = parents.get(String(match.parentId));
+      if (match.accountSource === 'institute') {
+        const bill = bills.find(item => String(item.childId) === String(match._id));
+        Object.assign(row.data, { 'Monthly fee': match.monthlyTransportFee, 'Transport fee': match.monthlyTransportFee == null ? '' : `₹${match.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Assigned route': match.assignedRouteName || '', 'Assigned vehicle': match.assignedVehicleNumber || '', 'Payment status': bill?.status || 'Not billed' });
+      }
       Object.assign(row.data, { 'Student name': match.name, Class: match.grade, 'Student ID': match.instituteReference || row.data['Student ID'] || row.data['Admission number'] || '', 'App ride status': match.status,
         ...(parent ? { 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email } : {}) });
     }

@@ -1,3 +1,5 @@
+import Invoice from '../models/Invoice.js';
+import { fixedMonthlyAmount, ensureStudentFeeInvoice } from './fixedFees.js';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import Driver from '../models/Driver.js';
@@ -44,7 +46,7 @@ async function operational(module, account, data, institute, session) {
 async function enroll(row, institute, user, session) {
   if (row.kind === 'child') {
     const parent = await Parent.findOne({ email: row.parentEmail, instituteId: institute._id, accountSource: 'institute' }).session(session);
-    if (!parent) throw enrollmentError(`Parent ${row.parentEmail} must be enrolled in this institute first.`);
+    if (!parent || parent.isActive === false) throw enrollmentError(`Parent ${row.parentEmail} must have an active account in this institute first.`);
     const driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
     if (row.driverEmail && !driver) throw enrollmentError(`Driver ${row.driverEmail} is not active in this institute.`);
     const normalizeName = value => String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -62,11 +64,19 @@ async function enroll(row, institute, user, session) {
     const oldDriverId = previous?.driverId;
     if (previous && await Trips.exists({ status: 'in_transit', $or: [{ child: previous._id }, { students: previous._id }] }).session(session)) throw enrollmentError(`${row.name} has a ride in progress. Update the assignment after the ride ends.`, 409);
     const child = previous || new Child();
-    const changed = !previous || previous.driverId !== (driver?.driverId || '');
+    const changed = !previous || previous.driverId !== (driver?.driverId || '') || (row.monthlyFee !== undefined && Number(row.monthlyFee) !== previous.monthlyTransportFee) || (row.assignedRoute && row.assignedRoute !== previous.assignedRouteName);
     Object.assign(child, membership(institute), { instituteReference: row.reference, parentId: parent._id, name: row.name, school: institute.name, grade: row.grade,
       pickupLocation: row.pickupAddress, location: row.pickup, dropoffLocation: institute.location.address,
       dropLocationCoords: { lat: institute.location.lat, lng: institute.location.lng }, pickupTime: row.pickupTime, eveningPickup: row.dropoffTime, driverId: driver?.driverId || '' });
+    if (row.assignedRoute) child.assignedRouteName = row.assignedRoute;
+    if (row.assignedVehicle) child.assignedVehicleNumber = row.assignedVehicle;
+    if (row.monthlyFee !== undefined) {
+      const route = await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': row.assignedRoute }).session(session);
+      if (!route || !driver || route.data?.['Assigned driver'] !== driver.name) throw enrollmentError('Assign a route and its enrolled driver before setting the student fee.');
+      child.monthlyTransportFee = fixedMonthlyAmount(row.monthlyFee);
+    }
     await child.save({ session });
+    const feeInvoice = await ensureStudentFeeInvoice(child, { session });
     for (const id of new Set([oldDriverId, driver?.driverId].filter(Boolean))) {
       const count = await Child.countDocuments({ driverId: id }).session(session);
       await Driver.updateOne({ driverId: id, instituteId: institute._id }, { $set: { studentsAssigned: count } }, { session });
@@ -76,9 +86,9 @@ async function enroll(row, institute, user, session) {
     await parent.save({ session });
     const siblings = await Child.find({ parentId: parent._id, instituteId: institute._id }).select('name').session(session).lean();
     await Record.updateOne({ module: 'Parents', instituteName: institute.name, 'coreLink.id': parent._id }, { $set: { 'data.Student': siblings.map(item => item.name).join(', ') } }, { session });
-    await operational('Students', child, { 'Student name': child.name, Class: child.grade, 'Admission number': row.reference, 'Student ID': row.reference, 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email, 'Pickup point': row.pickupAddress, 'Pickup point coordinates': row.pickup, 'Drop point': institute.location.address, 'Drop point coordinates': { lat: institute.location.lat, lng: institute.location.lng }, 'Driver assigned': driver?.name || '', 'ASAN ID': driver?.driverId || '', 'Pickup time': row.pickupTime, 'School return time': row.dropoffTime, 'Assigned route': row.assignedRoute || '', 'Assigned vehicle': row.assignedVehicle || '' }, institute, session);
+    await operational('Students', child, { 'Student name': child.name, Class: child.grade, 'Admission number': row.reference, 'Student ID': row.reference, 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email, 'Pickup point': row.pickupAddress, 'Pickup point coordinates': row.pickup, 'Drop point': institute.location.address, 'Drop point coordinates': { lat: institute.location.lat, lng: institute.location.lng }, 'Driver assigned': driver?.name || '', 'ASAN ID': driver?.driverId || '', 'Pickup time': row.pickupTime, 'School return time': row.dropoffTime, 'Assigned route': child.assignedRouteName || '', 'Assigned vehicle': child.assignedVehicleNumber || '', 'Monthly fee': child.monthlyTransportFee, 'Transport fee': child.monthlyTransportFee == null ? '' : `₹${child.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Payment status': feeInvoice?.status || 'Not billed' }, institute, session);
     if (changed) {
-      await notice(parent, 'parent', 'Institute transport updated', `${institute.name} ${driver ? `assigned ${driver.name} (${driver.driverId}) to` : 'registered'} ${child.name}. View your transport details in the app.`, session, child._id);
+      await notice(parent, 'parent', 'Institute transport updated', `${institute.name} ${driver ? `assigned ${driver.name} (${driver.driverId}) to` : 'registered'} ${child.name}. View your transport details${row.monthlyFee !== undefined ? ' and monthly invoice in Payments' : ''} in the app.`, session, child._id);
       if (driver) await notice(driver, 'driver', 'Institute student assigned', `${institute.name} assigned ${child.name} to your route. Open the app for pickup details.`, session, child._id);
       if (oldDriverId && oldDriverId !== driver?.driverId) {
         const old = await Driver.findOne({ driverId: oldDriverId, instituteId: institute._id }).session(session);
@@ -117,7 +127,7 @@ async function enroll(row, institute, user, session) {
 
 export async function enrollBatch(user, input, { preview = false } = {}) {
   const rows = normalizeBatch(input);
-  await Promise.all([Driver.init(), Parent.init(), Child.init(), Record.init(), Notification.init(), PushDelivery.init()]);
+  await Promise.all([Driver.init(), Parent.init(), Child.init(), Record.init(), Invoice.init(), Notification.init(), PushDelivery.init()]);
   const session = await mongoose.startSession();
   let result = [];
   try {
@@ -151,6 +161,6 @@ export async function assignEnrolledStudent(user, input) {
   const driver = await Driver.findOne({ _id: driverRecords[0].coreLink.id, instituteId: institute._id, status: 'approved' }).select('email').lean();
   if (!driver) throw enrollmentError('The route driver is not active in this Institute.');
   await enrollBatch(user, [{ kind: 'child', reference: child.instituteReference, name: child.name, grade: child.grade, parentEmail: parent.email, driverEmail: driver.email,
-    pickupAddress: input.pickupPoint || child.pickupLocation, pickup: input.pickupCoordinates || child.location, pickupTime: child.pickupTime, dropoffTime: child.eveningPickup, assignedRoute: input.routeName, assignedVehicle: route.data?.['Assigned vehicle'] || '' }]);
+    pickupAddress: input.pickupPoint || child.pickupLocation, pickup: input.pickupCoordinates || child.location, pickupTime: child.pickupTime, dropoffTime: child.eveningPickup, assignedRoute: input.routeName, assignedVehicle: route.data?.['Assigned vehicle'] || '', monthlyFee: fixedMonthlyAmount(input.monthlyFee) }]);
   return true;
 }

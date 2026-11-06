@@ -8,6 +8,9 @@ import mongoose from "mongoose";
 const childSchema = new mongoose.Schema(
   {
     ...accountFields(),
+    monthlyTransportFee: { type: Number, default: null, min: 1, max: 1000000 },
+    assignedRouteName: { type: String, default: '' },
+    assignedVehicleNumber: { type: String, default: '' },
     activeBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
     /* =====================================================
        CHILD INFO

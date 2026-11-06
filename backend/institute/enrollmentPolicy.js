@@ -15,6 +15,7 @@ export function normalizeEnrollment(input) {
     if (row.reference.length > 100) throw enrollmentError('The saved student identifier is invalid.');
     row.parentEmail = email(input.parentEmail);
     row.driverEmail = input.driverEmail ? email(input.driverEmail) : '';
+    if (input.monthlyFee !== undefined) row.monthlyFee = input.monthlyFee;
     row.grade = text(input.grade);
     row.assignedRoute = text(input.assignedRoute).slice(0, 120);
     row.assignedVehicle = text(input.assignedVehicle).slice(0, 30);

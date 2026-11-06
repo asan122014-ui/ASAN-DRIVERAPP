@@ -1,3 +1,4 @@
+import { ensureInstituteFeeInvoices } from '../institute/fixedFees.js';
 import mongoose from "mongoose";
 
 import Invoice from "../models/Invoice.js";
@@ -574,6 +575,8 @@ export const getParentInvoices =
           });
       }
 
+      if (req.parent?.accountSource === 'institute') await ensureInstituteFeeInvoices({ parentId });
+
       const invoices =
         await Invoice.findForParent(
           parentId
@@ -789,6 +792,8 @@ export const generateInvoice =
               "Child not found",
           });
       }
+
+      if (child.accountSource === 'institute') return res.status(409).json({ success: false, message: 'Institute invoices use the fixed monthly fee assigned with the student route.' });
 
       /* ===================================================
          PARENT
@@ -1101,7 +1106,7 @@ export const generateAllInvoices =
       =================================================== */
 
       const children =
-        await Child.find();
+        await Child.find({ accountSource: { $ne: "institute" } });
 
       if (
         !children.length
@@ -1485,6 +1490,8 @@ export const markInvoicePaid =
               "Invoice not found",
           });
       }
+
+      if (invoice.billingSource === 'institute_fixed') return res.status(403).json({ success: false, message: 'Institute transport payments must be completed and verified through the Parent app.' });
 
       /* ===================================================
          IDEMPOTENT RESPONSE

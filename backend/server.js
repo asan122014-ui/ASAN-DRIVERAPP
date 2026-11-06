@@ -1,3 +1,4 @@
+import { startInstituteFeeBilling } from './jobs/billInstituteFees.js';
 import instituteAdminRoutes from './institute/adminRoutes.js';
 import instituteAppRoutes from './institute/appRoutes.js';
 import { startWaivedCheckoutWorker } from "./jobs/reconcileWaivedCheckouts.js";
@@ -1718,6 +1719,7 @@ connectDB()
       startBookingServiceExpiryWorker(io);
       startPushDeliveryWorker();
       startPayoutReconciliationWorker();
+      startInstituteFeeBilling();
       startWaivedCheckoutWorker(io);
 
       /* =====================================================
