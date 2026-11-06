@@ -49,7 +49,7 @@ export async function linkRecord(module, data, instituteName) {
 export async function refreshLinkedRecords(module, records, instituteName) {
   const models = { Drivers: [Driver, 'Driver', 'name phone email driverId status'],
     Parents: [Parent, 'Parent', 'name phone email'],
-    Students: [Child, 'Child', 'name grade school parentId status'] };
+    Students: [Child, 'Child', 'name grade school parentId status instituteReference'] };
   if (!models[module]) return records;
   // Also resolves links for migrated rows and accounts registered after a row
   // was entered. A read never creates or modifies a user's app account.
@@ -65,6 +65,8 @@ export async function refreshLinkedRecords(module, records, instituteName) {
     const legacy = await Student.find({ _id: { $in: legacyIds } }).select('name className schoolName status').lean();
     for (const student of legacy) core.set(String(student._id), { ...student, school: student.schoolName, grade: student.className });
   }
+  const parentIds = module === 'Students' ? [...core.values()].map(item => item.parentId).filter(Boolean) : [];
+  const parents = new Map((parentIds.length ? await Parent.find({ _id: { $in: parentIds } }).select('_id name phone email').lean() : []).map(parent => [String(parent._id), parent]));
   for (const row of records) {
     const match = core.get(String(row.coreLink?.id));
     if (!match) continue;
@@ -72,7 +74,11 @@ export async function refreshLinkedRecords(module, records, instituteName) {
     row.linkStatus = 'Linked to ASAN app';
     if (module === 'Drivers') Object.assign(row.data, { 'Driver name': match.name, 'Phone number': match.phone, Email: match.email, 'ASAN ID': match.driverId, 'App approval status': match.status });
     if (module === 'Parents') Object.assign(row.data, { 'Parent name': match.name, Phone: match.phone, Email: match.email });
-    if (module === 'Students') Object.assign(row.data, { 'Student name': match.name, Class: match.grade, 'App ride status': match.status });
+    if (module === 'Students') {
+      const parent = parents.get(String(match.parentId));
+      Object.assign(row.data, { 'Student name': match.name, Class: match.grade, 'Student ID': match.instituteReference || row.data['Student ID'] || row.data['Admission number'] || '', 'App ride status': match.status,
+        ...(parent ? { 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email } : {}) });
+    }
   }
   return records;
 }
