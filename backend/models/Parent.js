@@ -1,3 +1,4 @@
+import { accountFields } from '../institute/accountFields.js';
 import mongoose from "mongoose";
 
 /* =========================================================
@@ -11,6 +12,7 @@ const parentSchema =
          BASIC DETAILS
       ===================================================== */
 
+      ...accountFields(),
       name: {
         type: String,
         required: true,

@@ -1,3 +1,9 @@
+import DriverAccount from '../models/Driver.js';
+import ParentAccount from '../models/Parent.js';
+import ChildAccount from '../models/Child.js';
+import { instituteMapData } from './mapData.js';
+import { assignEnrolledStudent } from './enrollment.js';
+import enrollmentRoutes from './enrollmentRoutes.js';
 import crypto from 'crypto';
 import { validCampusLocation } from './campusLocation.js';
 import express from 'express';
@@ -596,6 +602,8 @@ app.post('/auth/change-password', requireSession, async (req, res) => {
   }
 });
 
+app.use('/enrollment', requireSession, enrollmentRoutes);
+
 app.get('/auth/me', requireSession, async (req, res) => {
   res.json({ user: req.user });
 });
@@ -623,8 +631,10 @@ app.get('/dashboard', requireSession, async (req, res) => {
 });
 
 app.get('/live-map', requireSession, async (req, res) => {
-  const tracking = (await readStore(req)).records['Live tracking'] || [];
-  res.json(tracking.map(item => ({ id: item.id, ...item.data, deviated: item.deviated, deviationAlert: item.deviationAlert, updatedAt: item.updatedAt || item.created })));
+  try { res.json((await instituteMapData(req.user.instituteName)).vehicles); } catch { res.status(503).json({ message: 'Unable to load driver locations.' }); }
+});
+app.get('/map-points', requireSession, async (req, res) => {
+  try { res.json((await instituteMapData(req.user.instituteName)).points); } catch { res.status(503).json({ message: 'Unable to load saved map points.' }); }
 });
 
 app.post('/telemetry', requireSession, async (req, res) => {
@@ -707,6 +717,17 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
   }
 });
 
+// App-linked records must be changed through the transactional enrollment path.
+app.use('/records/:module/:id', requireSession, async (req, res, next) => {
+  if (!['PUT', 'DELETE'].includes(req.method)) return next();
+  try {
+    const row = await Record.findOne({ id: req.params.id, module: req.params.module, instituteName: req.user.instituteName }).select('coreLink').lean();
+    const Model = { Driver: DriverAccount, Parent: ParentAccount, Child: ChildAccount }[row?.coreLink?.model];
+    if (Model && await Model.exists({ _id: row.coreLink.id, accountSource: 'institute' })) return res.status(409).json({ message: req.method === 'DELETE' ? 'This record is an active app account. Contact ASAN Admin to deactivate it; deleting only the Institute card would leave the account active.' : 'Update this app account through App enrollment so the panel and apps stay synchronized.' });
+    next();
+  } catch { res.status(503).json({ message: 'Unable to verify the linked account. Please retry.' }); }
+});
+
 app.put('/records/:module/:id', requireSession, requireModule, async (req, res) => {
   const { module, id } = req.params;
   const updatedData = req.body?.data;
@@ -744,6 +765,10 @@ app.delete('/records/:module/:id', requireSession, requireModule, async (req, re
 app.post('/students/assign', requireSession, async (req, res) => {
   const { studentId, pickupPoint, pickupCoordinates, routeName, vehicleNumber, driverName } = req.body || {};
   if (!studentId || !routeName) return res.status(400).json({ message: 'Student and Route are required.' });
+
+  try {
+    if (await assignEnrolledStudent(req.user, req.body || {})) return res.json({ message: 'Institute student and app assignment updated.' });
+  } catch (error) { return res.status(error.status || 500).json({ message: error.status ? error.message : 'Assignment could not be saved.' }); }
 
   const store = await readStore(req);
   const students = store.records.Students || [];

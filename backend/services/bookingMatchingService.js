@@ -110,7 +110,7 @@ export const dispatchNextOfferBatch = async ({ requestId, io }) => {
       await request.save();
       return { request, offersSent: 0 };
     }
-    const driver = await Driver.findOne({ driverId: normalizeDriverId(request.requestedDriverId), status: "approved" });
+    const driver = await Driver.findOne({ driverId: normalizeDriverId(request.requestedDriverId), status: "approved", accountSource: { $ne: "institute" } });
     if (!driver) {
       request.matchingStatus = "Exhausted";
       request.rejectionReason = "The selected driver is no longer available.";
@@ -141,7 +141,7 @@ export async function dispatchSelectedDriverOffer({ requestId, driverId, io }) {
   await expireAdminOffers(io);
   const normalizedId = normalizeDriverId(driverId);
   if (!normalizedId) { const error = new Error("Choose a driver"); error.statusCode = 400; throw error; }
-  const driver = await Driver.findOne({ driverId: normalizedId, status: "approved" });
+  const driver = await Driver.findOne({ driverId: normalizedId, status: "approved", accountSource: { $ne: "institute" } });
   const session = await mongoose.startSession();
   let offered, booking, child;
   try {

@@ -1,3 +1,4 @@
+import { accountFields } from '../institute/accountFields.js';
 import mongoose from "mongoose";
 
 /* =========================================================
@@ -69,6 +70,7 @@ const driverSchema =
          PERSONAL DETAILS
       ===================================================== */
 
+      ...accountFields(),
       isPlayReviewAccount: { type: Boolean, default: false, immutable: true },
 
       name: {

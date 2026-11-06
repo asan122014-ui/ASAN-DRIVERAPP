@@ -1,3 +1,4 @@
+import { requireIndividualParent } from '../institute/workflowPolicy.js';
 import express from "express";
 import axios from "axios";
 import jwt from "jsonwebtoken";
@@ -456,6 +457,7 @@ router.post(
   "/add",
 
   verifyParent,
+  requireIndividualParent,
 
   async (
     req,
@@ -1197,6 +1199,7 @@ router.put(
   "/:id",
 
   verifyParent,
+  requireIndividualParent,
 
   async (
     req,
@@ -1502,6 +1505,7 @@ router.delete(
   "/:id",
 
   verifyParent,
+  requireIndividualParent,
 
   async (
     req,

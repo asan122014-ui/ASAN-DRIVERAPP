@@ -1,3 +1,4 @@
+import { requireIndividualParent } from '../institute/workflowPolicy.js';
 import { removeCancelledBookingChildren } from "../services/cancelledBookingChildren.js";
 import { notifyBookingStatus } from "../services/bookingNotifications.js";
 import express from "express";
@@ -31,7 +32,7 @@ const normalizeChildren = (children, child) => {
 const validChildren = (children) => children.length > 0 && children.every((child) =>
   child.name && child.name.length <= 100 && Number.isInteger(child.age) && child.age >= 1 && child.age <= 17 && child.school && child.school.length <= 160
 ) && new Set(children.map((child) => `${child.name.toLocaleLowerCase()}|${child.school.toLocaleLowerCase()}`)).size === children.length;
-router.post("/route-estimate", verifyParent, async (req, res) => {
+router.post("/route-estimate", verifyParent, requireIndividualParent, async (req, res) => {
   try {
     const pickup = coordinates(req.body?.pickupCoordinates);
     const dropoff = coordinates(req.body?.dropoffCoordinates);
@@ -44,7 +45,7 @@ router.post("/route-estimate", verifyParent, async (req, res) => {
   }
 });
 
-router.post("/quote", verifyParent, async (req, res) => {
+router.post("/quote", verifyParent, requireIndividualParent, async (req, res) => {
   try {
     const { child, children: childInput, route, vehicleType = "AUTO", workingDays = 26 } = req.body || {};
     const normalizedChildren = normalizeChildren(childInput, child);
@@ -65,7 +66,7 @@ router.post("/quote", verifyParent, async (req, res) => {
   }
 });
 
-router.post("/request", verifyParent, async (req, res) => {
+router.post("/request", verifyParent, requireIndividualParent, async (req, res) => {
   try {
     const { child, children: childInput, route, quote, driverChoice, requestedDriverId, startDate } = req.body || {};
     const normalizedChildren = normalizeChildren(childInput, child);
@@ -74,7 +75,7 @@ router.post("/request", verifyParent, async (req, res) => {
     let normalizedDriverId = "";
     if (driverChoice === "existing") {
       normalizedDriverId = String(requestedDriverId || "").trim().toUpperCase();
-      const driver = await Driver.findOne({ driverId: normalizedDriverId }).select("driverId status");
+      const driver = await Driver.findOne({ driverId: normalizedDriverId, accountSource: { $ne: "institute" } }).select("driverId status");
       if (!driver || driver.status !== "approved") return res.status(404).json({ success: false, message: "Approved driver not found for that ASAN ID" });
       const existingBookings = await Booking.find({ parentId: req.parent._id, $or: [{ requestedDriverId: normalizedDriverId }, { assignedDriverId: normalizedDriverId }], status: { $in: activeStatuses } }).select("child children").lean();
       const overlapping = overlappingBookingChildren(normalizedChildren, existingBookings);
@@ -114,12 +115,12 @@ router.post("/request", verifyParent, async (req, res) => {
   } catch (error) { console.error("BOOKING REQUEST ERROR", error); return res.status(500).json({ success: false, message: "Unable to create the booking request" }); }
 });
 
-router.get("/mine", verifyParent, async (req, res) => {
+router.get("/mine", verifyParent, requireIndividualParent, async (req, res) => {
   try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").populate("driverRequestId", "status matchingStatus assignedDriverId rejectionReason offerExpiresAt").populate("paymentId", "amount currency status paymentId paidAt provider").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
   catch (error) { return res.status(500).json({ success: false, message: "Unable to load bookings" }); }
 });
 
-router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
+router.put("/mine/:id/cancel", verifyParent, requireIndividualParent, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });
     const cancellableStatuses = ["awaiting_driver", "driver_searching", "awaiting_payment"];
@@ -194,7 +195,7 @@ router.put("/mine/:id/cancel", verifyParent, async (req, res) => {
   }
 });
 
-router.put("/mine/:id/retry-search", verifyParent, async (req, res) => {
+router.put("/mine/:id/retry-search", verifyParent, requireIndividualParent, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid booking ID" });
     const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });

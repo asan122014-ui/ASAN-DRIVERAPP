@@ -1,3 +1,4 @@
+import { requireIndividualParent } from '../institute/workflowPolicy.js';
 import express from "express";
 
 import Parent from "../models/Parent.js";
@@ -680,6 +681,7 @@ router.put(
 
       const driver =
         await Driver.findOne({
+          accountSource: { $ne: "institute" },
           driverId:
             normalizedDriverId,
         });
@@ -911,6 +913,7 @@ router.post(
   "/link-driver",
 
   verifyParent,
+  requireIndividualParent,
 
   async (
     req,
@@ -959,6 +962,7 @@ router.post(
 
       const driver =
         await Driver.findOne({
+          accountSource: { $ne: "institute" },
           driverId:
             normalizedDriverId,
         });

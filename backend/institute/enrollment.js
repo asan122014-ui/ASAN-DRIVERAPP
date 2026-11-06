@@ -1,0 +1,146 @@
+import crypto from 'node:crypto';
+import mongoose from 'mongoose';
+import Driver from '../models/Driver.js';
+import Parent from '../models/Parent.js';
+import Child from '../models/Child.js';
+import Record from './models/Record.js';
+import Institute from './models/Institute.js';
+import Asset from './models/EnrollmentAsset.js';
+import Notification from '../models/Notification.js';
+import PushDelivery from '../models/PushDelivery.js';
+import Trips from '../models/Trips.js';
+import { normalizeBatch, enrollmentError, documentFields, coordinates } from './enrollmentPolicy.js';
+
+const membership = institute => ({ accountSource: 'institute', instituteId: institute._id, instituteName: institute.name });
+const isMember = (account, institute) => account.accountSource === 'institute' && String(account.instituteId) === String(institute._id);
+export async function enrollmentInstitute(user, session) {
+  if (user.role !== 'Institute Admin') throw enrollmentError('Only the Institute Admin can enroll app users.', 403);
+  const institute = await Institute.findOne({ name: user.instituteName }).session(session || null);
+  if (!institute?.managedEnrollmentEnabled || !institute?.driverPrefix) throw enrollmentError('ASAN Admin must enable Institute enrollment and assign an Institute driver prefix first.', 403);
+  coordinates(institute.location?.toObject ? institute.location.toObject() : institute.location, 'Institute location');
+  return institute;
+}
+
+async function notice(account, kind, title, message, session, child) {
+  const recipient = kind === 'driver' ? { driver: account.driverId } : { parent: account._id };
+  const [notification] = await Notification.create([{ ...recipient, recipientType: kind, child, title, message, type: 'general', notificationKey: 'INSTITUTE_ASSIGNMENT', meta: { instituteId: String(account.instituteId) } }], { session });
+  const tokens = [...new Set((account.fcmTokens || []).filter(Boolean))];
+  if (tokens.length) await PushDelivery.create([{ recipientType: kind, tokens, notification: { title, body: message }, data: { type: 'general', notificationId: String(notification._id), notificationKey: 'INSTITUTE_ASSIGNMENT' } }], { session });
+}
+
+async function operational(module, account, data, institute, session) {
+  // Reuse a single legacy contact row rather than leaving a duplicate card.
+  let target = await Record.findOne({ module, instituteName: institute.name, 'coreLink.id': account._id }).session(session);
+  if (!target && ['Drivers', 'Parents'].includes(module)) {
+    const legacy = await Record.find({ module, instituteName: institute.name, coreLink: null, 'data.Email': account.email }).session(session);
+    if (legacy.length === 1) target = legacy[0];
+  }
+  await Record.updateOne(target ? { _id: target._id } : { module, instituteName: institute.name, 'coreLink.id': account._id }, {
+    $set: { data: { ...(target?.data || {}), ...data }, coreLink: { model: module === 'Drivers' ? 'Driver' : module === 'Parents' ? 'Parent' : 'Child', id: account._id } },
+    $setOnInsert: { id: crypto.randomUUID(), created: new Date().toISOString().slice(0, 10), module, instituteName: institute.name },
+  }, { upsert: true, session });
+}
+
+async function enroll(row, institute, user, session) {
+  if (row.kind === 'child') {
+    const parent = await Parent.findOne({ email: row.parentEmail, instituteId: institute._id, accountSource: 'institute' }).session(session);
+    if (!parent) throw enrollmentError(`Parent ${row.parentEmail} must be enrolled in this institute first.`);
+    const driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
+    if (row.driverEmail && !driver) throw enrollmentError(`Driver ${row.driverEmail} is not active in this institute.`);
+    const previous = await Child.findOne({ instituteId: institute._id, instituteReference: row.reference }).session(session);
+    if (previous && String(previous.parentId) !== String(parent._id)) throw enrollmentError(`Student ${row.reference} belongs to a different parent. Contact ASAN Admin to transfer.`);
+    const oldDriverId = previous?.driverId;
+    if (previous && await Trips.exists({ status: 'in_transit', $or: [{ child: previous._id }, { students: previous._id }] }).session(session)) throw enrollmentError(`${row.name} has a ride in progress. Update the assignment after the ride ends.`, 409);
+    const child = previous || new Child();
+    const changed = !previous || previous.driverId !== (driver?.driverId || '');
+    Object.assign(child, membership(institute), { instituteReference: row.reference, parentId: parent._id, name: row.name, school: institute.name, grade: row.grade,
+      pickupLocation: row.pickupAddress, location: row.pickup, dropoffLocation: institute.location.address,
+      dropLocationCoords: { lat: institute.location.lat, lng: institute.location.lng }, pickupTime: row.pickupTime, eveningPickup: row.dropoffTime, driverId: driver?.driverId || '' });
+    await child.save({ session });
+    for (const id of new Set([oldDriverId, driver?.driverId].filter(Boolean))) {
+      const count = await Child.countDocuments({ driverId: id }).session(session);
+      await Driver.updateOne({ driverId: id, instituteId: institute._id }, { $set: { studentsAssigned: count } }, { session });
+    }
+    const ids = await Child.distinct('driverId', { parentId: parent._id, instituteId: institute._id, driverId: { $ne: '' } }).session(session);
+    parent.driverIds = ids; parent.driverId = ids[0] || null;
+    await parent.save({ session });
+    const siblings = await Child.find({ parentId: parent._id, instituteId: institute._id }).select('name').session(session).lean();
+    await Record.updateOne({ module: 'Parents', instituteName: institute.name, 'coreLink.id': parent._id }, { $set: { 'data.Student': siblings.map(item => item.name).join(', ') } }, { session });
+    await operational('Students', child, { 'Student name': child.name, Class: child.grade, 'Admission number': row.reference, 'Parent phone': parent.phone, 'Parent email': parent.email, 'Pickup point': row.pickupAddress, 'Pickup point coordinates': row.pickup, 'Drop point': institute.location.address, 'Drop point coordinates': { lat: institute.location.lat, lng: institute.location.lng }, 'Driver assigned': driver?.name || '', 'ASAN ID': driver?.driverId || '', 'Pickup time': row.pickupTime, 'School return time': row.dropoffTime, 'Assigned route': row.assignedRoute || '', 'Assigned vehicle': row.assignedVehicle || '' }, institute, session);
+    if (changed) {
+      await notice(parent, 'parent', 'Institute transport updated', `${institute.name} ${driver ? `assigned ${driver.name} (${driver.driverId}) to` : 'registered'} ${child.name}. View your transport details in the app.`, session, child._id);
+      if (driver) await notice(driver, 'driver', 'Institute student assigned', `${institute.name} assigned ${child.name} to your route. Open the app for pickup details.`, session, child._id);
+      if (oldDriverId && oldDriverId !== driver?.driverId) {
+        const old = await Driver.findOne({ driverId: oldDriverId, instituteId: institute._id }).session(session);
+        if (old) await notice(old, 'driver', 'Institute assignment changed', `${child.name} is no longer assigned to you.`, session, child._id);
+      }
+    }
+    return { kind: row.kind, name: child.name, id: child._id, driverId: driver?.driverId || '' };
+  }
+  const Model = row.kind === 'driver' ? Driver : Parent;
+  const matches = await Model.find({ $or: [{ email: row.email }, { phone: { $in: [row.phone, `91${row.phone}`, `+91${row.phone}`] } }] }).session(session);
+  if (matches.length > 1 || matches.some(item => item.email !== row.email || !isMember(item, institute))) throw enrollmentError(`${row.email}: an account already exists outside this Institute or the phone belongs to another account. ASAN Admin must review the link.`, 409);
+  const existing = matches[0];
+  const account = existing || new Model();
+  Object.assign(account, membership(institute), { name: row.name, email: row.email, phone: row.phone, address: row.address, homeLocation: { type: 'Point', coordinates: [row.home.lng, row.home.lat] } });
+  if (row.kind === 'driver') {
+    const assets = await Asset.find({ _id: { $in: Object.values(row.documents) }, instituteId: institute._id }).session(session).lean();
+    for (const field of documentFields) {
+      const asset = assets.find(item => String(item._id) === row.documents[field] && item.field === field);
+      if (!asset) throw enrollmentError(`${row.email}: ${field} is missing or belongs to another institute.`);
+      // Store a protected server URL, never a publicly accessible identity-document URL.
+      account[field] = `/api/institute/enrollment/documents/${asset._id}`;
+    }
+    Object.assign(account, { vehicleNumber: row.vehicleNumber, vehicleType: row.vehicleType.toLowerCase(), licenseNumber: row.licenseNumber });
+    if (!existing) {
+      const next = await Institute.findOneAndUpdate({ _id: institute._id }, { $inc: { driverSequence: 1 } }, { new: true, session });
+      account.driverId = `${next.driverPrefix}-DRV-${String(next.driverSequence).padStart(4, '0')}`;
+      account.status = 'approved'; account.approvedAt = new Date();
+    }
+    if (existing?.status !== 'approved' && existing) throw enrollmentError('This driver is suspended or under review. ASAN Admin must restore access.', 409);
+  }
+  await account.save({ session });
+  await operational(row.kind === 'driver' ? 'Drivers' : 'Parents', account, row.kind === 'driver' ? { 'Driver name': row.name, 'Phone number': row.phone, Email: row.email, 'ASAN ID': account.driverId, Status: 'Active', 'App approval status': account.status, 'Driving license': row.licenseNumber } : { 'Parent name': row.name, Phone: row.phone, Email: row.email, 'Pickup point': row.address, 'Pickup point coordinates': row.home }, institute, session);
+  if (!existing) await notice(account, row.kind, 'Welcome to Institute transport', `${institute.name} has registered your transport account. Sign in with your registered email and verification code.`, session);
+  return { kind: row.kind, name: row.name, id: account._id, driverId: account.driverId };
+}
+
+export async function enrollBatch(user, input, { preview = false } = {}) {
+  const rows = normalizeBatch(input);
+  await Promise.all([Driver.init(), Parent.init(), Child.init(), Record.init(), Notification.init(), PushDelivery.init()]);
+  const session = await mongoose.startSession();
+  let result = [];
+  try {
+    await session.withTransaction(async () => {
+      result = [];
+      const institute = await enrollmentInstitute(user, session);
+      // Parents and drivers must exist before dependent children are processed.
+      for (const row of [...rows].sort((a, b) => Number(a.kind === 'child') - Number(b.kind === 'child'))) result.push(await enroll(row, institute, user, session));
+      if (preview) throw Object.assign(new Error('Preview rollback'), { previewResult: result });
+    });
+  } catch (error) {
+    if (error.previewResult) return error.previewResult;
+    if (error.code === 11000) throw enrollmentError('A duplicate account or reference was found. Refresh and preview again.', 409);
+    throw error;
+  } finally { await session.endSession(); }
+  return result;
+}
+
+export async function assignEnrolledStudent(user, input) {
+  const record = await Record.findOne({ id: input.studentId, module: 'Students', instituteName: user.instituteName }).lean();
+  if (record?.coreLink?.model !== 'Child') return false;
+  const institute = await enrollmentInstitute(user);
+  const child = await Child.findOne({ _id: record.coreLink.id, instituteId: institute._id, accountSource: 'institute' }).lean();
+  if (!child) return false;
+  const parent = await Parent.findById(child.parentId).select('email').lean();
+  const route = await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': input.routeName }).lean();
+  if (!route) throw enrollmentError('Choose a route from this Institute.');
+  const driverName = route.data?.['Assigned driver'];
+  const driverRecords = await Record.find({ module: 'Drivers', instituteName: institute.name, 'data.Driver name': driverName }).lean();
+  if (driverRecords.length !== 1 || driverRecords[0].coreLink?.model !== 'Driver') throw enrollmentError('The route needs one enrolled Institute driver.');
+  const driver = await Driver.findOne({ _id: driverRecords[0].coreLink.id, instituteId: institute._id, status: 'approved' }).select('email').lean();
+  if (!driver) throw enrollmentError('The route driver is not active in this Institute.');
+  await enrollBatch(user, [{ kind: 'child', reference: child.instituteReference, name: child.name, grade: child.grade, parentEmail: parent.email, driverEmail: driver.email,
+    pickupAddress: input.pickupPoint || child.pickupLocation, pickup: input.pickupCoordinates || child.location, pickupTime: child.pickupTime, dropoffTime: child.eveningPickup, assignedRoute: input.routeName, assignedVehicle: route.data?.['Assigned vehicle'] || '' }]);
+  return true;
+}

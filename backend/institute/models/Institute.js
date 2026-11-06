@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 
 const instituteSchema = new mongoose.Schema(
   {
+    managedEnrollmentEnabled: { type: Boolean, default: false },
+    driverPrefix: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
+    driverSequence: { type: Number, default: 0 },
     name: {
       type: String,
       required: [true, 'Institute name is required'],

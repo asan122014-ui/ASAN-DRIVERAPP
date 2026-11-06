@@ -1,3 +1,4 @@
+import { accountFields } from '../institute/accountFields.js';
 import mongoose from "mongoose";
 
 /* =========================================================
@@ -6,6 +7,7 @@ import mongoose from "mongoose";
 
 const childSchema = new mongoose.Schema(
   {
+    ...accountFields(),
     activeBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
     /* =====================================================
        CHILD INFO
@@ -256,6 +258,8 @@ const childSchema = new mongoose.Schema(
   lat: 17.38
   lng: null
 */
+
+childSchema.index({ instituteId: 1, instituteReference: 1 }, { unique: true, partialFilterExpression: { accountSource: 'institute' } });
 
 childSchema.pre(
   "validate",

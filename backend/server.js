@@ -1,3 +1,5 @@
+import instituteAdminRoutes from './institute/adminRoutes.js';
+import instituteAppRoutes from './institute/appRoutes.js';
 import { startWaivedCheckoutWorker } from "./jobs/reconcileWaivedCheckouts.js";
 import { startPushDeliveryWorker } from "./jobs/deliverPushNotifications.js";
 import { startPayoutReconciliationWorker } from "./jobs/reconcileDriverPayouts.js";
@@ -239,6 +241,8 @@ if (
 
 app.use('/api/admin/announcements', announcementRoutes);
 app.use('/api/institute', instituteRoutes);
+app.use('/api/institute-admin', instituteAdminRoutes);
+app.use('/api/institute-app', instituteAppRoutes);
 
 app.use(
   "/api/auth",

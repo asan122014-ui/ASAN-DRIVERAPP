@@ -561,6 +561,7 @@ export const createRequest =
     try {
       const parent =
         req.parent;
+      if (parent?.accountSource === 'institute') return res.status(403).json({ message: 'Your Institute manages driver assignments. Contact your transport coordinator.' });
 
       if (!parent) {
         return res.status(401).json({
@@ -837,7 +838,7 @@ export const getAllRequests =
           });
 
       const approvedDrivers =
-        await Driver.find({
+        await Driver.find({ accountSource: { $ne: "institute" },
           status:
             "approved",
         }).select(
@@ -1166,7 +1167,7 @@ export const assignDriver =
           =============================================== */
 
           const driver =
-            await Driver.findOne({
+            await Driver.findOne({ accountSource: { $ne: "institute" },
               driverId:
                 normalizedDriverId,
             }).session(
