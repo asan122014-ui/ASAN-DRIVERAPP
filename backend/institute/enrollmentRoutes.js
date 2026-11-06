@@ -10,7 +10,7 @@ import { documentFields, enrollmentError } from './enrollmentPolicy.js';
 
 const router = express.Router();
 const fail = (res, error) => {
-  if (!error.status) console.error('Institute enrollment failed:', error.name);
+  if (!error.status) console.error('Institute enrollment failed:', { name: error.name, code: error.code, codeName: error.codeName });
   res.status(error.status || 500).json({ message: error.status ? error.message : 'Enrollment could not be completed. No partial import was saved.' });
 };
 router.use(rateLimit({ windowMs: 60000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false }));

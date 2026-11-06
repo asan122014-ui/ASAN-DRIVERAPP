@@ -12,6 +12,7 @@ import Notification from '../models/Notification.js';
 import PushDelivery from '../models/PushDelivery.js';
 import Trips from '../models/Trips.js';
 import { normalizeBatch, enrollmentError, documentFields, coordinates } from './enrollmentPolicy.js';
+import { initializeEnrollmentDriver } from './enrollmentIndexes.js';
 
 const membership = institute => ({ accountSource: 'institute', instituteId: institute._id, instituteName: institute.name });
 const isMember = (account, institute) => account.accountSource === 'institute' && String(account.instituteId) === String(institute._id);
@@ -127,7 +128,9 @@ async function enroll(row, institute, user, session) {
 
 export async function enrollBatch(user, input, { preview = false } = {}) {
   const rows = normalizeBatch(input);
-  await Promise.all([Driver.init(), Parent.init(), Child.init(), Record.init(), Invoice.init(), Notification.init(), PushDelivery.init()]);
+  // Explain missing Institute setup before attempting account/index preparation.
+  await enrollmentInstitute(user);
+  await Promise.all([initializeEnrollmentDriver(Driver), Parent.init(), Child.init(), Record.init(), Invoice.init(), Notification.init(), PushDelivery.init()]);
   const session = await mongoose.startSession();
   let result = [];
   try {
