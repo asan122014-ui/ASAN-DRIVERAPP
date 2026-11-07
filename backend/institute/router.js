@@ -1,4 +1,5 @@
 import FinanceInvoice from '../models/Invoice.js';
+import { deleteInstituteRecord } from './deleteEnrollment.js';
 import financeRoutes from './financeRoutes.js';
 import DriverAccount from '../models/Driver.js';
 import ParentAccount from '../models/Parent.js';
@@ -726,7 +727,7 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
 
 // App-linked records must be changed through the transactional enrollment path.
 app.use('/records/:module/:id', requireSession, async (req, res, next) => {
-  if (!['PUT', 'DELETE'].includes(req.method)) return next();
+  if (req.method !== 'PUT') return next();
   try {
     const row = await Record.findOne({ id: req.params.id, module: req.params.module, instituteName: req.user.instituteName }).select('coreLink').lean();
     const Model = { Driver: DriverAccount, Parent: ParentAccount, Child: ChildAccount }[row?.coreLink?.model];
@@ -759,12 +760,12 @@ app.delete('/records/:module/:id', requireSession, requireModule, async (req, re
   const { module, id } = req.params;
   try {
     await ensureMongoConnection();
-    const result = await Record.deleteOne({ id, module, instituteName: recordInstitute(req) });
-    if (!result.deletedCount) return res.status(404).json({ message: 'Record not found.' });
-    res.status(204).end();
+    const result = await deleteInstituteRecord(req.user, module, id, req.body?.deleteLinkedAccount === true);
+    req.app.get('io')?.to('admin').emit('institute_records_updated', { instituteName: recordInstitute(req), module });
+    res.json({ success: true, ...result });
   } catch (err) {
     console.error(`Error deleting ${module} record:`, err.message);
-    res.status(503).json({ message: 'Record could not be deleted. Please try again.' });
+    res.status(err.status || 503).json({ message: err.status ? err.message : 'Record could not be deleted. Please try again.' });
   }
 });
 
