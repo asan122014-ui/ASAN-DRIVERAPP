@@ -51,7 +51,7 @@ export async function linkRecord(module, data, instituteName) {
 export async function refreshLinkedRecords(module, records, instituteName) {
   const models = { Drivers: [Driver, 'Driver', 'name phone email address driverId status'],
     Parents: [Parent, 'Parent', 'name phone email accountSource'],
-    Students: [Child, 'Child', 'name grade school parentId status instituteReference monthlyTransportFee assignedRouteName assignedVehicleNumber accountSource'] };
+    Students: [Child, 'Child', 'name grade school parentId status instituteReference monthlyTransportFee assignedRouteName assignedVehicleNumber accountSource pickupMode pickupStopId pickupStopName pickupLocation location'] };
   if (!models[module]) return records;
   // Also resolves links for migrated rows and accounts registered after a row
   // was entered. A read never creates or modifies a user's app account.
@@ -89,7 +89,7 @@ export async function refreshLinkedRecords(module, records, instituteName) {
       const parent = parents.get(String(match.parentId));
       if (match.accountSource === 'institute') {
         const bill = bills.find(item => String(item.childId) === String(match._id));
-        Object.assign(row.data, { 'Monthly fee': match.monthlyTransportFee, 'Transport fee': match.monthlyTransportFee == null ? '' : `₹${match.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Assigned route': match.assignedRouteName || '', 'Assigned vehicle': match.assignedVehicleNumber || '', 'Payment status': bill?.status || 'Not billed' });
+        Object.assign(row.data, { 'Pickup mode': match.pickupMode || 'door_to_door', 'Pickup stop': match.pickupStopName || '', 'Pickup stop ID': match.pickupStopId || '', 'Pickup point': match.pickupLocation, 'Pickup point coordinates': match.location, 'Monthly fee': match.monthlyTransportFee, 'Transport fee': match.monthlyTransportFee == null ? '' : `₹${match.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Assigned route': match.assignedRouteName || '', 'Assigned vehicle': match.assignedVehicleNumber || '', 'Payment status': bill?.status || 'Not billed' });
       }
       Object.assign(row.data, { 'Student name': match.name, Class: match.grade, 'Student ID': match.instituteReference || row.data['Student ID'] || row.data['Admission number'] || '', 'App ride status': match.status,
         ...(parent ? { 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email } : {}) });

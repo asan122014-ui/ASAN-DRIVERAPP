@@ -10,7 +10,7 @@ async function dashboard(req, res, kind) {
     const account = kind === 'parent' ? req.parent : req.driver;
     if (account.accountSource !== 'institute' || !account.instituteId) return res.json({ managed: false });
     const filter = { instituteId: account.instituteId, accountSource: 'institute', ...(kind === 'parent' ? { parentId: account._id } : { driverId: account.driverId }) };
-    const children = await Child.find(filter).select('name grade school driverId parentId location dropLocationCoords pickupLocation dropoffLocation pickupTime eveningPickup status instituteReference monthlyTransportFee assignedRouteName').sort({ name: 1 }).lean();
+    const children = await Child.find(filter).select('name grade school driverId parentId location dropLocationCoords pickupLocation dropoffLocation pickupTime eveningPickup status instituteReference monthlyTransportFee assignedRouteName pickupMode pickupStopId pickupStopName').sort({ name: 1 }).lean();
     const drivers = kind === 'parent' ? await Driver.find({ instituteId: account.instituteId, driverId: { $in: children.map(c => c.driverId).filter(Boolean) }, status: 'approved' }).select('name phone driverId vehicleNumber vehicleType lastLocation isOnline').lean() : [];
     const parents = kind === 'driver' ? await Parent.find({ instituteId: account.instituteId, _id: { $in: children.map(c => c.parentId) } }).select('_id name phone').lean() : [];
     res.json({ managed: true, instituteName: account.instituteName, driverId: account.driverId, children, drivers, parents });

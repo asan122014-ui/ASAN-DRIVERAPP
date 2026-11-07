@@ -1,4 +1,7 @@
 import FinanceInvoice from '../models/Invoice.js';
+import transportPolicyRoutes from './transportPolicyRoutes.js';
+import { effectivePickupMode } from './pickupPolicy.js';
+import { saveRouteStops } from './routeStops.js';
 import { deleteInstituteRecord } from './deleteEnrollment.js';
 import financeRoutes from './financeRoutes.js';
 import DriverAccount from '../models/Driver.js';
@@ -162,6 +165,10 @@ function recordInstitute(req) {
 
 async function getModuleRecords(module, instituteName) {
   const records = await Record.find({ module, instituteName }).sort({ createdAt: -1 }).lean();
+  if (module === 'Routes') {
+    const students = await ChildAccount.find({ instituteName, accountSource: 'institute', pickupMode: 'route_stops' }).select('name assignedRouteId pickupStopId').lean();
+    for (const route of records) route.stops = (route.stops || []).map(stop => ({ ...stop, students: students.filter(child => child.assignedRouteId === route.id && child.pickupStopId === stop.id).map(child => child.name) }));
+  }
   return refreshLinkedRecords(module, records, instituteName);
 }
 
@@ -700,6 +707,8 @@ app.get('/records/:module', requireSession, requireModule, async (req, res) => {
   }
 });
 
+app.use('/transport-policy', requireSession, transportPolicyRoutes);
+
 app.post('/records/:module', requireSession, requireModule, async (req, res) => {
   const module = req.params.module;
   const data = req.body?.data;
@@ -717,11 +726,16 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
   try {
     await ensureMongoConnection();
     record.coreLink = await linkRecord(module, data, record.instituteName);
+    if (module === 'Routes') {
+      effectivePickupMode({}, { data });
+      if (!String(data['Route name'] || '').trim()) return res.status(400).json({ message: 'Route name is required.' });
+      if (await Record.exists({ module, instituteName: record.instituteName, 'data.Route name': data['Route name'] })) return res.status(409).json({ message: 'Use a unique route name within this Institute.' });
+    }
     const saved = await Record.create(record);
     res.status(201).json(saved.toObject());
   } catch (err) {
     console.error(`Error saving ${module} record:`, err.message);
-    res.status(503).json({ message: 'Record could not be saved. Please try again.' });
+    res.status(err.status || 503).json({ message: err.status ? err.message : 'Record could not be saved. Please try again.' });
   }
 });
 
@@ -729,11 +743,16 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
 app.use('/records/:module/:id', requireSession, async (req, res, next) => {
   if (req.method !== 'PUT') return next();
   try {
+    if (req.params.module === 'Routes') {
+      effectivePickupMode({}, { data: req.body?.data });
+      const current = await Record.findOne({ id: req.params.id, module: 'Routes', instituteName: req.user.instituteName }).lean();
+      if (current && await ChildAccount.exists({ accountSource: 'institute', instituteName: req.user.instituteName, $or: [{ assignedRouteId: current.id }, { assignedRouteName: current.data?.['Route name'] }] })) return res.status(409).json({ message: 'This route has assigned students. Use Manage Stops for stop updates; reassign students before changing route details.' });
+    }
     const row = await Record.findOne({ id: req.params.id, module: req.params.module, instituteName: req.user.instituteName }).select('coreLink').lean();
     const Model = { Driver: DriverAccount, Parent: ParentAccount, Child: ChildAccount }[row?.coreLink?.model];
     if (Model && await Model.exists({ _id: row.coreLink.id, accountSource: 'institute' })) return res.status(409).json({ message: req.method === 'DELETE' ? 'This record is an active app account. Contact ASAN Admin to deactivate it; deleting only the Institute card would leave the account active.' : 'Update this app account through App enrollment so the panel and apps stay synchronized.' });
     next();
-  } catch { res.status(503).json({ message: 'Unable to verify the linked account. Please retry.' }); }
+  } catch (error) { res.status(error.status || 503).json({ message: error.status ? error.message : 'Unable to verify the linked account. Please retry.' }); }
 });
 
 app.put('/records/:module/:id', requireSession, requireModule, async (req, res) => {
@@ -804,18 +823,10 @@ app.post('/students/assign', requireSession, async (req, res) => {
 
 // Route Stop Management
 app.post('/routes/:id/stops', requireSession, async (req, res) => {
-  const { id } = req.params;
-  const { stops } = req.body || {};
-  if (!Array.isArray(stops)) return res.status(400).json({ message: 'Stops array is required.' });
-
-  const store = await readStore(req);
-  const routes = store.records.Routes || [];
-  const route = routes.find(r => r.id === id);
-  if (!route) return res.status(404).json({ message: 'Route not found.' });
-
-  route.stops = stops;
-  await writeStore(store, req);
-  res.json({ message: 'Route stops updated successfully.', route });
+  try {
+    const route = await saveRouteStops(req.user, req.params.id, req.body?.stops, req.body?.pickupMode);
+    res.json({ message: 'Route stops and linked student pickup details updated.', route });
+  } catch (error) { res.status(error.status || 503).json({ message: error.status ? error.message : 'Route stops could not be saved. Please retry.' }); }
 });
 
 // Online Payment Simulation: Parent → Payment Gateway → ASAN RIDES → Institute Account

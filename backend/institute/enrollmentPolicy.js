@@ -18,6 +18,7 @@ export function normalizeEnrollment(input) {
     if (input.monthlyFee !== undefined) row.monthlyFee = input.monthlyFee;
     row.grade = text(input.grade);
     row.assignedRoute = text(input.assignedRoute).slice(0, 120);
+    row.pickupStopId = text(input.pickupStopId).slice(0, 100);
     row.assignedVehicle = text(input.assignedVehicle).slice(0, 30);
     row.pickupTime = text(input.pickupTime);
     row.dropoffTime = text(input.dropoffTime);

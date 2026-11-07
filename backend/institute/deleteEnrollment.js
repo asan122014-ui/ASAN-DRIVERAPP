@@ -25,6 +25,7 @@ export async function deleteInstituteRecord(user, module, id, confirmed = false)
       const Model = { Driver, Parent, Child }[link?.model];
       if (Model && { Driver: 'Drivers', Parent: 'Parents', Child: 'Students' }[link.model] !== module) throw enrollmentError('The account link does not match this directory. ASAN Admin must review it.', 409);
       if (!Model) {
+        if (module === 'Routes' && await Child.exists({ accountSource: 'institute', instituteName: user.instituteName, $or: [{ assignedRouteId: row.id }, { assignedRouteName: row.data?.['Route name'] }] }).session(session)) throw enrollmentError('Reassign this route’s students before deleting the route.', 409);
         if (link) throw enrollmentError('This legacy app record needs ASAN Admin review before it can be removed.', 409);
         await Record.deleteOne({ _id: row._id }, { session });
         result = { deletedAccount: false, removedStudents: 0 };
@@ -56,7 +57,7 @@ export async function deleteInstituteRecord(user, module, id, confirmed = false)
       const affectedParents = new Set(students.map(child => String(child.parentId)));
       const affectedDrivers = new Set(students.map(child => child.driverId).filter(Boolean));
       if (link.model === 'Driver') {
-        await Child.updateMany({ ...scope, driverId: account.driverId }, { $set: { driverId: '', assignedRouteName: '', assignedVehicleNumber: '', monthlyTransportFee: null } }, { session });
+        await Child.updateMany({ ...scope, driverId: account.driverId }, { $set: { driverId: '', pickupMode: 'unassigned', pickupStopId: '', pickupStopName: '', assignedRouteId: '', assignedRouteName: '', assignedVehicleNumber: '', monthlyTransportFee: null } }, { session });
         await Record.updateMany({ module: 'Students', instituteName: institute.name, 'coreLink.id': { $in: childIds } }, { $set: { 'data.Driver assigned': '', 'data.ASAN ID': '', 'data.Assigned route': '', 'data.Assigned vehicle': '', 'data.Monthly fee': null, 'data.Transport fee': '', 'data.Payment status': 'Not billed' } }, { session });
         const sameNameDriver = await Driver.exists({ ...scope, name: account.name, _id: { $ne: account._id } }).session(session);
         if (!sameNameDriver) await Record.updateMany({ module: 'Routes', instituteName: institute.name, 'data.Assigned driver': account.name }, { $set: { 'data.Assigned driver': '' } }, { session });

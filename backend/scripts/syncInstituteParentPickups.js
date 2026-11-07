@@ -20,7 +20,7 @@ try {
     if (!institute || institute.name !== parent.instituteName) { summary.skippedParents++; continue; }
     try {
       const pickup = parentPickup(parent);
-      const children = await Child.find({ accountSource: 'institute', instituteId: institute._id, parentId: parent._id });
+      const children = await Child.find({ accountSource: 'institute', instituteId: institute._id, parentId: parent._id, pickupMode: { $nin: ['route_stops', 'unassigned'] } });
       const changed = children.filter(child => child.pickupLocation !== pickup.address || child.location?.lat !== pickup.point.lat || child.location?.lng !== pickup.point.lng);
       if (!changed.length) continue;
       summary.parents++;

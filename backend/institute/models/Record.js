@@ -8,6 +8,7 @@ const recordSchema = new mongoose.Schema(
     data: { type: mongoose.Schema.Types.Mixed, required: true },
     created: { type: String, required: true },
     coreLink: { type: mongoose.Schema.Types.Mixed, default: null },
+    assignmentRevision: { type: Number, default: 0 },
     stops: { type: [mongoose.Schema.Types.Mixed], default: undefined },
     deviated: Boolean, deviationAlert: String
   },

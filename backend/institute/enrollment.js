@@ -13,6 +13,7 @@ import PushDelivery from '../models/PushDelivery.js';
 import Trips from '../models/Trips.js';
 import { normalizeBatch, enrollmentError, documentFields, coordinates } from './enrollmentPolicy.js';
 import { initializeEnrollmentDriver } from './enrollmentIndexes.js';
+import { effectivePickupMode, selectedStop } from './pickupPolicy.js';
 
 const membership = institute => ({ accountSource: 'institute', instituteId: institute._id, instituteName: institute.name });
 const isMember = (account, institute) => account.accountSource === 'institute' && String(account.instituteId) === String(institute._id);
@@ -22,7 +23,7 @@ export function parentPickup(parent) {
 }
 export async function syncInstituteParentPickup(parent, institute, session) {
   const pickup = parentPickup(parent);
-  const children = await Child.find({ parentId: parent._id, instituteId: institute._id, accountSource: 'institute' }).session(session);
+  const children = await Child.find({ parentId: parent._id, instituteId: institute._id, accountSource: 'institute', pickupMode: { $nin: ['route_stops', 'unassigned'] } }).session(session);
   const changed = children.filter(child => child.pickupLocation !== pickup.address || child.location?.lat !== pickup.point.lat || child.location?.lng !== pickup.point.lng);
   if (!changed.length) return 0;
   const ids = changed.map(child => child._id);
@@ -39,7 +40,7 @@ export async function enrollmentInstitute(user, session) {
   return institute;
 }
 
-async function notice(account, kind, title, message, session, child) {
+export async function notice(account, kind, title, message, session, child) {
   const recipient = kind === 'driver' ? { driver: account.driverId } : { parent: account._id };
   const [notification] = await Notification.create([{ ...recipient, recipientType: kind, child, title, message, type: 'general', notificationKey: 'INSTITUTE_ASSIGNMENT', meta: { instituteId: String(account.instituteId) } }], { session });
   const tokens = [...new Set((account.fcmTokens || []).filter(Boolean))];
@@ -66,7 +67,7 @@ async function enroll(row, institute, user, session) {
     const pickup = parentPickup(parent);
     row.pickupAddress = pickup.address;
     row.pickup = pickup.point;
-    const driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
+    let driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
     if (row.driverEmail && !driver) throw enrollmentError(`Driver ${row.driverEmail} is not active in this institute.`);
     const normalizeName = value => String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
     let previous;
@@ -80,14 +81,32 @@ async function enroll(row, institute, user, session) {
       row.reference = previous?.instituteReference || `STU-${crypto.createHash('sha256').update(`${institute._id}:${parent._id}:${normalizeName(row.name)}`).digest('hex').slice(0, 20).toUpperCase()}`;
     }
     if (previous && String(previous.parentId) !== String(parent._id)) throw enrollmentError(`Student ${row.reference} belongs to a different parent. Contact ASAN Admin to transfer.`);
+    if (previous?.assignedRouteName && !row.driverEmail && !row.assignedRoute && previous.driverId) driver = await Driver.findOne({ driverId: previous.driverId, instituteId: institute._id, status: 'approved' }).session(session);
+    const routeName = row.assignedRoute || previous?.assignedRouteName;
+    const route = routeName ? await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': routeName }).session(session) : null;
+    if (routeName && !route) throw enrollmentError('The assigned route was not found in this Institute. Select a current route.');
+    const mode = row.assignedRoute ? effectivePickupMode(institute, route) : previous?.pickupMode || effectivePickupMode(institute, route);
+    let stop = null;
+    if (route && driver && route.data?.['Assigned driver'] !== driver.name) throw enrollmentError('Use the driver assigned to the selected route.');
+    if (mode === 'route_stops' && route) {
+      stop = selectedStop(route, row.assignedRoute ? row.pickupStopId : previous?.pickupStopId);
+      row.pickupAddress = `${stop.name} — ${stop.address}`; row.pickup = stop.coordinates; row.pickupTime = stop.expectedTime;
+    } else if (mode === 'route_stops' || mode === 'unassigned') {
+      if (driver) throw enrollmentError('For route pickup service, enroll the student without a driver first, then assign a route and pickup point from Students.');
+      row.pickupAddress = 'Pickup point not assigned'; row.pickup = { lat: null, lng: null };
+    }
+    if (route) await Record.updateOne({ _id: route._id }, { $inc: { assignmentRevision: 1 } }, { session });
     const oldDriverId = previous?.driverId;
     if (previous && await Trips.exists({ status: 'in_transit', $or: [{ child: previous._id }, { students: previous._id }] }).session(session)) throw enrollmentError(`${row.name} has a ride in progress. Update the assignment after the ride ends.`, 409);
     const child = previous || new Child();
-    const changed = !previous || previous.driverId !== (driver?.driverId || '') || (row.monthlyFee !== undefined && Number(row.monthlyFee) !== previous.monthlyTransportFee) || (row.assignedRoute && row.assignedRoute !== previous.assignedRouteName);
+    const changed = !previous || previous.driverId !== (driver?.driverId || '') || previous.pickupStopId !== (stop?.id || '') || previous.pickupMode !== mode || (row.monthlyFee !== undefined && Number(row.monthlyFee) !== previous.monthlyTransportFee) || (row.assignedRoute && row.assignedRoute !== previous.assignedRouteName);
     Object.assign(child, membership(institute), { instituteReference: row.reference, parentId: parent._id, name: row.name, school: institute.name, grade: row.grade,
       pickupLocation: row.pickupAddress, location: row.pickup, dropoffLocation: institute.location.address,
       dropLocationCoords: { lat: institute.location.lat, lng: institute.location.lng }, pickupTime: row.pickupTime, eveningPickup: row.dropoffTime, driverId: driver?.driverId || '' });
     if (row.assignedRoute) child.assignedRouteName = row.assignedRoute;
+    child.pickupMode = !route && mode !== 'door_to_door' ? 'unassigned' : mode;
+    child.assignedRouteId = route?.id || '';
+    child.pickupStopId = stop?.id || ''; child.pickupStopName = stop?.name || '';
     if (row.assignedVehicle) child.assignedVehicleNumber = row.assignedVehicle;
     if (row.monthlyFee !== undefined) {
       const route = await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': row.assignedRoute }).session(session);
@@ -105,7 +124,7 @@ async function enroll(row, institute, user, session) {
     await parent.save({ session });
     const siblings = await Child.find({ parentId: parent._id, instituteId: institute._id }).select('name').session(session).lean();
     await Record.updateOne({ module: 'Parents', instituteName: institute.name, 'coreLink.id': parent._id }, { $set: { 'data.Student': siblings.map(item => item.name).join(', ') } }, { session });
-    await operational('Students', child, { 'Student name': child.name, Class: child.grade, 'Admission number': row.reference, 'Student ID': row.reference, 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email, 'Pickup point': row.pickupAddress, 'Pickup point coordinates': row.pickup, 'Drop point': institute.location.address, 'Drop point coordinates': { lat: institute.location.lat, lng: institute.location.lng }, 'Driver assigned': driver?.name || '', 'ASAN ID': driver?.driverId || '', 'Pickup time': row.pickupTime, 'School return time': row.dropoffTime, 'Assigned route': child.assignedRouteName || '', 'Assigned vehicle': child.assignedVehicleNumber || '', 'Monthly fee': child.monthlyTransportFee, 'Transport fee': child.monthlyTransportFee == null ? '' : `₹${child.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Payment status': feeInvoice?.status || 'Not billed' }, institute, session);
+    await operational('Students', child, { 'Pickup mode': child.pickupMode, 'Pickup stop': child.pickupStopName, 'Pickup stop ID': child.pickupStopId, 'Student name': child.name, Class: child.grade, 'Admission number': row.reference, 'Student ID': row.reference, 'Parent name': parent.name, 'Parent phone': parent.phone, 'Parent email': parent.email, 'Pickup point': row.pickupAddress, 'Pickup point coordinates': row.pickup, 'Drop point': institute.location.address, 'Drop point coordinates': { lat: institute.location.lat, lng: institute.location.lng }, 'Driver assigned': driver?.name || '', 'ASAN ID': driver?.driverId || '', 'Pickup time': row.pickupTime, 'School return time': row.dropoffTime, 'Assigned route': child.assignedRouteName || '', 'Assigned vehicle': child.assignedVehicleNumber || '', 'Monthly fee': child.monthlyTransportFee, 'Transport fee': child.monthlyTransportFee == null ? '' : `₹${child.monthlyTransportFee.toLocaleString('en-IN')} / month`, 'Payment status': feeInvoice?.status || 'Not billed' }, institute, session);
     if (changed) {
       await notice(parent, 'parent', 'Institute transport updated', `${institute.name} ${driver ? `assigned ${driver.name} (${driver.driverId}) to` : 'registered'} ${child.name}. View your transport details${row.monthlyFee !== undefined ? ' and monthly invoice in Payments' : ''} in the app.`, session, child._id);
       if (driver) await notice(driver, 'driver', 'Institute student assigned', `${institute.name} assigned ${child.name} to your route. Open the app for pickup details.`, session, child._id);
@@ -185,6 +204,6 @@ export async function assignEnrolledStudent(user, input) {
   const driver = await Driver.findOne({ _id: driverRecords[0].coreLink.id, instituteId: institute._id, status: 'approved' }).select('email').lean();
   if (!driver) throw enrollmentError('The route driver is not active in this Institute.');
   await enrollBatch(user, [{ kind: 'child', reference: child.instituteReference, name: child.name, grade: child.grade, parentEmail: parent.email, driverEmail: driver.email,
-    pickupAddress: input.pickupPoint || child.pickupLocation, pickup: input.pickupCoordinates || child.location, pickupTime: child.pickupTime, dropoffTime: child.eveningPickup, assignedRoute: input.routeName, assignedVehicle: route.data?.['Assigned vehicle'] || '', monthlyFee: fixedMonthlyAmount(input.monthlyFee) }]);
+    pickupStopId: input.pickupStopId || (child.assignedRouteId === route.id ? child.pickupStopId : ''), pickupTime: child.pickupTime, dropoffTime: child.eveningPickup, assignedRoute: input.routeName, assignedVehicle: route.data?.['Assigned vehicle'] || '', monthlyFee: fixedMonthlyAmount(input.monthlyFee) }]);
   return true;
 }

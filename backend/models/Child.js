@@ -9,6 +9,10 @@ const childSchema = new mongoose.Schema(
   {
     ...accountFields(),
     monthlyTransportFee: { type: Number, default: null, min: 1, max: 1000000 },
+    pickupMode: { type: String, enum: ['door_to_door', 'route_stops', 'unassigned'], default: 'door_to_door' },
+    pickupStopId: { type: String, default: '' },
+    pickupStopName: { type: String, default: '' },
+    assignedRouteId: { type: String, default: '' },
     assignedRouteName: { type: String, default: '' },
     assignedVehicleNumber: { type: String, default: '' },
     activeBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },

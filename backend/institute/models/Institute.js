@@ -5,6 +5,7 @@ const instituteSchema = new mongoose.Schema(
     managedEnrollmentEnabled: { type: Boolean, default: false },
     driverPrefix: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
     driverSequence: { type: Number, default: 0 },
+    pickupMode: { type: String, enum: ['door_to_door', 'route_stops'], default: 'door_to_door' },
     name: {
       type: String,
       required: [true, 'Institute name is required'],
