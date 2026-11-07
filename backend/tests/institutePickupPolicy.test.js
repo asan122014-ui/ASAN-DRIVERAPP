@@ -17,4 +17,5 @@ test('stops require unique IDs, real numeric map points and valid pickup times',
   assert.throws(()=>normalizeStops([{...stop,coordinates:{lat:'17',lng:'78'}}]));
   assert.throws(()=>normalizeStops([{...stop,expectedTime:'27:30'}]));
   assert.equal(stopTime('12:00 AM'),'00:00'); assert.equal(stopTime('12:00 PM'),'12:00');
+  assert.equal(stopTime('8:40'),'08:40');
 });

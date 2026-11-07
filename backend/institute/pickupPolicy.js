@@ -7,7 +7,8 @@ export function effectivePickupMode(institute, route) {
 }
 export function stopTime(value) {
   const text = String(value || '').trim();
-  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) return text;
+  const plain = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(text);
+  if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
   const match = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM)$/i.exec(text);
   if (!match) throw enrollmentError('Stop pickup time must use HH:mm or hh:mm AM/PM.');
   return `${String(Number(match[1]) % 12 + (match[3].toUpperCase() === 'PM' ? 12 : 0)).padStart(2, '0')}:${match[2]}`;
