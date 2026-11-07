@@ -27,6 +27,13 @@ test('individual signup models do not default to Institute approval or membershi
   assert.equal(new Driver().status, 'pending');
   assert.equal(new Parent().instituteId, null);
 });
+
+test('only parents supply map coordinates; student and driver location inputs are ignored', () => {
+  const student = normalizeEnrollment({ kind: 'child', name: 'Test Student', parentEmail: parent.email, pickupTime: '07:50', dropoffTime: '15:10', pickup: {lat:999,lng:999}, pickupAddress:'Do not use' });
+  assert.equal(student.pickup, undefined); assert.equal(student.pickupAddress, undefined);
+  const driver = normalizeEnrollment({ ...parent, kind:'driver', home:undefined, vehicleNumber:'TS09AB1234', vehicleType:'Van', licenseNumber:'TS0920200012345', documents:Object.fromEntries(documentFields.map(field=>[field,'507f1f77bcf86cd799439011'])) });
+  assert.equal(driver.home, undefined); assert.equal(driver.address,'Hyderabad');
+});
 test('Institute parents cannot enter the self-managed booking workflow', () => {
   let status, body, called = false;
   const response = { status(value) { status = value; return this; }, json(value) { body = value; } };

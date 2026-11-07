@@ -19,11 +19,8 @@ export function normalizeEnrollment(input) {
     row.grade = text(input.grade);
     row.assignedRoute = text(input.assignedRoute).slice(0, 120);
     row.assignedVehicle = text(input.assignedVehicle).slice(0, 30);
-    row.pickupAddress = text(input.pickupAddress);
-    row.pickup = coordinates(input.pickup, 'Pickup');
     row.pickupTime = text(input.pickupTime);
     row.dropoffTime = text(input.dropoffTime);
-    if (!row.pickupAddress || row.pickupAddress.length > 500) throw enrollmentError('A pickup address of up to 500 characters is required.');
     for (const time of [row.pickupTime, row.dropoffTime]) if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw enrollmentError('Pickup and school return times must use HH:mm (24-hour time).');
     return row;
   }
@@ -32,7 +29,7 @@ export function normalizeEnrollment(input) {
   if (!/^[6-9]\d{9}$/.test(row.phone)) throw enrollmentError('Enter a valid 10-digit Indian mobile number.');
   row.address = text(input.address);
   if (!row.address || row.address.length > 500) throw enrollmentError('Address is required and must be at most 500 characters.');
-  row.home = coordinates(input.home, 'Home location');
+  if (kind === 'parent') row.home = coordinates(input.home, 'Parent home location');
   if (kind === 'driver') {
     row.vehicleNumber = text(input.vehicleNumber).toUpperCase().replace(/\s/g, '');
     row.vehicleType = text(input.vehicleType);

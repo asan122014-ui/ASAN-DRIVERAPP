@@ -16,6 +16,21 @@ import { initializeEnrollmentDriver } from './enrollmentIndexes.js';
 
 const membership = institute => ({ accountSource: 'institute', instituteId: institute._id, instituteName: institute.name });
 const isMember = (account, institute) => account.accountSource === 'institute' && String(account.instituteId) === String(institute._id);
+export function parentPickup(parent) {
+  const point = parent.homeLocation?.coordinates;
+  return { address: parent.address, point: coordinates(point?.length === 2 ? { lat: point[1], lng: point[0] } : null, 'Parent home location') };
+}
+export async function syncInstituteParentPickup(parent, institute, session) {
+  const pickup = parentPickup(parent);
+  const children = await Child.find({ parentId: parent._id, instituteId: institute._id, accountSource: 'institute' }).session(session);
+  const changed = children.filter(child => child.pickupLocation !== pickup.address || child.location?.lat !== pickup.point.lat || child.location?.lng !== pickup.point.lng);
+  if (!changed.length) return 0;
+  const ids = changed.map(child => child._id);
+  if (await Trips.exists({ status: 'in_transit', $or: [{ child: { $in: ids } }, { students: { $in: ids } }] }).session(session)) throw enrollmentError('A student has a ride in progress. Update the parent home location after the ride ends.', 409);
+  await Child.updateMany({ _id: { $in: ids }, instituteId: institute._id, accountSource: 'institute' }, { $set: { pickupLocation: pickup.address, location: pickup.point } }, { session });
+  await Record.updateMany({ module: 'Students', instituteName: institute.name, 'coreLink.id': { $in: ids } }, { $set: { 'data.Pickup point': pickup.address, 'data.Pickup point coordinates': pickup.point } }, { session });
+  return changed.length;
+}
 export async function enrollmentInstitute(user, session) {
   if (user.role !== 'Institute Admin') throw enrollmentError('Only the Institute Admin can enroll app users.', 403);
   const institute = await Institute.findOne({ name: user.instituteName }).session(session || null);
@@ -48,6 +63,9 @@ async function enroll(row, institute, user, session) {
   if (row.kind === 'child') {
     const parent = await Parent.findOne({ email: row.parentEmail, instituteId: institute._id, accountSource: 'institute' }).session(session);
     if (!parent || parent.isActive === false) throw enrollmentError(`Parent ${row.parentEmail} must have an active account in this institute first.`);
+    const pickup = parentPickup(parent);
+    row.pickupAddress = pickup.address;
+    row.pickup = pickup.point;
     const driver = row.driverEmail ? await Driver.findOne({ email: row.driverEmail, instituteId: institute._id, accountSource: 'institute', status: 'approved' }).session(session) : null;
     if (row.driverEmail && !driver) throw enrollmentError(`Driver ${row.driverEmail} is not active in this institute.`);
     const normalizeName = value => String(value).normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -103,7 +121,9 @@ async function enroll(row, institute, user, session) {
   if (matches.length > 1 || matches.some(item => item.email !== row.email || !isMember(item, institute))) throw enrollmentError(`${row.email}: an account already exists outside this Institute or the phone belongs to another account. ASAN Admin must review the link.`, 409);
   const existing = matches[0];
   const account = existing || new Model();
-  Object.assign(account, membership(institute), { name: row.name, email: row.email, phone: row.phone, address: row.address, homeLocation: { type: 'Point', coordinates: [row.home.lng, row.home.lat] } });
+  Object.assign(account, membership(institute), { name: row.name, email: row.email, phone: row.phone, address: row.address });
+  if (row.kind === 'parent') account.homeLocation = { type: 'Point', coordinates: [row.home.lng, row.home.lat] };
+  else account.homeLocation = undefined;
   if (row.kind === 'driver') {
     const assets = await Asset.find({ _id: { $in: Object.values(row.documents) }, instituteId: institute._id }).session(session).lean();
     for (const field of documentFields) {
@@ -121,7 +141,8 @@ async function enroll(row, institute, user, session) {
     if (existing?.status !== 'approved' && existing) throw enrollmentError('This driver is suspended or under review. ASAN Admin must restore access.', 409);
   }
   await account.save({ session });
-  await operational(row.kind === 'driver' ? 'Drivers' : 'Parents', account, row.kind === 'driver' ? { 'Driver name': row.name, 'Phone number': row.phone, Email: row.email, 'ASAN ID': account.driverId, Status: 'Active', 'App approval status': account.status, 'Driving license': row.licenseNumber } : { 'Parent name': row.name, Phone: row.phone, Email: row.email, 'Pickup point': row.address, 'Pickup point coordinates': row.home }, institute, session);
+  if (row.kind === 'parent') await syncInstituteParentPickup(account, institute, session);
+  await operational(row.kind === 'driver' ? 'Drivers' : 'Parents', account, row.kind === 'driver' ? { 'Driver name': row.name, Address: row.address, 'Phone number': row.phone, Email: row.email, 'ASAN ID': account.driverId, Status: 'Active', 'App approval status': account.status, 'Driving license': row.licenseNumber } : { 'Parent name': row.name, Phone: row.phone, Email: row.email, 'Pickup point': row.address, 'Pickup point coordinates': row.home }, institute, session);
   if (!existing) await notice(account, row.kind, 'Welcome to Institute transport', `${institute.name} has registered your transport account. Sign in with your registered email and verification code.`, session);
   return { kind: row.kind, name: row.name, id: account._id, driverId: account.driverId };
 }

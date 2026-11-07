@@ -49,7 +49,7 @@ export async function linkRecord(module, data, instituteName) {
 }
 
 export async function refreshLinkedRecords(module, records, instituteName) {
-  const models = { Drivers: [Driver, 'Driver', 'name phone email driverId status'],
+  const models = { Drivers: [Driver, 'Driver', 'name phone email address driverId status'],
     Parents: [Parent, 'Parent', 'name phone email accountSource'],
     Students: [Child, 'Child', 'name grade school parentId status instituteReference monthlyTransportFee assignedRouteName assignedVehicleNumber accountSource'] };
   if (!models[module]) return records;
@@ -77,7 +77,7 @@ export async function refreshLinkedRecords(module, records, instituteName) {
     if (!match) continue;
     if (module === 'Students' && text(match.school) !== text(instituteName)) continue;
     row.linkStatus = 'Linked to ASAN app';
-    if (module === 'Drivers') Object.assign(row.data, { 'Driver name': match.name, 'Phone number': match.phone, Email: match.email, 'ASAN ID': match.driverId, 'App approval status': match.status });
+    if (module === 'Drivers') Object.assign(row.data, { 'Driver name': match.name, Address: match.address, 'Phone number': match.phone, Email: match.email, 'ASAN ID': match.driverId, 'App approval status': match.status });
     if (module === 'Parents') {
       Object.assign(row.data, { 'Parent name': match.name, Phone: match.phone, Email: match.email });
       if (match.accountSource === 'institute') {
