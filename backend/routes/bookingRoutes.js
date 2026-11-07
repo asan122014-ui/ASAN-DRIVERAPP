@@ -13,6 +13,7 @@ import verifyParent from "../middleware/verifyParent.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
 import { getTrafficRoute } from "../services/googleRouteService.js";
+import { isPaidService } from '../services/bookingServiceLifecycle.js';
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
@@ -118,6 +119,21 @@ router.post("/request", verifyParent, requireIndividualParent, async (req, res) 
 router.get("/mine", verifyParent, requireIndividualParent, async (req, res) => {
   try { const bookings = await Booking.find({ parentId: req.parent._id }).populate("childId", "name school grade").populate("driverRequestId", "status matchingStatus assignedDriverId rejectionReason offerExpiresAt").populate("paymentId", "amount currency status paymentId paidAt provider").sort({ createdAt: -1 }); return res.json({ success: true, data: bookings }); }
   catch (error) { return res.status(500).json({ success: false, message: "Unable to load bookings" }); }
+});
+
+router.put('/mine/:id/renewal-choice', verifyParent, requireIndividualParent, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id) || !['end', 'continue', 'undecided'].includes(req.body?.choice)) return res.status(400).json({ success: false, message: 'Choose a valid monthly ride option.' });
+    const booking = await Booking.findOne({ _id: req.params.id, parentId: req.parent._id });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (!['active', 'expired'].includes(booking.status) || !isPaidService(booking)) return res.status(409).json({ success: false, message: 'This option is available for a confirmed monthly service.' });
+    const updated = await Booking.findOneAndUpdate({ _id: booking._id, parentId: req.parent._id, status: { $in: ['active', 'expired'] } }, { $set: { renewalDecision: req.body.choice, renewalDecidedAt: new Date() } }, { new: true });
+    if (!updated) return res.status(409).json({ success: false, message: 'Booking changed. Refresh and try again.' });
+    const message = req.body.choice === 'end' ? 'Your ride will not renew. The paid service remains valid until its end date, and your payment history is kept.' : req.body.choice === 'continue' ? 'Your preference is saved. Review the next booking and payment when the current service ends. No automatic payment is enabled.' : 'Your choice was cleared. No automatic renewal or payment is enabled.';
+    if (booking.renewalDecision !== req.body.choice) await notifyBookingStatus({ parent: req.parent._id, recipientType: 'parent', title: 'Monthly ride preference saved', message, type: 'general', notificationKey: 'BOOKING_RENEWAL_CHOICE', meta: { bookingId: String(booking._id) } }, req.app.get('io'));
+    req.app.get('io')?.to(String(req.parent._id)).emit('booking_status_updated', { bookingId: String(booking._id), status: updated.status });
+    return res.json({ success: true, message, data: updated });
+  } catch { return res.status(500).json({ success: false, message: 'Unable to save your choice. Please retry.' }); }
 });
 
 router.put("/mine/:id/cancel", verifyParent, requireIndividualParent, async (req, res) => {

@@ -65,6 +65,9 @@ const bookingSchema = new mongoose.Schema({
   paidAt: { type: Date, default: null },
   serviceStartsAt: { type: Date, default: null },
   serviceEndsAt: { type: Date, default: null },
+  renewalDecision: { type: String, enum: ['undecided', 'continue', 'end'], default: 'undecided' },
+  renewalDecidedAt: { type: Date, default: null },
+  serviceReminderAt: { type: Date, default: null },
 }, { timestamps: true });
 
 bookingSchema.index({ parentId: 1, createdAt: -1 });
