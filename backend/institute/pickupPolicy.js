@@ -30,3 +30,11 @@ export function selectedStop(route, id) {
   if (!stop) throw enrollmentError('Select a pickup point saved on this route.');
   return { ...stop, coordinates: coordinates(stop.coordinates, 'Route pickup point'), expectedTime: stopTime(stop.expectedTime) };
 }
+
+// Validate all initial stops before the route is inserted, so creation is atomic.
+export function initialRouteStops(institute, data, input) {
+  const stops = effectivePickupMode(institute || {}, {data}) === 'route_stops' ? normalizeStops(input ?? []) : [];
+  data['Pickup stops'] = stops.map(stop => stop.name).join(' → ');
+  data['Drop stops'] = [...stops].reverse().map(stop => stop.name).join(' → ');
+  return stops;
+}

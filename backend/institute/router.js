@@ -1,7 +1,7 @@
 import FinanceInvoice from '../models/Invoice.js';
 import { buildHomePickupPlan, saveHomePickupPlan } from './homePickupPlan.js';
 import transportPolicyRoutes from './transportPolicyRoutes.js';
-import { effectivePickupMode } from './pickupPolicy.js';
+import { effectivePickupMode, initialRouteStops } from './pickupPolicy.js';
 import { saveRouteStops } from './routeStops.js';
 import { deleteInstituteRecord } from './deleteEnrollment.js';
 import financeRoutes from './financeRoutes.js';
@@ -734,6 +734,11 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
         data['Destination coordinates'] = {lat:institute.location.lat,lng:institute.location.lng};
         data['Starting point'] = ''; data['Starting point coordinates'] = null;
         data['Pickup stops'] = ''; data['Drop stops'] = '';
+      }
+      record.stops = initialRouteStops(institute, data, req.body?.stops);
+      if (institute && !data['Destination coordinates'] && data.Destination === 'Main Campus') {
+        data.Destination = institute.location.address || institute.name;
+        data['Destination coordinates'] = {lat:institute.location.lat,lng:institute.location.lng};
       }
       if (!String(data['Route name'] || '').trim()) return res.status(400).json({ message: 'Route name is required.' });
       if (await Record.exists({ module, instituteName: record.instituteName, 'data.Route name': data['Route name'] })) return res.status(409).json({ message: 'Use a unique route name within this Institute.' });
