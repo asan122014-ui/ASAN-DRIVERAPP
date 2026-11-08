@@ -1,3 +1,4 @@
+import { checkAccessSession } from '../services/authSessions.js';
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
@@ -251,6 +252,9 @@ const verifyDriver =
         req.driver.driverId
       */
 
+      if (!await checkAccessSession(decoded, 'driver', res)) return;
+
+      req.authSessionId = decoded.sid || null;
       req.driver =
         driver;
 

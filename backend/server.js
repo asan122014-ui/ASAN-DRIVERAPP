@@ -1,3 +1,4 @@
+import { validateSocketSession } from './services/authSessions.js';
 import { startInstituteFeeBilling } from './jobs/billInstituteFees.js';
 import instituteAdminRoutes from './institute/adminRoutes.js';
 import instituteAppRoutes from './institute/appRoutes.js';
@@ -964,6 +965,10 @@ io.use(
         );
       }
 
+      if (['parent','driver'].includes(user.role)) {
+        const identity = await validateSocketSession(token);
+        socket.data.sessionToken = token; socket.data.authSessionId = identity.sid || null;
+      }
       socket.user =
         user;
 
@@ -1068,6 +1073,14 @@ io.on(
   ) => {
     const user =
       socket.user;
+    if (socket.data.authSessionId) socket.join('auth-session:'+socket.data.authSessionId);
+    if (socket.data.sessionToken) {
+      const validate = () => validateSocketSession(socket.data.sessionToken);
+      socket.use(async (_packet,next) => {try {await validate();next();}catch {socket.disconnect(true);next(new Error('Session unavailable'));}});
+      const sessionTimer=setInterval(()=>{validate().catch(()=>socket.disconnect(true));},30000);
+      sessionTimer.unref();socket.on('disconnect',()=>clearInterval(sessionTimer));
+    }
+
 
     console.log(
       "Authenticated socket connected:",

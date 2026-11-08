@@ -1,3 +1,4 @@
+import { sessionHandlers } from '../services/authSessions.js';
 import express from "express";
 
 import {
@@ -178,5 +179,10 @@ router.post(
 /* =========================================================
    EXPORT
 ========================================================= */
+
+const sessions = sessionHandlers('parent');
+router.post('/session/refresh', sessions.refresh);
+router.post('/session/migrate', sessions.migrate);
+router.post('/session/logout', sessions.logout);
 
 export default router;

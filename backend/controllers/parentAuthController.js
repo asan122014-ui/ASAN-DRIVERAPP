@@ -1,3 +1,4 @@
+import { issueSession } from '../services/authSessions.js';
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { isParentPlayReviewAccount, verifyParentPlayReviewCode } from "../services/parentPlayReviewAccess.js";
@@ -325,16 +326,13 @@ const createParentToken = (
    AUTHENTICATED RESPONSE
 ========================================================= */
 
-const sendAuthenticatedParent = (
+const sendAuthenticatedParent = async (
   res,
   parent,
   statusCode = 200,
   message = "Authentication successful"
 ) => {
-  const token =
-    createParentToken(
-      parent
-    );
+  const session = await issueSession(parent, 'parent');
 
   return res
     .status(
@@ -345,7 +343,7 @@ const sendAuthenticatedParent = (
 
       message,
 
-      token,
+      ...session,
 
       data:
         getSafeParent(
@@ -992,7 +990,7 @@ export const verifyLoginOtp =
           });
       }
 
-      return sendAuthenticatedParent(
+      return await sendAuthenticatedParent(
         res,
         parent,
         200,
@@ -1465,7 +1463,7 @@ export const verifyRegisterOtp =
          JWT
       =================================================== */
 
-      return sendAuthenticatedParent(
+      return await sendAuthenticatedParent(
         res,
         parent,
         201,

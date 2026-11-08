@@ -1,3 +1,4 @@
+import { revokeRequestSession } from '../services/authSessions.js';
 import { requireIndividualParent } from '../institute/workflowPolicy.js';
 import express from "express";
 
@@ -844,6 +845,7 @@ router.put(
           });
       }
 
+      await revokeRequestSession(req, 'parent');
       const fcmToken =
         typeof req.body
           ?.fcmToken ===

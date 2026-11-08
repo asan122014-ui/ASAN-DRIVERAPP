@@ -1,3 +1,4 @@
+import { issueSession, revokeRequestSession } from '../services/authSessions.js';
 import { registrationErrors, normalizeCredential } from "../services/driverRegistrationValidation.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
@@ -1950,10 +1951,8 @@ export const verifyRegisterOtp =
          JWT
       =================================================== */
 
-      const token =
-        createDriverToken(
-          driver
-        );
+      const session = await issueSession(driver, 'driver');
+      const token = session.token;
 
       /* ===================================================
          RESPONSE
@@ -1968,6 +1967,7 @@ export const verifyRegisterOtp =
           message:
             "Driver registered successfully. Your application is pending approval.",
 
+          ...session,
           token,
 
           tokenType:
@@ -2396,10 +2396,8 @@ export const verifyLoginOtp =
          TOKEN
       =================================================== */
 
-      const token =
-        createDriverToken(
-          driver
-        );
+      const session = await issueSession(driver, 'driver');
+      const token = session.token;
 
       const statusInfo =
         getDriverStatusInfo(
@@ -2415,6 +2413,7 @@ export const verifyLoginOtp =
           message:
             statusInfo.message,
 
+          ...session,
           token,
 
           tokenType:
@@ -2869,6 +2868,7 @@ export const logoutDriver =
          OPTIONAL FCM TOKEN
       =================================================== */
 
+      await revokeRequestSession(req, 'driver');
       const fcmToken =
         typeof req.body
           ?.fcmToken ===

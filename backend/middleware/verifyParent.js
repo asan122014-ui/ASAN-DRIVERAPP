@@ -1,3 +1,4 @@
+import { checkAccessSession } from '../services/authSessions.js';
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Parent from "../models/Parent.js";
@@ -172,6 +173,9 @@ const verifyParent =
          REQUEST USER
       =================================================== */
 
+      if (!await checkAccessSession(decoded, 'parent', res)) return;
+
+      req.authSessionId = decoded.sid || null;
       req.parent =
         parent;
 
