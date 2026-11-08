@@ -1,4 +1,5 @@
 import FinanceInvoice from '../models/Invoice.js';
+import { buildHomePickupPlan, saveHomePickupPlan } from './homePickupPlan.js';
 import transportPolicyRoutes from './transportPolicyRoutes.js';
 import { effectivePickupMode } from './pickupPolicy.js';
 import { saveRouteStops } from './routeStops.js';
@@ -291,11 +292,11 @@ async function buildDashboard(req) {
       todayTrips,
       studentsPickedUp,
       studentsDropped,
-      pendingPayments: `₹${pendingAmount.toLocaleString('en-IN')}`,
-      todayRevenue: `₹${todayRevenue.toLocaleString('en-IN')}`,
-      totalFees: `₹${totalFees.toLocaleString('en-IN')}`,
-      collectedAmount: `₹${collectedAmount.toLocaleString('en-IN')}`,
-      overdueAmount: `₹${overdueAmount.toLocaleString('en-IN')}`
+      pendingPayments: `â‚¹${pendingAmount.toLocaleString('en-IN')}`,
+      todayRevenue: `â‚¹${todayRevenue.toLocaleString('en-IN')}`,
+      totalFees: `â‚¹${totalFees.toLocaleString('en-IN')}`,
+      collectedAmount: `â‚¹${collectedAmount.toLocaleString('en-IN')}`,
+      overdueAmount: `â‚¹${overdueAmount.toLocaleString('en-IN')}`
     },
     operationalStatus: {
       vehiclesRunning,
@@ -727,7 +728,13 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
     await ensureMongoConnection();
     record.coreLink = await linkRecord(module, data, record.instituteName);
     if (module === 'Routes') {
-      effectivePickupMode({}, { data });
+      const institute = await Institute.findOne({name:record.instituteName});
+      if (effectivePickupMode(institute || {}, {data}) === 'door_to_door' && institute) {
+        data.Destination = institute.location.address || institute.name;
+        data['Destination coordinates'] = {lat:institute.location.lat,lng:institute.location.lng};
+        data['Starting point'] = ''; data['Starting point coordinates'] = null;
+        data['Pickup stops'] = ''; data['Drop stops'] = '';
+      }
       if (!String(data['Route name'] || '').trim()) return res.status(400).json({ message: 'Route name is required.' });
       if (await Record.exists({ module, instituteName: record.instituteName, 'data.Route name': data['Route name'] })) return res.status(409).json({ message: 'Use a unique route name within this Institute.' });
     }
@@ -788,7 +795,7 @@ app.delete('/records/:module/:id', requireSession, requireModule, async (req, re
   }
 });
 
-// Student Assignment Endpoint: Student → Pickup Point → Route → Vehicle → Driver
+// Student Assignment Endpoint: Student â†’ Pickup Point â†’ Route â†’ Vehicle â†’ Driver
 app.post('/students/assign', requireSession, async (req, res) => {
   const { studentId, pickupPoint, pickupCoordinates, routeName, vehicleNumber, driverName } = req.body || {};
   if (!studentId || !routeName) return res.status(400).json({ message: 'Student and Route are required.' });
@@ -822,6 +829,18 @@ app.post('/students/assign', requireSession, async (req, res) => {
 });
 
 // Route Stop Management
+app.get('/routes/:id/home-pickups', requireSession, async (req,res) => {
+  try {
+    const institute=await Institute.findOne({name:req.user.instituteName});
+    const route=await Record.findOne({id:req.params.id,module:'Routes',instituteName:req.user.instituteName});
+    if(!institute || !route) return res.status(404).json({message:'Route not found.'});
+    res.json(await buildHomePickupPlan(institute,route));
+  } catch(error) { res.status(error.status || 503).json({message:error.status?error.message:'Unable to load home pickup points.'}); }
+});
+app.put('/routes/:id/home-pickups', requireSession, async(req,res)=> {
+  try { res.json(await saveHomePickupPlan(req.user,req.params.id,req.body || {})); }
+  catch(error) { res.status(error.status || 503).json({message:error.status?error.message:'Unable to save home pickup order.'}); }
+});
 app.post('/routes/:id/stops', requireSession, async (req, res) => {
   try {
     const route = await saveRouteStops(req.user, req.params.id, req.body?.stops, req.body?.pickupMode);
@@ -829,7 +848,7 @@ app.post('/routes/:id/stops', requireSession, async (req, res) => {
   } catch (error) { res.status(error.status || 503).json({ message: error.status ? error.message : 'Route stops could not be saved. Please retry.' }); }
 });
 
-// Online Payment Simulation: Parent → Payment Gateway → ASAN RIDES → Institute Account
+// Online Payment Simulation: Parent â†’ Payment Gateway â†’ ASAN RIDES â†’ Institute Account
 app.post('/payments/pay', requireSession, async (_req, res) => {
   return res.status(409).json({ message: 'Simulated payments are disabled. Use the existing ASAN payment checkout; no payment has been recorded.' });
 });
@@ -844,9 +863,9 @@ app.post('/payments/remind', requireSession, async (req, res) => {
       Category: 'Payment alerts',
       Audience: `${studentName} Parent (${parentPhone || 'Mobile'})`,
       Channel: (channels || ['WhatsApp', 'SMS']).join(', '),
-      Message: `Transport fee of ₹${amount || '2,500'} for September is pending. Please complete payment before the due date.`,
+      Message: `Transport fee of â‚¹${amount || '2,500'} for September is pending. Please complete payment before the due date.`,
       'Scheduled for': new Date().toISOString(),
-      Delivery: 'Recorded only — no message sent'
+      Delivery: 'Recorded only â€” no message sent'
     },
     created: new Date().toLocaleDateString('en-IN')
   };

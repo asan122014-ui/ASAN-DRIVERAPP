@@ -9,6 +9,10 @@ const recordSchema = new mongoose.Schema(
     created: { type: String, required: true },
     coreLink: { type: mongoose.Schema.Types.Mixed, default: null },
     assignmentRevision: { type: Number, default: 0 },
+    homePickupOrder: { type: [String], default: undefined },
+    homeDropOrder: { type: [String], default: undefined },
+    homePickupTimes: { type: mongoose.Schema.Types.Mixed, default: {} },
+    homeDropTimes: { type: mongoose.Schema.Types.Mixed, default: {} },
     stops: { type: [mongoose.Schema.Types.Mixed], default: undefined },
     deviated: Boolean, deviationAlert: String
   },
