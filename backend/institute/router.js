@@ -1,3 +1,4 @@
+import {routeDriver,routeFamilies,assignRouteFamilies} from './routeFamilies.js';
 import FinanceInvoice from '../models/Invoice.js';
 import { buildHomePickupPlan, saveHomePickupPlan } from './homePickupPlan.js';
 import transportPolicyRoutes from './transportPolicyRoutes.js';
@@ -735,6 +736,8 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
         data['Starting point'] = ''; data['Starting point coordinates'] = null;
         data['Pickup stops'] = ''; data['Drop stops'] = '';
       }
+      const assignedDriver = await routeDriver(record.instituteName,data);
+      if (assignedDriver) { await Record.init(); record.routeDriverId = assignedDriver.driverId; }
       record.stops = initialRouteStops(institute, data, req.body?.stops);
       if (institute && !data['Destination coordinates'] && data.Destination === 'Main Campus') {
         data.Destination = institute.location.address || institute.name;
@@ -747,7 +750,7 @@ app.post('/records/:module', requireSession, requireModule, async (req, res) => 
     res.status(201).json(saved.toObject());
   } catch (err) {
     console.error(`Error saving ${module} record:`, err.message);
-    res.status(err.status || 503).json({ message: err.status ? err.message : 'Record could not be saved. Please try again.' });
+    res.status(err.code===11000?409:err.status || 503).json({ message: err.code===11000?'This driver already has a route. Refresh and choose another driver.':err.status ? err.message : 'Record could not be saved. Please try again.' });
   }
 });
 
@@ -774,16 +777,19 @@ app.put('/records/:module/:id', requireSession, requireModule, async (req, res) 
 
   try {
     await ensureMongoConnection();
+    const assignedDriver = module === 'Routes' ? await routeDriver(recordInstitute(req),updatedData,id) : null;
+    const update = {$set:{data:updatedData,coreLink:await linkRecord(module,updatedData,recordInstitute(req))}};
+    if(module==='Routes'){await Record.init();if(assignedDriver)update.$set.routeDriverId=assignedDriver.driverId;else update.$unset={routeDriverId:1};}
     const record = await Record.findOneAndUpdate(
       { id, module, instituteName: recordInstitute(req) },
-      { $set: { data: updatedData, coreLink: await linkRecord(module, updatedData, recordInstitute(req)) } },
+      update,
       { new: true }
     ).lean();
     if (!record) return res.status(404).json({ message: 'Record not found.' });
     res.json(record);
   } catch (err) {
     console.error(`Error updating ${module} record:`, err.message);
-    res.status(503).json({ message: 'Record could not be updated. Please try again.' });
+    res.status(err.code===11000?409:err.status || 503).json({ message:err.code===11000?'This driver already has a route.':err.status?err.message:'Record could not be updated. Please try again.' });
   }
 });
 
@@ -834,6 +840,8 @@ app.post('/students/assign', requireSession, async (req, res) => {
 });
 
 // Route Stop Management
+app.get('/routes/:id/families',requireSession,async(req,res)=>{try{res.json(await routeFamilies(req.user,req.params.id));}catch(error){res.status(error.status||503).json({message:error.status?error.message:'Unable to load route families.'});}});
+app.put('/routes/:id/families',requireSession,async(req,res)=>{try{res.json(await assignRouteFamilies(req.user,req.params.id,req.body?.students));}catch(error){res.status(error.status||503).json({message:error.status?error.message:'Unable to save family assignments. No partial assignment was saved.'});}});
 app.get('/routes/:id/home-pickups', requireSession, async (req,res) => {
   try {
     const institute=await Institute.findOne({name:req.user.instituteName});

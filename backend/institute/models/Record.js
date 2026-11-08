@@ -8,6 +8,7 @@ const recordSchema = new mongoose.Schema(
     data: { type: mongoose.Schema.Types.Mixed, required: true },
     created: { type: String, required: true },
     coreLink: { type: mongoose.Schema.Types.Mixed, default: null },
+    routeDriverId: { type: String, default: undefined },
     assignmentRevision: { type: Number, default: 0 },
     homePickupOrder: { type: [String], default: undefined },
     homeDropOrder: { type: [String], default: undefined },
@@ -18,6 +19,8 @@ const recordSchema = new mongoose.Schema(
   },
   { timestamps: true, minimize: false }
 );
+
+recordSchema.index({instituteName:1,routeDriverId:1},{unique:true,partialFilterExpression:{module:'Routes',routeDriverId:{$type:'string'}}});
 
 const Record = mongoose.models.InstituteRecord || mongoose.model('InstituteRecord', recordSchema, 'institute_records');
 

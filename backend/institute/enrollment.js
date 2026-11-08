@@ -87,12 +87,12 @@ async function enroll(row, institute, user, session) {
     if (routeName && !route) throw enrollmentError('The assigned route was not found in this Institute. Select a current route.');
     const mode = row.assignedRoute ? effectivePickupMode(institute, route) : previous?.pickupMode || effectivePickupMode(institute, route);
     let stop = null;
-    if (route && driver && route.data?.['Assigned driver'] !== driver.name) throw enrollmentError('Use the driver assigned to the selected route.');
+    if (route && driver && (route.data?.['Assigned driver ID'] ? route.data['Assigned driver ID'] !== driver.driverId : route.data?.['Assigned driver'] !== driver.name)) throw enrollmentError('Use the driver assigned to the selected route.');
     if (mode === 'route_stops' && route) {
       stop = selectedStop(route, row.assignedRoute ? row.pickupStopId : previous?.pickupStopId);
       row.pickupAddress = `${stop.name} — ${stop.address}`; row.pickup = stop.coordinates; row.pickupTime = stop.expectedTime;
     } else if (mode === 'route_stops' || mode === 'unassigned') {
-      if (driver) throw enrollmentError('For route pickup service, enroll the student without a driver first, then assign a route and pickup point from Students.');
+      if (driver) throw enrollmentError('For route pickup service, enroll the student without a driver first, then assign a route and pickup point from Routes.');
       row.pickupAddress = 'Pickup point not assigned'; row.pickup = { lat: null, lng: null };
     }
     if (route) await Record.updateOne({ _id: route._id }, { $inc: { assignmentRevision: 1 } }, { session });
@@ -110,7 +110,7 @@ async function enroll(row, institute, user, session) {
     if (row.assignedVehicle) child.assignedVehicleNumber = row.assignedVehicle;
     if (row.monthlyFee !== undefined) {
       const route = await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': row.assignedRoute }).session(session);
-      if (!route || !driver || route.data?.['Assigned driver'] !== driver.name) throw enrollmentError('Assign a route and its enrolled driver before setting the student fee.');
+      if (!route || !driver || (route.data?.['Assigned driver ID'] ? route.data['Assigned driver ID'] !== driver.driverId : route.data?.['Assigned driver'] !== driver.name)) throw enrollmentError('Assign a route and its enrolled driver before setting the student fee.');
       child.monthlyTransportFee = fixedMonthlyAmount(row.monthlyFee);
     }
     await child.save({ session });
@@ -199,7 +199,7 @@ export async function assignEnrolledStudent(user, input) {
   const route = await Record.findOne({ module: 'Routes', instituteName: institute.name, 'data.Route name': input.routeName }).lean();
   if (!route) throw enrollmentError('Choose a route from this Institute.');
   const driverName = route.data?.['Assigned driver'];
-  const driverRecords = await Record.find({ module: 'Drivers', instituteName: institute.name, 'data.Driver name': driverName }).lean();
+  const driverRecords = await Record.find({ module: 'Drivers', instituteName: institute.name, ...(route.data?.['Assigned driver ID'] ? {'data.ASAN ID':route.data['Assigned driver ID']} : {'data.Driver name':driverName}) }).lean();
   if (driverRecords.length !== 1 || driverRecords[0].coreLink?.model !== 'Driver') throw enrollmentError('The route needs one enrolled Institute driver.');
   const driver = await Driver.findOne({ _id: driverRecords[0].coreLink.id, instituteId: institute._id, status: 'approved' }).select('email').lean();
   if (!driver) throw enrollmentError('The route driver is not active in this Institute.');
