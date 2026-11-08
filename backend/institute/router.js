@@ -1,3 +1,4 @@
+import { instituteTripRows } from './appTrips.js';
 import {routeDriver,routeFamilies,assignRouteFamilies} from './routeFamilies.js';
 import FinanceInvoice from '../models/Invoice.js';
 import { buildHomePickupPlan, saveHomePickupPlan } from './homePickupPlan.js';
@@ -166,6 +167,7 @@ function recordInstitute(req) {
 }
 
 async function getModuleRecords(module, instituteName) {
+  if (module === 'Trips') return instituteTripRows(instituteName);
   const records = await Record.find({ module, instituteName }).sort({ createdAt: -1 }).lean();
   if (module === 'Routes') {
     const students = await ChildAccount.find({ instituteName, accountSource: 'institute', pickupMode: 'route_stops' }).select('name assignedRouteId pickupStopId').lean();
@@ -190,7 +192,8 @@ async function buildDashboard(req) {
   const drivers = records.Drivers || [];
   const students = records.Students || [];
   const routes = records.Routes || [];
-  const trips = records.Trips || [];
+  const tripDay = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Kolkata'}).format(new Date());
+  const trips = (records.Trips || []).filter(trip => trip.data?.['Start time']?.startsWith(tripDay));
   const payments = records.Payments || [];
   const emergency = records.Emergency || [];
   const liveTracking = records['Live tracking'] || [];

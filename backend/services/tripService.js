@@ -994,6 +994,12 @@ export const startTripService =
 
               childName:
                 child.name,
+              ...(child.accountSource === 'institute' && String(child.instituteId) === String(driver.instituteId) ? {
+                instituteId: child.instituteId,
+                instituteRouteName: child.assignedRouteName || '',
+                instituteDriverName: driver.name || '',
+                instituteVehicleNumber: child.assignedVehicleNumber || driver.vehicleNumber || '',
+              } : {}),
 
               route: {
                 from:

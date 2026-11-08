@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 
 const tripSchema = new mongoose.Schema(
   {
+    instituteId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    instituteRouteName: { type: String, default: '' },
+    instituteDriverName: { type: String, default: '' },
+    instituteVehicleNumber: { type: String, default: '' },
     /* ================= DRIVER ================= */
     driverId: {
       type: String,
