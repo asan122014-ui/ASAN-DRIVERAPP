@@ -57,6 +57,7 @@ export async function deleteInstituteRecord(user, module, id, confirmed = false)
       const affectedParents = new Set(students.map(child => String(child.parentId)));
       const affectedDrivers = new Set(students.map(child => child.driverId).filter(Boolean));
       if (link.model === 'Driver') {
+        await Record.updateMany({ module: 'Routes', instituteName: institute.name, $or: [{ routeDriverId: account.driverId }, { 'data.Assigned driver ID': account.driverId }] }, { $unset: { routeDriverId: 1 }, $set: { 'data.Assigned driver': '', 'data.Assigned driver ID': '' }, $inc: { assignmentRevision: 1 } }, { session });
         await Child.updateMany({ ...scope, driverId: account.driverId }, { $set: { driverId: '', pickupMode: 'unassigned', pickupStopId: '', pickupStopName: '', assignedRouteId: '', assignedRouteName: '', assignedVehicleNumber: '', monthlyTransportFee: null } }, { session });
         await Record.updateMany({ module: 'Students', instituteName: institute.name, 'coreLink.id': { $in: childIds } }, { $set: { 'data.Driver assigned': '', 'data.ASAN ID': '', 'data.Assigned route': '', 'data.Assigned vehicle': '', 'data.Monthly fee': null, 'data.Transport fee': '', 'data.Payment status': 'Not billed' } }, { session });
         const sameNameDriver = await Driver.exists({ ...scope, name: account.name, _id: { $ne: account._id } }).session(session);

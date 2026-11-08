@@ -1,4 +1,6 @@
 import {buildHomePickupPlan} from './homePickupPlan.js';
+import {buildStopPickupPlan} from './appPickupPlan.js';
+import {effectivePickupMode} from './pickupPolicy.js';
 import Institute from './models/Institute.js';
 import Record from './models/Record.js';
 import express from 'express';
@@ -16,13 +18,16 @@ async function dashboard(req, res, kind) {
     const children = await Child.find(filter).select('name grade school driverId parentId location dropLocationCoords pickupLocation dropoffLocation pickupTime eveningPickup status instituteReference monthlyTransportFee assignedRouteName assignedRouteId pickupMode pickupStopId pickupStopName').sort({ name: 1 }).lean();
     const drivers = kind === 'parent' ? await Driver.find({ instituteId: account.instituteId, driverId: { $in: children.map(c => c.driverId).filter(Boolean) }, status: 'approved' }).select('name phone driverId vehicleNumber vehicleType lastLocation isOnline').lean() : [];
     const parents = kind === 'driver' ? await Parent.find({ instituteId: account.instituteId, _id: { $in: children.map(c => c.parentId) } }).select('_id name phone').lean() : [];
-    let homeRoutes = [];
+    let homeRoutes = [], stopRoutes = [];
     if (kind === 'driver') {
       const institute = await Institute.findById(account.instituteId);
       const routes = await Record.find({module:'Routes',instituteName:account.instituteName,'data.Route name':{$in:children.map(child=>child.assignedRouteName).filter(Boolean)}});
-      if(institute) homeRoutes = (await Promise.all(routes.map(route=>buildHomePickupPlan(institute,route,null,account.driverId)))).filter(plan=>plan.pickupStops.length);
+      if(institute) {
+        homeRoutes = (await Promise.all(routes.filter(route => effectivePickupMode(institute, route) === 'door_to_door').map(route=>buildHomePickupPlan(institute,route,null,account.driverId)))).filter(plan=>plan.pickupStops.length);
+        stopRoutes = routes.filter(route => effectivePickupMode(institute, route) === 'route_stops').map(route => buildStopPickupPlan(institute, route, children)).filter(plan => plan.pickupStops.length);
+      }
     }
-    res.json({ managed: true, instituteName: account.instituteName, driverId: account.driverId, children, drivers, parents, homeRoutes });
+    res.json({ managed: true, instituteName: account.instituteName, driverId: account.driverId, children, drivers, parents, homeRoutes, stopRoutes });
   } catch { res.status(500).json({ message: 'Unable to load Institute transport. Please retry.' }); }
 }
 router.get('/parent', verifyParent, (req, res) => dashboard(req, res, 'parent'));

@@ -22,7 +22,7 @@ export async function buildHomePickupPlan(institute, route, session = null, driv
   });
   const pickupStops = ordered(route.homePickupOrder, stops);
   const dropStops = ordered(route.homeDropOrder?.length ? route.homeDropOrder : pickupStops.map(stop => stop.id).reverse(), stops);
-  return { routeId: route.id, routeName: route.data?.['Route name'], campus: institute.location, pickupStops, dropStops };
+  return { routeId: route.id, routeName: route.data?.['Route name'], revision: route.assignmentRevision || 0, campus: institute.location, pickupStops, dropStops };
 }
 function validateOrder(input, stops) {
   if (!Array.isArray(input) || input.length !== stops.length || new Set(input).size !== stops.length || input.some(id => !stops.some(stop => stop.id === id))) throw enrollmentError('The route assignments changed. Reload and include each home exactly once.');

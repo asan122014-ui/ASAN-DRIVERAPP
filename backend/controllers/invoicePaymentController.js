@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import Invoice from "../models/Invoice.js";
+import Parent from '../models/Parent.js';
+import Driver from '../models/Driver.js';
+import { notice } from '../institute/enrollment.js';
 import { confirmedRazorpayPayment, verifyCheckoutSignature } from "../services/paymentRules.js";
 import { razorpayClient, razorpayConfig } from "../services/razorpayService.js";
 
@@ -34,18 +37,33 @@ const amountInPaise = (invoice) => {
   return paise;
 };
 
-async function markInvoicePaid(invoice, orderId, payment, signature = null) {
+export async function markInvoicePaid(invoice, orderId, payment, signature = null) {
+  const session = await mongoose.startSession();
+  let updated;
+  try {
+  await session.withTransaction(async () => {
   const paidAt = new Date();
   const result = await Invoice.updateOne(
     { _id: invoice._id, parentId: invoice.parentId, razorpayOrderId: orderId, status: { $nin: ["Cancelled"] }, paymentStatus: { $ne: "Success" } },
-    { $set: { status: "Paid", paymentStatus: "Success", paymentMethod: "Razorpay", paidAt, razorpayPaymentId: payment.id, razorpayOrderLockToken: null, razorpayOrderLockExpiresAt: null, ...(signature ? { razorpaySignature: signature } : {}) } }
+    { $set: { status: "Paid", paymentStatus: "Success", paymentMethod: "Razorpay", paidAt, razorpayPaymentId: payment.id, razorpayOrderLockToken: null, razorpayOrderLockExpiresAt: null, ...(signature ? { razorpaySignature: signature } : {}) } }, { session }
   );
   if (!result.matchedCount) {
-    const latest = await Invoice.findById(invoice._id);
-    if (latest?.status === "Paid" && latest.paymentStatus === "Success" && latest.razorpayPaymentId === payment.id) return latest;
+    const latest = await Invoice.findById(invoice._id).session(session);
+    if (latest?.status === "Paid" && latest.paymentStatus === "Success" && latest.razorpayPaymentId === payment.id) { updated = latest; return; }
     const error = new Error("Invoice status changed before payment could be recorded. Please contact support."); error.status = 409; throw error;
   }
-  return Invoice.findById(invoice._id);
+  updated = await Invoice.findById(invoice._id).session(session);
+  if (updated?.billingSource === 'institute_fixed') {
+    const scope = { instituteId: updated.instituteId, accountSource: 'institute' };
+    const parent = await Parent.findOne({ ...scope, _id: updated.parentId }).session(session);
+    const driver = await Driver.findOne({ ...scope, driverId: updated.driverId }).session(session);
+    const message = `Monthly transport payment of ₹${Number(updated.totalAmount).toFixed(2)} for ${updated.month} is confirmed. View the invoice in Payments.`;
+    if (parent) await notice(parent, 'parent', 'Transport payment confirmed', message, session, updated.childId);
+    if (driver) await notice(driver, 'driver', 'Institute transport payment confirmed', `Payment for ${updated.month} on ${updated.routeName || 'your institute route'} is confirmed.`, session, updated.childId);
+  }
+  });
+  return updated;
+  } finally { await session.endSession(); }
 }
 
 async function findCapturedPayment(orderId, amount) {
