@@ -1,5 +1,5 @@
 import express from 'express';
-import verifyAdmin, { requireSuperAdmin } from '../middleware/verifyAdmin.js';
+import verifyAdmin from '../middleware/verifyAdmin.js';
 import Institute from './models/Institute.js';
 import Driver from '../models/Driver.js';
 import Parent from '../models/Parent.js';
@@ -28,19 +28,6 @@ router.get('/', async (req, res) => {
     const counts = await Promise.all(Object.values(models).map(Model => Model.aggregate([{ $match: { accountSource: 'institute' } }, { $group: { _id: '$instituteId', count: { $sum: 1 } } }])));
     res.json({ data: institutes.map(item => ({ ...item, ...Object.fromEntries(Object.keys(models).map((kind, index) => [kind, counts[index].find(row => String(row._id) === String(item._id))?.count || 0])) })) });
   } catch { res.status(500).json({ message: 'Unable to load institutes.' }); }
-});
-router.patch('/:id/enrollment', requireSuperAdmin, async (req, res) => {
-  try {
-    if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(404).json({ message: 'Institute not found.' });
-    const prefix = String(req.body?.driverPrefix || '').trim().toUpperCase();
-    if (!/^[A-Z][A-Z0-9]{1,11}$/.test(prefix) || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ message: 'Enter a unique Institute prefix of 2–12 letters/numbers and choose enrollment status.' });
-    const institute = await Institute.findById(req.params.id);
-    if (!institute) return res.status(404).json({ message: 'Institute not found.' });
-    if (institute.driverSequence > 0 && institute.driverPrefix !== prefix) return res.status(409).json({ message: 'The prefix cannot change after driver IDs have been issued.' });
-    institute.driverPrefix = prefix; institute.managedEnrollmentEnabled = req.body.enabled;
-    await institute.save();
-    res.json({ success: true });
-  } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'That Institute prefix is already in use.' : 'Unable to update enrollment.' }); }
 });
 router.get('/:id/:kind', async (req, res) => {
   const Model = models[req.params.kind];

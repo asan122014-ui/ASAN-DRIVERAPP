@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
+import { schoolDriverPrefix } from '../automaticEnrollment.js';
 
 const instituteSchema = new mongoose.Schema(
   {
-    managedEnrollmentEnabled: { type: Boolean, default: false },
+    managedEnrollmentEnabled: { type: Boolean, default: true },
     driverPrefix: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
     driverSequence: { type: Number, default: 0 },
     pickupMode: { type: String, enum: ['door_to_door', 'route_stops'], default: 'door_to_door' },
@@ -44,6 +45,20 @@ const instituteSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+instituteSchema.pre('validate', async function () {
+  if (!this.isNew) return;
+  this.managedEnrollmentEnabled = true;
+  if (this.driverPrefix) return;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const prefix = schoolDriverPrefix(this.name);
+    if (!await this.constructor.exists({ driverPrefix: prefix })) {
+      this.driverPrefix = prefix;
+      return;
+    }
+  }
+  throw new Error('Unable to allocate a unique school driver prefix.');
+});
 
 const Institute = mongoose.models.InstituteOrganization || mongoose.model('InstituteOrganization', instituteSchema, 'institutes');
 

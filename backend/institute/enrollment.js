@@ -35,7 +35,7 @@ export async function syncInstituteParentPickup(parent, institute, session) {
 export async function enrollmentInstitute(user, session) {
   if (user.role !== 'Institute Admin') throw enrollmentError('Only the Institute Admin can enroll app users.', 403);
   const institute = await Institute.findOne({ name: user.instituteName }).session(session || null);
-  if (!institute?.managedEnrollmentEnabled || !institute?.driverPrefix) throw enrollmentError('ASAN Admin must enable Institute enrollment and assign an Institute driver prefix first.', 403);
+  if (!institute?.managedEnrollmentEnabled || !institute?.driverPrefix) throw enrollmentError('School enrollment setup is not ready. Please try again shortly.', 403);
   coordinates(institute.location?.toObject ? institute.location.toObject() : institute.location, 'Institute location');
   return institute;
 }

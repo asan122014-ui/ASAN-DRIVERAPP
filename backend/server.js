@@ -1,3 +1,5 @@
+import InstituteEnrollmentOrganization from './institute/models/Institute.js';
+import { activateRegisteredSchools } from './institute/automaticEnrollment.js';
 import { validateSocketSession } from './services/authSessions.js';
 import { startInstituteFeeBilling } from './jobs/billInstituteFees.js';
 import instituteAdminRoutes from './institute/adminRoutes.js';
@@ -1728,7 +1730,8 @@ const PORT =
 
 connectDB()
   .then(
-    () => {
+    async () => {
+      await activateRegisteredSchools(InstituteEnrollmentOrganization);
       console.log(
         "Database connected successfully"
       );
