@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import {assertInvoiceCanCancel} from './cancelUnpaidInvoice.js';
 import Institute from './models/Institute.js';
 import Record from './models/Record.js';
 import Driver from '../models/Driver.js';
@@ -51,7 +52,8 @@ export async function deleteInstituteRecord(user, module, id, confirmed = false)
       if (link.model === 'Driver') tripTargets.push({ driverId: account.driverId });
       if (await Trips.exists({ status: 'in_transit', $or: tripTargets }).session(session)) throw enrollmentError('A ride is in progress. Finish the ride before deleting this account.', 409);
       const bills = { instituteId: institute._id, billingSource: 'institute_fixed', childId: { $in: childIds }, status: { $nin: ['Paid', 'Cancelled'] }, paymentStatus: { $ne: 'Success' } };
-      if (await Invoice.exists({ ...bills, $or: [{ razorpayOrderId: { $nin: [null, ''], $exists: true } }, { razorpayOrderLockExpiresAt: { $gt: new Date() } }, { status: 'Processing' }] }).session(session)) throw enrollmentError('A payment has already been started. Resolve its payment status before deleting this account.', 409);
+      const pendingCheckouts = await Invoice.find({ ...bills, $or: [{ razorpayOrderId: { $nin: [null, ''], $exists: true } }, { razorpayOrderLockExpiresAt: { $gt: new Date() } }, { status: 'Processing' }] }).select('status razorpayOrderId razorpayOrderLockExpiresAt').session(session);
+      for (const invoice of pendingCheckouts) await assertInvoiceCanCancel(invoice);
       await Invoice.updateMany(bills, { $set: { status: 'Cancelled' } }, { session });
       await Trips.updateMany({ status: 'waiting', $or: tripTargets }, { $set: { status: 'cancelled' } }, { session });
       const affectedParents = new Set(students.map(child => String(child.parentId)));
