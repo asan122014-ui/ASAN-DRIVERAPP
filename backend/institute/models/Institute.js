@@ -50,8 +50,8 @@ instituteSchema.pre('validate', async function () {
   if (!this.isNew) return;
   this.managedEnrollmentEnabled = true;
   if (this.driverPrefix) return;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const prefix = schoolDriverPrefix(this.name);
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const prefix = schoolDriverPrefix(this.name, attempt);
     if (!await this.constructor.exists({ driverPrefix: prefix })) {
       this.driverPrefix = prefix;
       return;

@@ -10,16 +10,16 @@ test('registration automatically activates enrollment and allocates a prefix', a
     const school = new Institute({ name: 'New Public School', code: 'ASAN-123456', adminEmail: 'school@example.com' });
     await school.validate();
     assert.equal(school.managedEnrollmentEnabled, true);
-    assert.match(school.driverPrefix, /^NPS[A-F0-9]{8}$/);
+    assert.equal(school.driverPrefix, 'NPS');
   } finally { Institute.exists = original; }
 });
 
-test('school prefixes are valid, name-based and distinct for equal names', () => {
-  assert.equal(schoolDriverPrefix('KG Reddy College of Engineering', '1234abcd'), 'KRCO1234ABCD');
-  for (const name of ['123 School', 'विद्यालय', '', 'A']) {
-    assert.match(schoolDriverPrefix(name), /^[A-Z][A-Z0-9]{1,11}$/);
-  }
-  assert.notEqual(schoolDriverPrefix('Same school', '1234abcd'), schoolDriverPrefix('Same school', '1234abce'));
+test('school prefixes use initials or the whole single word without numbers', () => {
+  assert.equal(schoolDriverPrefix('KG Reddy College of Engineering and Technology'), 'KRCOEAT');
+  assert.equal(schoolDriverPrefix('jbiet'), 'JBIET');
+  assert.equal(schoolDriverPrefix('CIVIL-MECH & EEE BLOCK'), 'CMEB');
+  assert.equal(schoolDriverPrefix('School 123'), 'SCHOOL');
+  assert.equal(schoolDriverPrefix('New School', 1), 'NSN');
 });
 
 test('existing prefixes are preserved; missing prefixes get automatic setup without resetting IDs', async () => {
@@ -33,7 +33,7 @@ test('existing prefixes are preserved; missing prefixes get automatic setup with
   };
   await activateRegisteredSchools(Model);
   assert.deepEqual(writes[0], { filter: { _id: 'old', driverPrefix: 'KGRCET' }, update: { $set: { managedEnrollmentEnabled: true } } });
-  assert.match(writes[1].update.$set.driverPrefix, /^NS[A-F0-9]{8}$/);
+  assert.equal(writes[1].update.$set.driverPrefix, 'NS');
   assert.deepEqual(writes[1].filter.driverPrefix, { $in: [null, ''] });
   assert.ok(writes.every(write => !('driverSequence' in write.update.$set)));
 });
@@ -50,3 +50,18 @@ test('a prefix collision is retried; database failures are surfaced', async () =
   await assert.rejects(activateRegisteredSchools(Model), /Database unavailable/);
 });
 
+
+test('unused generated prefixes become name-only while issued IDs remain stable', async () => {
+  const writes = [];
+  const Model = {
+    find: () => ({ select: () => ({ lean: async () => [
+      { _id: 'unused', name: 'jbiet', driverPrefix: 'J83D05A58', driverSequence: 0 },
+      { _id: 'issued', name: 'Existing School', driverPrefix: 'ES1234ABCD', driverSequence: 2 },
+    ] }) }),
+    updateOne: async (filter, update) => writes.push({ filter, update }),
+  };
+  await activateRegisteredSchools(Model);
+  assert.equal(writes[0].update.$set.driverPrefix, 'JBIET');
+  assert.deepEqual(writes[0].filter.driverSequence, { $in: [0, null] });
+  assert.equal(writes[1].update.$set.driverPrefix, undefined);
+});
