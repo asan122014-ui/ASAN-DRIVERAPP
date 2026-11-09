@@ -446,7 +446,7 @@ router.get(
   ) => {
     try {
       const parents =
-        await Parent.find();
+        await Parent.find({ accountSource: { $ne: "institute" } });
 
       const result =
         await Promise.all(

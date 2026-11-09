@@ -48,7 +48,7 @@ router.get('/:id/:kind', async (req, res) => {
   const page = Math.max(1, Math.min(10000, parseInt(req.query.page, 10) || 1));
   try {
     const filter = { instituteId: req.params.id, accountSource: 'institute' };
-    const [data, total] = await Promise.all([Model.find(filter).select('name email phone driverId status instituteReference school grade parentId createdAt').sort({ name: 1, _id: 1 }).skip((page - 1) * 25).limit(25).lean(), Model.countDocuments(filter)]);
+    const [data, total] = await Promise.all([Model.find(filter).select('name email phone driverId status instituteReference school grade parentId assignedRouteName monthlyTransportFee vehicleNumber vehicleType createdAt').sort({ name: 1, _id: 1 }).skip((page - 1) * 25).limit(25).lean(), Model.countDocuments(filter)]);
     res.json({ data, total, page, pages: Math.ceil(total / 25) });
   } catch { res.status(500).json({ message: 'Unable to load Institute members.' }); }
 });

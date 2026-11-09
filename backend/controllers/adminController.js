@@ -187,14 +187,16 @@ export const getDashboardStats =
         totalTrips,
       ] =
         await Promise.all([
-          Driver.countDocuments(),
+          Driver.countDocuments({ accountSource: { $ne: "institute" } }),
 
           Driver.countDocuments({
+            accountSource: { $ne: "institute" },
             status:
               "pending",
           }),
 
           Driver.countDocuments({
+            accountSource: { $ne: "institute" },
             status:
               "approved",
           }),
@@ -207,6 +209,7 @@ export const getDashboardStats =
           */
 
           RejectedDriver.countDocuments({
+            accountSource: { $ne: "institute" },
             emailSent:
               true,
           }),
@@ -308,6 +311,7 @@ export const getDrivers =
         "rejected"
       ) {
         const query = {
+          accountSource: { $ne: "institute" },
           emailSent:
             true,
         };
@@ -404,7 +408,7 @@ export const getDrivers =
          NORMAL DRIVER LIST
       ===================================================== */
 
-      const query = {};
+      const query = { accountSource: { $ne: "institute" } };
 
       if (
         normalizedStatus &&
@@ -1707,19 +1711,22 @@ export const getAnalytics =
         rejected,
       ] =
         await Promise.all([
-          Driver.countDocuments(),
+          Driver.countDocuments({ accountSource: { $ne: "institute" } }),
 
           Driver.countDocuments({
+            accountSource: { $ne: "institute" },
             status:
               "approved",
           }),
 
           Driver.countDocuments({
+            accountSource: { $ne: "institute" },
             status:
               "pending",
           }),
 
           RejectedDriver.countDocuments({
+            accountSource: { $ne: "institute" },
             emailSent:
               true,
           }),
