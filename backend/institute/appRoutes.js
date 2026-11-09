@@ -1,4 +1,5 @@
 import {buildHomePickupPlan} from './homePickupPlan.js';
+import {instituteParentTrackingAccess} from './parentTrackingAccess.js';
 import {buildStopPickupPlan} from './appPickupPlan.js';
 import {effectivePickupMode} from './pickupPolicy.js';
 import Institute from './models/Institute.js';
@@ -27,7 +28,8 @@ async function dashboard(req, res, kind) {
         stopRoutes = routes.filter(route => effectivePickupMode(institute, route) === 'route_stops').map(route => buildStopPickupPlan(institute, route, children)).filter(plan => plan.pickupStops.length);
       }
     }
-    res.json({ managed: true, instituteName: account.instituteName, driverId: account.driverId, children, drivers, parents, homeRoutes, stopRoutes });
+    const trackingAccess = kind === 'parent' ? await instituteParentTrackingAccess(account,{children}) : new Map();
+    res.json({ managed: true, instituteName: account.instituteName, driverId: account.driverId, children: children.map(child => kind === 'parent' ? {...child, trackingAccess:trackingAccess.get(String(child._id))} : child), drivers, parents, homeRoutes, stopRoutes });
   } catch { res.status(500).json({ message: 'Unable to load Institute transport. Please retry.' }); }
 }
 router.get('/parent', verifyParent, (req, res) => dashboard(req, res, 'parent'));

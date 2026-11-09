@@ -1,4 +1,5 @@
 import express from "express";
+import { instituteParentTrackingAccess } from '../institute/parentTrackingAccess.js';
 import mongoose from "mongoose";
 
 import Driver from "../models/Driver.js";
@@ -1171,6 +1172,10 @@ router.get(
     res
   ) => {
     try {
+      if (req.parent?.accountSource === 'institute') {
+        const access = await instituteParentTrackingAccess(req.parent, {driverId:req.linkedDriverId, childId:req.query?.childId});
+        if (![...access.values()].some(item => item.canTrack)) return res.status(403).json({success:false, message:'Live tracking is available only after monthly payment is confirmed and your child’s trip has started.'});
+      }
       const driver =
         await Driver.findOne({
           driverId:

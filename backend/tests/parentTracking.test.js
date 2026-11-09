@@ -44,3 +44,20 @@ test("parent tracking returns the active trip, ordered destinations and pickup s
   assert.equal(payload.data.routeStops[1].stopOrder, 2);
   assert.equal(payload.data.routeStops[0].dropLocationCoords.lat, 17.3);
 });
+
+test('institute direct tracking requests are blocked unless an eligible paid trip exists', async () => {
+  for (const canTrack of [false, true]) {
+    let handler, status, payload, driverReads=0;
+    vm.runInNewContext(source.slice(start,end), {
+      router:{get(_path,...handlers){handler=handlers.at(-1);}},verifyParent(){},requireLinkedDriver(){},console,
+      instituteParentTrackingAccess: async (parent,options)=>{assert.equal(parent._id,'parent-a');assert.equal(options.childId,'child-a');assert.equal(options.driverId,'ASAN-TEST');return new Map([['child-a',{canTrack}]]);},
+      hasValidLiveLocation:()=>false,
+      Driver:{findOne(){driverReads++;return query({driverId:'ASAN-TEST'});}},
+      Trips:{find:()=>query([])},Child:{find:()=>query([])},
+    });
+    await handler({parent:{_id:'parent-a',accountSource:'institute'},linkedDriverId:'ASAN-TEST',query:{childId:'child-a'}},{status(code){status=code;return this;},json(body){payload=body;}});
+    assert.equal(status,canTrack?200:403);
+    assert.equal(driverReads,canTrack?1:0);
+    if(!canTrack)assert.equal(payload.data,undefined);
+  }
+});

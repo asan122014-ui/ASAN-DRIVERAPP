@@ -16,6 +16,7 @@ import "dotenv/config";
 ========================================================= */
 
 import express from "express";
+import { instituteParentTrackingAccess } from './institute/parentTrackingAccess.js';
 import http from "http";
 import cors from "cors";
 import jwt from "jsonwebtoken";
@@ -1013,7 +1014,7 @@ const verifyParentDriverLink =
       await Parent.findById(
         socket.user.parentId
       ).select(
-        "driverId isActive"
+        "driverId isActive accountSource instituteId"
       );
 
     if (
@@ -1058,6 +1059,10 @@ const verifyParentDriverLink =
       return null;
     }
 
+    if (parent.accountSource === 'institute') {
+      const access = await instituteParentTrackingAccess(parent,{driverId:linkedDriverId});
+      if (![...access.values()].some(item=>item.canTrack)) return null;
+    }
     return linkedDriverId;
   };
 
