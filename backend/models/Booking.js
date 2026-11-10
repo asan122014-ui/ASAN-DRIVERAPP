@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const bookingSchema = new mongoose.Schema({
   parentId: { type: mongoose.Schema.Types.ObjectId, ref: "Parent", required: true, index: true },
+  renewedFromBookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', default: null },
   childId: { type: mongoose.Schema.Types.ObjectId, ref: "Child", default: null },
   childIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Child" }], default: [] },
   child: {
@@ -71,5 +72,6 @@ const bookingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 bookingSchema.index({ parentId: 1, createdAt: -1 });
+bookingSchema.index({ renewedFromBookingId: 1 }, { unique: true, partialFilterExpression: { renewedFromBookingId: { $type: 'objectId' } } });
 
 export default mongoose.models.Booking || mongoose.model("Booking", bookingSchema);

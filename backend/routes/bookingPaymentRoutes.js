@@ -10,7 +10,7 @@ import { monthlyAmount } from "../services/paymentRules.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
 
-import { canUseParentCoupon, couponExpiresAt } from "../services/parentPaymentCoupon.js";
+import { parentCouponAccess } from "../services/parentPaymentCoupon.js";
 import { applyBookingCoupon } from "../services/applyBookingCoupon.js";
 const router = express.Router();
 const fail = (res, error) => {
@@ -26,7 +26,7 @@ const fail = (res, error) => {
 
 router.param("id", (req, res, next, id) => mongoose.Types.ObjectId.isValid(id) ? next() : res.status(400).json({ success: false, message: "Invalid booking ID" }));
 router.use(verifyParent);
-router.get("/coupon-access", (req, res) => res.json({ success: true, data: { allowed: canUseParentCoupon(req.parent), expiresAt: couponExpiresAt } }));
+router.get("/coupon-access", (req, res) => res.json({ success: true, data: parentCouponAccess(req.parent) }));
 router.post("/:id/coupon", async (req, res) => {
   try {
     const booking = await applyBookingCoupon(req.parent, req.params.id, req.body?.code, req.app.get("io"));

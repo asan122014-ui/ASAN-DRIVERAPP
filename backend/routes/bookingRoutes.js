@@ -14,9 +14,21 @@ import { reconcilePayment } from "../services/bookingPaymentService.js";
 import { quoteForDistance } from "../services/bookingPricing.js";
 import { getTrafficRoute } from "../services/googleRouteService.js";
 import { isPaidService } from '../services/bookingServiceLifecycle.js';
+import { renewBooking } from '../services/renewBooking.js';
 
 const router = express.Router();
 const activeStatuses = ["quoted", "awaiting_driver", "driver_searching", "driver_accepted", "awaiting_payment", "active"];
+router.post('/mine/:id/renew', verifyParent, requireIndividualParent, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid booking ID.' });
+  try {
+    const booking = await renewBooking(req.parent, req.params.id);
+    req.app.get('io')?.to(String(req.parent._id)).emit('booking_status_updated', { bookingId: String(booking._id), status: booking.status });
+    return res.json({ success: true, data: { booking }, message: 'Your previous ride details are ready for payment.' });
+  } catch (error) {
+    if (!error.status) console.error('BOOKING RENEWAL ERROR', error.message);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to continue this ride. Please retry.' });
+  }
+});
 const coordinates = (value) => ({ lat: Number(value?.lat), lng: Number(value?.lng) });
 const validCoordinates = (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng);
 const normalizeChildren = (children, child) => {

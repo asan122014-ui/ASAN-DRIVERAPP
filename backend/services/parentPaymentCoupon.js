@@ -1,5 +1,8 @@
 export const couponExpiresAt = new Date("2026-11-15T18:30:00.000Z");
+export const hasLifetimeParentCoupon = parent => String(parent?.email || '').trim().toLowerCase() === 'bhattagiri.neeharika@gmail.com';
+export const parentCouponAccess = (parent, now = new Date()) => ({ allowed: canUseParentCoupon(parent, now), lifetime: hasLifetimeParentCoupon(parent), expiresAt: hasLifetimeParentCoupon(parent) ? null : couponExpiresAt });
 export function canUseParentCoupon(parent, now = new Date()) {
+  if (hasLifetimeParentCoupon(parent)) return true;
   const emails = new Set(String(process.env.PARENT_COUPON_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
   return now.getTime() < couponExpiresAt.getTime() && emails.has(String(parent?.email || "").trim().toLowerCase());
 }

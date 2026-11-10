@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canUseParentCoupon, validParentCoupon, assertCouponBooking, couponExpiresAt } from "../services/parentPaymentCoupon.js";
+import { canUseParentCoupon, validParentCoupon, assertCouponBooking, couponExpiresAt, parentCouponAccess } from "../services/parentPaymentCoupon.js";
 process.env.PARENT_COUPON_EMAILS = "first@example.com, SECOND@example.com";
+test('Neeharika has lifetime access independent of the temporary allowlist', () => {
+  const parent = { email: ' BHATTAGIRI.NEEHARIKA@gmail.com ' };
+  assert.equal(validParentCoupon(parent, 'Asanrides0', new Date('2050-01-01')), true);
+  assert.deepEqual(parentCouponAccess(parent, new Date('2050-01-01')), { allowed: true, lifetime: true, expiresAt: null });
+  assert.equal(validParentCoupon({ email: 'other@example.com' }, 'Asanrides0', new Date('2050-01-01')), false);
+});
 test("coupon is restricted to the configured parent emails and exact code", () => {
   const now = new Date("2026-10-14T00:00:00Z");
   assert.equal(validParentCoupon({ email: " FIRST@example.com " }, "Asanrides0", now), true);
