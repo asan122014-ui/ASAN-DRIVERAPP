@@ -33,6 +33,7 @@ const bookingSchema = new mongoose.Schema({
     schoolPickupTime: { type: String, default: "", trim: true },
   },
   quote: {
+    pricingVersion: { type: String },
     currency: { type: String, default: "INR" },
     vehicleType: { type: String, enum: ["AUTO", "VAN"], default: "AUTO" },
     workingDays: { type: Number, required: true, min: 1 },

@@ -45,7 +45,7 @@ router.get("/:id", async (req, res) => {
     const firstLocationChange = locationChanges[0];
     const monthlyRideDistanceKm = Number(payment?.routeSnapshot?.distanceKm ?? firstLocationChange?.oldDistanceKm ?? booking.route?.distanceKm ?? 0);
     const monthlyRideQuote = payment?.quoteSnapshot || (firstLocationChange && Number(booking.quote?.totalMonthly) !== Number(payment?.amount)
-      ? quoteForDistance(monthlyRideDistanceKm, booking.quote?.vehicleType || "AUTO", booking.quote?.childCount || 1, booking.quote?.workingDays || 26)
+      ? quoteForDistance(monthlyRideDistanceKm, booking.quote?.vehicleType || "AUTO", booking.quote?.childCount || 1, booking.quote?.workingDays || 26, booking.quote?.pricingVersion || 'legacy')
       : booking.quote);
     return res.json({ success: true, data: { booking, payment, monthlyRide: { distanceKm: monthlyRideDistanceKm, quote: monthlyRideQuote, amountPaid: payment?.amount || 0, paidAt: payment?.paidAt || null, paymentId: payment?.paymentId || "" }, locationPayments } });
   } catch (error) { return fail(res, error); }

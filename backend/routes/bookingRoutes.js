@@ -11,7 +11,7 @@ import DriverRequest from "../models/DriverRequest.js";
 import BookingPayment from "../models/BookingPayment.js";
 import verifyParent from "../middleware/verifyParent.js";
 import { reconcilePayment } from "../services/bookingPaymentService.js";
-import { quoteForDistance } from "../services/bookingPricing.js";
+import { quoteForDistance, CURRENT_PRICING_VERSION } from "../services/bookingPricing.js";
 import { getTrafficRoute } from "../services/googleRouteService.js";
 import { isPaidService } from '../services/bookingServiceLifecycle.js';
 import { renewBooking } from '../services/renewBooking.js';
@@ -85,6 +85,9 @@ router.post("/request", verifyParent, requireIndividualParent, async (req, res) 
     const normalizedChildren = normalizeChildren(childInput, child);
     if (!["existing", "new"].includes(driverChoice) || !validChildren(normalizedChildren) || !route?.pickup || !route?.dropoff || !route?.pickupTime || !route?.schoolPickupTime || !quote?.totalMonthly || Number(quote.childCount || 1) !== normalizedChildren.length) return res.status(400).json({ success: false, message: "Complete the child, route, price and driver choice first" });
     if (new Date(quote.expiresAt).getTime() <= Date.now()) return res.status(400).json({ success: false, message: "This quote has expired. Please calculate a new quote" });
+    const verifiedQuote = quoteForDistance(route.distanceKm, quote.vehicleType, normalizedChildren.length, quote.workingDays || 26);
+    if (quote.pricingVersion !== CURRENT_PRICING_VERSION || Math.round(Number(quote.totalMonthly) * 100) !== Math.round(verifiedQuote.totalMonthly * 100)) return res.status(409).json({ success: false, message: 'Pricing has changed. Please calculate your monthly price again.' });
+    Object.assign(quote, verifiedQuote);
     let normalizedDriverId = "";
     if (driverChoice === "existing") {
       normalizedDriverId = String(requestedDriverId || "").trim().toUpperCase();

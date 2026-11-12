@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { verifyCheckoutSignature, monthEnd, confirmedRazorpayPayment, monthlyAmount } from "../services/paymentRules.js";
+import { quoteForDistance } from '../services/bookingPricing.js';
 
 test("checkout signature must match the stored order and payment ID", () => {
   const sig = crypto.createHmac("sha256", "test-secret").update("order_123|pay_456").digest("hex");
@@ -27,5 +28,8 @@ test("calendar month ends clamp correctly", () => {
 test("checkout recomputes price rather than trusting supplied total", () => {
   const booking = { route: { distanceKm: 5 }, quote: { vehicleType: "AUTO", childCount: 1, totalMonthly: 1 } };
   assert.equal(monthlyAmount(booking), 3712.8);
+  const updated = { ...booking, quote: { ...quoteForDistance(5, 'AUTO'), totalMonthly: 1 } };
+  assert.equal(monthlyAmount(updated), 4399);
+  assert.equal(monthlyAmount({ ...updated, quote: quoteForDistance(5, 'VAN', 2, 20) }), quoteForDistance(5, 'VAN', 2, 20).totalMonthly);
   assert.throws(() => monthlyAmount({ ...booking, route: { distanceKm: -1 } }));
 });

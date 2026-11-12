@@ -20,7 +20,7 @@ test("a longer route charges only the added distance for the remaining service p
   assert.equal(result.platformFeeDue, 14.56);
   assert.equal(result.amountDue, 742.56);
   assert.equal(result.driverAmountDue, 728);
-  assert.equal(result.next.distanceCharge - result.previous.distanceCharge, 1456); // Full monthly increase is reserved for renewal pricing.
+  assert.equal(result.next.platformFeeRate, 0.05); // Renewals use current rates; the paid period keeps its original terms.
 });
 
 test("a shorter route has no immediate price due and retains a lower renewal price", () => {

@@ -17,7 +17,7 @@ export function remainingWorkingDays({ serviceStartsAt, serviceEndsAt, workingDa
 export function priceLocationChange({ oldDistanceKm, newDistanceKm, vehicleType, childCount, workingDays, currentQuote, serviceStartsAt, serviceEndsAt, now = new Date() }) {
   const previous = currentQuote?.totalMonthly
     ? currentQuote
-    : quoteForDistance(oldDistanceKm, vehicleType, childCount, workingDays);
+    : quoteForDistance(oldDistanceKm, vehicleType, childCount, workingDays, 'legacy');
   const next = quoteForDistance(newDistanceKm, vehicleType, childCount, workingDays);
   const addedDistanceKm = Math.max(0, Number(newDistanceKm) - Number(oldDistanceKm));
   const remainingDays = remainingWorkingDays({ serviceStartsAt, serviceEndsAt, workingDays, now });
