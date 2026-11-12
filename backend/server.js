@@ -1,4 +1,5 @@
 import InstituteEnrollmentOrganization from './institute/models/Institute.js';
+import { privateMediaResponses } from './services/r2Storage.js';
 import { startWebsiteEnquiryEmailWorker } from './jobs/deliverWebsiteEnquiryEmails.js';
 import { activateRegisteredSchools } from './institute/automaticEnrollment.js';
 import { validateSocketSession } from './services/authSessions.js';
@@ -96,6 +97,7 @@ const ADMIN_ROLES = new Set([
 ========================================================= */
 
 const app = express();
+app.use(privateMediaResponses);
 
 /* =========================================================
    TRUST PROXY

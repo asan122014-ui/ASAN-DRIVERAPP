@@ -1,3 +1,4 @@
+import { destroyStoredImage } from '../config/cloudinary.js';
 import { issueSession, revokeRequestSession } from '../services/authSessions.js';
 import { registrationErrors, normalizeCredential } from "../services/driverRegistrationValidation.js";
 import crypto from "crypto";
@@ -9,7 +10,6 @@ import RejectedDriver from "../models/RejectedDriver.js";
 import Otp from "../models/Otp.js";
 
 import {
-  cloudinary,
 } from "../config/cloudinary.js";
 
 import {
@@ -789,9 +789,7 @@ const cleanupUploadedFiles =
             (
               file
             ) =>
-              cloudinary
-                .uploader
-                .destroy(
+              destroyStoredImage(
                   file.filename
                 )
           )

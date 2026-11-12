@@ -3,6 +3,8 @@ import multer from 'multer';
 import sharp from 'sharp';
 import crypto from 'node:crypto';
 import { v2 as cloudinary } from 'cloudinary';
+import { r2Enabled, uploadR2Image, isR2Reference, r2ReadUrl } from '../services/r2Storage.js';
+import { destroyStoredImage } from '../config/cloudinary.js';
 import rateLimit from 'express-rate-limit';
 import Asset from './models/EnrollmentAsset.js';
 import { enrollBatch, enrollmentInstitute } from './enrollment.js';
@@ -36,14 +38,14 @@ router.post('/documents', async (req, res, next) => {
     if (!documentFields.includes(req.body?.field) || !req.file) throw enrollmentError('Choose a document type and image.');
     const image = await sharp(req.file.buffer, { limitInputPixels: 40000000 }).rotate().jpeg({ quality: 88 }).toBuffer();
     cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
-    uploaded = await new Promise((resolve, reject) => {
+    uploaded = r2Enabled() ? await uploadR2Image(image, 'institutes') : await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream({ resource_type: 'image', type: 'authenticated', public_id: `asan/institutes/${req.enrollmentInstitute._id}/${crypto.randomUUID()}` }, (err, result) => err ? reject(err) : resolve(result));
       stream.end(image);
     });
     const asset = await Asset.create({ instituteId: req.enrollmentInstitute._id, uploadedBy: req.user.id, field: req.body.field, originalName: String(req.file.originalname).slice(0, 150), publicId: uploaded.public_id, format: uploaded.format });
     return res.status(201).json({ id: asset._id, field: asset.field, name: asset.originalName });
   } catch (err) {
-    if (uploaded) await cloudinary.uploader.destroy(uploaded.public_id, { type: 'authenticated' }).catch(() => {});
+    if (uploaded) await destroyStoredImage(uploaded.public_id, { type: 'authenticated' }).catch(() => {});
     return fail(res, err.status ? err : enrollmentError('The image could not be uploaded. Check its format and try again.'));
   }
 }));
@@ -55,7 +57,7 @@ router.get('/documents/:id', async (req, res) => {
     const asset = await Asset.findOne({ _id: req.params.id, instituteId: institute?._id }).lean();
     if (!asset) throw enrollmentError('Document not found.', 404);
     cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
-    const url = cloudinary.utils.private_download_url(asset.publicId, asset.format, { type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 60 });
+    const url = isR2Reference(asset.publicId) ? await r2ReadUrl(asset.publicId) : cloudinary.utils.private_download_url(asset.publicId, asset.format, { type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 60 });
     res.set('Cache-Control', 'no-store').json({ url });
   } catch (error) { fail(res, error); }
 });

@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
 import pkg from "multer-storage-cloudinary";
+import { combinedStorage, isR2Reference, deleteR2Image } from '../services/r2Storage.js';
 
 const { CloudinaryStorage } = pkg;
 
@@ -187,7 +188,7 @@ const driverPayoutStorage =
 const driverUpload =
   multer({
     storage:
-      driverStorage,
+      combinedStorage(driverStorage, 'drivers', { profileOnCloudinary: true }),
 
     limits: {
       fileSize:
@@ -206,7 +207,7 @@ const driverUpload =
 const studentVerificationUpload =
   multer({
     storage:
-      studentVerificationStorage,
+      combinedStorage(studentVerificationStorage, 'student-verification'),
 
     limits: {
       fileSize:
@@ -219,7 +220,7 @@ const studentVerificationUpload =
   });
 
 const driverPayoutUpload = multer({
-  storage: driverPayoutStorage,
+  storage: combinedStorage(driverPayoutStorage, 'driver-payout-proofs'),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter,
 });
@@ -234,3 +235,7 @@ export {
   studentVerificationUpload,
   driverPayoutUpload,
 };
+
+export function destroyStoredImage(reference, options) {
+  return isR2Reference(reference) ? deleteR2Image(reference) : cloudinary.uploader.destroy(reference, options);
+}

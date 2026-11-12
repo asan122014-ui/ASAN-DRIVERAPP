@@ -1,5 +1,5 @@
+import { destroyStoredImage } from '../config/cloudinary.js';
 import Trips from "../models/Trips.js";
-import { cloudinary } from "../config/cloudinary.js";
 
 const cleanupVerificationPhotos = async () => {
   try {
@@ -15,7 +15,7 @@ const cleanupVerificationPhotos = async () => {
         trip.morningDrop.expiresAt <= new Date()
       ) {
         try {
-          await cloudinary.uploader.destroy(trip.morningDrop.publicId);
+          await destroyStoredImage(trip.morningDrop.publicId);
           await trip.clearMorningDropPhoto();
           console.log(
             `✅ Deleted morning photo for ${trip.childName}`
@@ -35,7 +35,7 @@ const cleanupVerificationPhotos = async () => {
         trip.afternoonPickup.expiresAt <= new Date()
       ) {
         try {
-          await cloudinary.uploader.destroy(
+          await destroyStoredImage(
             trip.afternoonPickup.publicId
           );
           await trip.clearAfternoonPickupPhoto();

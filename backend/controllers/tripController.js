@@ -1,4 +1,4 @@
-import { cloudinary } from "../config/cloudinary.js";
+import { destroyStoredImage } from '../config/cloudinary.js';
 
 import {
   startTripService,
@@ -155,7 +155,7 @@ const cleanupCloudinary =
         file.filename ||
         file.public_id;
 
-      await cloudinary.uploader.destroy(
+      await destroyStoredImage(
         publicId
       );
     } catch (error) {

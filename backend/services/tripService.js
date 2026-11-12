@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { resolveMediaReferences } from './r2Storage.js';
 
 import Trips from "../models/Trips.js";
 import Child from "../models/Child.js";
@@ -369,7 +370,7 @@ const notifyDriver = async (
         )
       ).emit(
         event,
-        payload
+        await resolveMediaReferences(payload)
       );
     } catch (error) {
       console.error(

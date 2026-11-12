@@ -6,6 +6,7 @@ import Booking from "../models/Booking.js";
 import ChildLocationChangeRequest from "../models/ChildLocationChangeRequest.js";
 import { splitDriverPayoutAmount } from "../services/driverPayoutSchedule.js";
 import { cloudinary } from "../config/cloudinary.js";
+import { isR2Reference, r2ReadUrl } from '../services/r2Storage.js';
 
 let payoutIndexMigration;
 const ensureDriverPayoutIndexes = async () => {
@@ -186,7 +187,7 @@ export const getDriverPayoutProof = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, message: "Invalid payout ID" });
     const payout = await DriverPayout.findOne({ _id: req.params.id, driverId: String(req.driver.driverId).trim().toUpperCase() }).select("proof").lean();
     if (!payout?.proof?.publicId) return res.status(404).json({ success: false, message: "Payment proof not found" });
-    const url = cloudinary.url(payout.proof.publicId, { secure: true, type: "authenticated", resource_type: payout.proof.resourceType || "image", format: payout.proof.format, sign_url: true });
+    const url = isR2Reference(payout.proof.publicId) ? await r2ReadUrl(payout.proof.publicId) : cloudinary.url(payout.proof.publicId, { secure: true, type: "authenticated", resource_type: payout.proof.resourceType || "image", format: payout.proof.format, sign_url: true });
     const image = await axios.get(url, { responseType: "stream", timeout: 15000 });
     res.setHeader("Content-Type", image.headers["content-type"] || "image/jpeg");
     res.setHeader("Cache-Control", "private, no-store");

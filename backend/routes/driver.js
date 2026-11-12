@@ -1,3 +1,4 @@
+import { destroyStoredImage } from '../config/cloudinary.js';
 import express from "express";
 import { instituteParentTrackingAccess } from '../institute/parentTrackingAccess.js';
 import mongoose from "mongoose";
@@ -455,9 +456,7 @@ const cleanupUploadedPhoto =
         return;
       }
 
-      await cloudinary
-        .uploader
-        .destroy(
+      await destroyStoredImage(
           file.filename
         );
     } catch (
@@ -1650,9 +1649,7 @@ router.put(
             .profilePhotoPublicId
       ) {
         try {
-          await cloudinary
-            .uploader
-            .destroy(
+          await destroyStoredImage(
               oldPhotoPublicId
             );
         } catch (

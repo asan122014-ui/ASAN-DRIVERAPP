@@ -6,6 +6,7 @@ import Parent from '../models/Parent.js';
 import Child from '../models/Child.js';
 import Asset from './models/EnrollmentAsset.js';
 import { v2 as cloudinary } from 'cloudinary';
+import { isR2Reference, r2ReadUrl } from '../services/r2Storage.js';
 const router = express.Router();
 router.use(verifyAdmin);
 const models = { drivers: Driver, parents: Parent, children: Child };
@@ -18,7 +19,7 @@ router.get('/:id/drivers/:driverId/documents', async (req, res) => {
     const ids = fields.map(field => String(driver[field] || '').split('/').at(-1)).filter(id => /^[a-f\d]{24}$/i.test(id));
     const assets = await Asset.find({ _id: { $in: ids }, instituteId: req.params.id }).lean();
     cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET, secure: true });
-    const documents = assets.map(asset => ({ field: asset.field, url: cloudinary.utils.private_download_url(asset.publicId, asset.format, { type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 60 }) }));
+    const documents = await Promise.all(assets.map(async asset => ({ field: asset.field, url: isR2Reference(asset.publicId) ? await r2ReadUrl(asset.publicId) : cloudinary.utils.private_download_url(asset.publicId, asset.format, { type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 60 }) })));
     res.set('Cache-Control', 'no-store').json({ driver: { name: driver.name, address: driver.address, vehicleNumber: driver.vehicleNumber, vehicleType: driver.vehicleType, licenseNumber: driver.licenseNumber }, documents });
   } catch { res.status(500).json({ message: 'Unable to load protected documents.' }); }
 });
