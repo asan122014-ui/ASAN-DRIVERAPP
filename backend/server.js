@@ -1,4 +1,5 @@
 import InstituteEnrollmentOrganization from './institute/models/Institute.js';
+import { startWebsiteEnquiryEmailWorker } from './jobs/deliverWebsiteEnquiryEmails.js';
 import { activateRegisteredSchools } from './institute/automaticEnrollment.js';
 import { validateSocketSession } from './services/authSessions.js';
 import { startInstituteFeeBilling } from './jobs/billInstituteFees.js';
@@ -1739,6 +1740,7 @@ connectDB()
       startBookingOfferExpiryWorker(io);
       startBookingServiceExpiryWorker(io);
       startPushDeliveryWorker();
+      startWebsiteEnquiryEmailWorker();
       startPayoutReconciliationWorker();
       startInstituteFeeBilling();
       startWaivedCheckoutWorker(io);

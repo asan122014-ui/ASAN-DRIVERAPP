@@ -1,6 +1,6 @@
 import express from "express";
 import { rateLimit } from "express-rate-limit";
-import WebsiteEnquiry from "../models/WebsiteEnquiry.js";
+import { createWebsiteEnquiry } from '../services/createWebsiteEnquiry.js';
 
 const router = express.Router();
 const enquiryLimiter = rateLimit({
@@ -31,7 +31,7 @@ router.post("/parent", enquiryLimiter, async (req, res) => {
     if (!/^[6-9]\d{9}$/.test(payload.phone)) return invalid(res, "Enter a valid 10-digit Indian mobile number.");
     if (!payload.school || !payload.area || !payload.pickupLocation || !payload.dropLocation) return invalid(res, "Complete all school and location details.");
     if (!["auto", "van", "either"].includes(payload.preferredTransport)) return invalid(res, "Select a preferred transport option.");
-    const enquiry = await WebsiteEnquiry.create(payload);
+    const enquiry = await createWebsiteEnquiry(payload);
     return res.status(201).json({ success: true, message: "Your parent enquiry was submitted successfully.", enquiryId: enquiry._id });
   } catch (error) {
     console.error("PARENT WEBSITE ENQUIRY ERROR:", error);
@@ -56,7 +56,7 @@ router.post("/driver", enquiryLimiter, async (req, res) => {
     if (!["auto", "van"].includes(payload.vehicleType)) return invalid(res, "Select a vehicle type.");
     if (!/^[A-Z0-9-]{6,20}$/.test(payload.vehicleNumber)) return invalid(res, "Enter a valid vehicle number.");
     if (!["0-2", "3-5", "5-10", "10+"].includes(payload.experience)) return invalid(res, "Select driving experience.");
-    const enquiry = await WebsiteEnquiry.create(payload);
+    const enquiry = await createWebsiteEnquiry(payload);
     return res.status(201).json({ success: true, message: "Your driver enquiry was submitted successfully.", enquiryId: enquiry._id });
   } catch (error) {
     console.error("DRIVER WEBSITE ENQUIRY ERROR:", error);

@@ -15,12 +15,28 @@ const websiteEnquirySchema = new mongoose.Schema(
     experience: { type: String, enum: ["", "0-2", "3-5", "5-10", "10+"], default: "" },
     status: { type: String, enum: ["New", "Contacted", "Closed"], default: "New", index: true },
     source: { type: String, default: "asanrides-website", immutable: true },
+    // Created only for new submissions. Historical enquiries are not emailed automatically.
+    emailNotification: {
+      type: new mongoose.Schema({
+        status: { type: String, enum: ['pending', 'processing', 'sent', 'failed'], required: true },
+        availableAt: { type: Date, required: true },
+        deadlineAt: { type: Date, required: true },
+        attempts: { type: Number, default: 0 },
+        leaseId: { type: String, default: '' },
+        message: { from: String, to: [String], subject: String, text: String, html: String },
+        providerMessageId: { type: String, default: '' },
+        sentAt: { type: Date, default: null },
+        lastError: { type: String, default: '' },
+      }, { _id: false }),
+      default: undefined,
+    },
   },
   { timestamps: true },
 );
 
 websiteEnquirySchema.index({ createdAt: -1 });
 websiteEnquirySchema.index({ phone: 1, type: 1, createdAt: -1 });
+websiteEnquirySchema.index({ 'emailNotification.status': 1, 'emailNotification.availableAt': 1 });
 
 const WebsiteEnquiry = mongoose.models.WebsiteEnquiry || mongoose.model("WebsiteEnquiry", websiteEnquirySchema);
 
