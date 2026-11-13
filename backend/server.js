@@ -1,3 +1,4 @@
+import { startAdminActivityEmails } from './jobs/deliverAdminActivityEmails.js';
 import InstituteEnrollmentOrganization from './institute/models/Institute.js';
 import { privateMediaResponses } from './services/r2Storage.js';
 import { startWebsiteEnquiryEmailWorker } from './jobs/deliverWebsiteEnquiryEmails.js';
@@ -1743,6 +1744,7 @@ connectDB()
       startBookingServiceExpiryWorker(io);
       startPushDeliveryWorker();
       startWebsiteEnquiryEmailWorker();
+      startAdminActivityEmails().catch(error => console.error('Admin email setup failed:', error.codeName || error.code || 'SETUP_FAILED'));
       startPayoutReconciliationWorker();
       startInstituteFeeBilling();
       startWaivedCheckoutWorker(io);
