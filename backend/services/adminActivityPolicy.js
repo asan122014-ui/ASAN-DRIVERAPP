@@ -4,7 +4,8 @@ export const activityCollections = {
   bookings: 'Booking', bookingpayments: 'Booking payment', driverrequests: 'Driver request',
   trips: 'Trip', invoices: 'Invoice', driverpayouts: 'Driver payout',
   childlocationchangerequests: 'Location change request', announcements: 'Announcement',
-  adminlogs: 'Admin action', institutes: 'Institute', institute_records: 'Institute record',
+  adminlogs: 'Admin action', logs: 'Admin activity', rejecteddrivers: 'Rejected driver', securitydeposits: 'Security deposit',
+  institutes: 'Institute', institute_records: 'Institute record',
   institute_users: 'Institute staff', institute_demo_enquiries: 'Institute enquiry',
   websiteenquiries: 'Website enquiry', billingsettings: 'Billing settings',
 };
@@ -14,7 +15,8 @@ const fields = new Set([
   'paymentStatus', 'amount', 'totalAmount', 'paidAt', 'provider', 'currency',
   'assignedDriverId', 'requestedDriverId', 'routeDriverId', 'routeId',
   'renewalDecision', 'serviceStartsAt', 'serviceEndsAt', 'startDate',
-  'action', 'adminId', 'title', 'vehicleNumber', 'vehicleType', 'isActive',
+  'action', 'adminId', 'admin', 'parent', 'driver', 'title', 'vehicleNumber', 'vehicleType', 'isActive',
+  'pickupStatus', 'dropStatus', 'paymentReceived', 'paymentMethod', 'paymentReceivedAt', 'matchingStatus',
   'rejectionReason', 'type', 'school', 'area', 'preferredTransport', 'schoolName', 'contactName',
 ]);
 export const safeBusinessFields = value => Object.fromEntries(
@@ -37,7 +39,8 @@ export function activityFromChange(change) {
   return {
     collection, entity: activityCollections[collection], operation: change.operationType,
     recordId: String(change.documentKey?._id || ''),
-    details: safeBusinessFields(doc), changedFields: relevant.map(key => key.split('.')[0]).filter((key, i, all) => all.indexOf(key) === i),
+    details: { ...safeBusinessFields(doc), ...(collection === 'institute_records' ? safeBusinessFields(doc.data) : {}) },
+    changedFields: relevant.map(key => key.split('.')[0]).filter((key, i, all) => all.indexOf(key) === i),
     occurredAt: change.wallTime || new Date(),
   };
 }
