@@ -1,3 +1,4 @@
+import { trackingChildren } from '../services/parentTrackingAuthorization.js';
 import { destroyStoredImage } from '../config/cloudinary.js';
 import express from "express";
 import { instituteParentTrackingAccess } from '../institute/parentTrackingAccess.js';
@@ -364,81 +365,16 @@ const requireOwnDriverIdentifier =
   to their own Parent account.
 */
 
-const requireLinkedDriver = (
-  req,
-  res,
-  next
-) => {
-  const requestedDriverId =
-    normalizeDriverId(
-      req.params?.driverId ||
-        req.query?.driverId
-    );
-
-  const linkedDriverId =
-    normalizeDriverId(
-      req.parent?.driverId
-    );
-
-  /* =====================================================
-     LINK REQUIRED
-  ===================================================== */
-
-  if (
-    !linkedDriverId
-  ) {
-    return res
-      .status(409)
-      .json({
-        success:
-          false,
-
-        message:
-          "No Driver is linked to this Parent account",
-      });
-  }
-
-  /* =====================================================
-     REQUESTED DRIVER REQUIRED
-  ===================================================== */
-
-  if (
-    !requestedDriverId
-  ) {
-    return res
-      .status(400)
-      .json({
-        success:
-          false,
-
-        message:
-          "Driver ID is required",
-      });
-  }
-
-  /* =====================================================
-     OWN LINK ONLY
-  ===================================================== */
-
-  if (
-    requestedDriverId !==
-    linkedDriverId
-  ) {
-    return res
-      .status(403)
-      .json({
-        success:
-          false,
-
-        message:
-          "You cannot access another Driver",
-      });
-  }
-
-  req.linkedDriverId =
-    linkedDriverId;
-
-  return next();
+const requireLinkedDriver = async (req, res, next) => {
+  try {
+    const driverId = normalizeDriverId(req.params?.driverId || req.query?.driverId);
+    if (!driverId) return res.status(400).json({success:false,message:'Driver ID is required'});
+    const children = await trackingChildren(req.parent, {driverId, childId:req.query?.childId});
+    if (!children.length) return res.status(403).json({success:false,message:'Live tracking requires a confirmed payment and your child’s active trip.'});
+    req.linkedDriverId = driverId;
+    req.authorizedTrackingChildren = children;
+    return next();
+  } catch { return res.status(503).json({success:false,message:'Tracking authorization is temporarily unavailable.'}); }
 };
 
 /* =========================================================
@@ -1171,10 +1107,8 @@ router.get(
     res
   ) => {
     try {
-      if (req.parent?.accountSource === 'institute') {
-        const access = await instituteParentTrackingAccess(req.parent, {driverId:req.linkedDriverId, childId:req.query?.childId});
-        if (![...access.values()].some(item => item.canTrack)) return res.status(403).json({success:false, message:'Live tracking is available only after monthly payment is confirmed and your child’s trip has started.'});
-      }
+      const authorizedChildren = req.authorizedTrackingChildren || await trackingChildren(req.parent, {driverId:req.linkedDriverId, childId:req.query?.childId});
+      if (!authorizedChildren.length) return res.status(403).json({success:false,message:'Live tracking requires a confirmed payment and your child’s active trip.'});
       const driver =
         await Driver.findOne({
           driverId:
@@ -1221,6 +1155,8 @@ router.get(
 
       const activeTrips = await Trips.find({
         driverId: req.linkedDriverId,
+        parent: req.parent._id,
+        child: {$in: authorizedChildren.map(child => child._id)},
         status: "in_transit",
       })
         .select("tripType child students createdAt")
@@ -1232,7 +1168,7 @@ router.get(
         : activeTrips.map((trip) => trip.child).filter(Boolean);
 
       const activeChildren = orderedChildIds.length
-        ? await Child.find({ _id: { $in: orderedChildIds } })
+        ? await Child.find({ _id: { $in: orderedChildIds.filter(id => authorizedChildren.some(child => String(child._id) === String(id))) }, parentId: req.parent._id })
             .select("_id parentId status location dropLocationCoords")
             .lean()
         : [];
@@ -1244,10 +1180,10 @@ router.get(
       const routeStops = orderedChildIds
         .map((childId, index) => {
           const child = childrenById.get(String(childId));
-          if (!child) return null;
+          if (!child || String(child.parentId) !== String(req.parent._id) || !authorizedChildren.some(item => String(item._id) === String(child._id))) return null;
           return {
             childId: String(child._id),
-            parentId: String(child.parentId || ""),
+            parentId: String(req.parent._id),
             status: child.status,
             location: child.location || null,
             dropLocationCoords: child.dropLocationCoords || null,

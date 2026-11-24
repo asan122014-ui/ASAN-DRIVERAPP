@@ -66,6 +66,7 @@ test('deleting an institute driver clears stable route IDs and leaves other rout
  t.mock.method(Driver,'exists',()=>q(null));
  t.mock.method(Child,'find',()=>q([]));t.mock.method(Child,'exists',()=>q(null));
  t.mock.method(Trips,'exists',()=>q(null));t.mock.method(Invoice,'exists',()=>q(null));
+ t.mock.method(Invoice,'find',()=>q([]));
  const updates=t.mock.method(Record,'updateMany',async()=>({}));
  for(const [model,name] of [[Child,'updateMany'],[Invoice,'updateMany'],[Trips,'updateMany'],[Driver,'deleteOne'],[PushDelivery,'deleteMany'],[Notification,'deleteMany'],[Otp,'deleteMany'],[Record,'deleteMany'],[Record,'deleteOne']])t.mock.method(model,name,async()=>({}));
  t.mock.method(Notification,'find',()=>q([]));

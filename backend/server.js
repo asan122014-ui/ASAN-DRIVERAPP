@@ -1,3 +1,4 @@
+import { trackingChildren, sendTrackingLocation } from './services/parentTrackingAuthorization.js';
 import { startAdminActivityEmails } from './jobs/deliverAdminActivityEmails.js';
 import InstituteEnrollmentOrganization from './institute/models/Institute.js';
 import { privateMediaResponses } from './services/r2Storage.js';
@@ -1004,73 +1005,14 @@ io.use(
    VERIFY PARENT ↔ DRIVER LINK
 ========================================================= */
 
-const verifyParentDriverLink =
-  async (
-    socket,
-    requestedDriverId
-  ) => {
-    if (
-      socket.user?.role !==
-      "parent"
-    ) {
-      return null;
-    }
-
-    const parent =
-      await Parent.findById(
-        socket.user.parentId
-      ).select(
-        "driverId isActive accountSource instituteId"
-      );
-
-    if (
-      !parent ||
-      parent.isActive ===
-        false
-    ) {
-      return null;
-    }
-
-    const linkedDriverId =
-      normalizeDriverId(
-        parent.driverId
-      );
-
-    const driverId =
-      normalizeDriverId(
-        requestedDriverId
-      );
-
-    if (
-      !linkedDriverId ||
-      !driverId ||
-      linkedDriverId !==
-        driverId
-    ) {
-      return null;
-    }
-
-    const driverExists =
-      await Driver.exists({
-        driverId:
-          linkedDriverId,
-
-        status:
-          "approved",
-      });
-
-    if (
-      !driverExists
-    ) {
-      return null;
-    }
-
-    if (parent.accountSource === 'institute') {
-      const access = await instituteParentTrackingAccess(parent,{driverId:linkedDriverId});
-      if (![...access.values()].some(item=>item.canTrack)) return null;
-    }
-    return linkedDriverId;
-  };
+const verifyParentDriverLink = async (socket, requestedDriverId) => {
+  if (socket.user?.role !== 'parent') return null;
+  const parent = await Parent.findById(socket.user.parentId).select('_id isActive accountSource instituteId').lean();
+  const driverId = normalizeDriverId(requestedDriverId);
+  if (!driverId || !(await trackingChildren(parent, {driverId})).length) return null;
+  if (!await Driver.exists({driverId,status:'approved'})) return null;
+  return driverId;
+};
 
 /* =========================================================
    SOCKET CONNECTION
@@ -1226,9 +1168,7 @@ io.on(
               return;
             }
 
-            socket.join(
-              authorizedDriverId
-            );
+            socket.join(`tracking:${authorizedDriverId}`);
 
 return;
           }
@@ -1503,14 +1443,7 @@ return;
               updatedAt.toISOString(),
           };
 
-          socket
-            .to(
-              user.driverId
-            )
-            .emit(
-              "live_location",
-              locationPayload
-            );
+          await sendTrackingLocation(io, user.driverId, locationPayload, validateSocketSession);
         } catch (
           error
         ) {

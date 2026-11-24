@@ -2,62 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-
-const source = readFileSync(new URL("../routes/driver.js", import.meta.url), "utf8");
-const start = source.lastIndexOf("router.get(", source.indexOf('  "/tracking",'));
-const end = source.indexOf("\n);", start) + 4;
-
-const query = (value) => ({
-  select() { return this; },
-  sort() { return this; },
-  async lean() { return value; },
+const source=readFileSync(new URL("../routes/driver.js",import.meta.url),'utf8');
+const start=source.lastIndexOf('router.get(',source.indexOf('  "/tracking",'));
+const end=source.indexOf('\n);',start)+4;
+const query=value=>({select(){return this;},sort(){return this;},async lean(){return value;}});
+test('tracking response never exposes another family even if a trip has a shared manifest',async()=>{
+ let handler,status,payload;
+ const own={_id:'own-child',parentId:'parent-a',status:'onboard',location:{lat:17,lng:78}};
+ const foreign={_id:'foreign-child',parentId:'parent-b',location:{lat:18,lng:79}};
+ vm.runInNewContext(source.slice(start,end),{
+  router:{get(_path,...handlers){handler=handlers.at(-1);}},verifyParent(){},requireLinkedDriver(){},console,
+  trackingChildren:async()=>[own],hasValidLiveLocation:()=>true,
+  Driver:{findOne:()=>query({driverId:'DRIVER',lastLocation:{lat:17,lng:78}})},
+  Trips:{find(filter){assert.equal(filter.parent,'parent-a');return query([{tripType:'morning',students:['own-child','foreign-child']}]);}},
+  Child:{find(filter){assert.equal(filter.parentId,'parent-a');assert.equal(filter._id.$in.length,1);return query([own,foreign]);}},
+ });
+ await handler({parent:{_id:'parent-a'},linkedDriverId:'DRIVER'},{status(code){status=code;return this;},json(body){payload=body;}});
+ assert.equal(status,200);assert.equal(payload.data.routeStops.length,1);assert.equal(payload.data.routeStops[0].childId,'own-child');
+ assert.equal(JSON.stringify(payload).includes('parent-b'),false);assert.equal(JSON.stringify(payload).includes('foreign-child'),false);
 });
-
-test("parent tracking returns the active trip, ordered destinations and pickup status", async () => {
-  let handler;
-  const children = [
-    { _id: "child-2", parentId: "parent-2", status: "waiting", location: { lat: 17.2, lng: 78.2 }, dropLocationCoords: { lat: 17.3, lng: 78.3 } },
-    { _id: "child-1", parentId: "parent-1", status: "onboard", location: { lat: 17.1, lng: 78.1 }, dropLocationCoords: { lat: 17.3, lng: 78.3 } },
-  ];
-  vm.runInNewContext(source.slice(start, end), {
-    router: { get(path, ...handlers) { handler = handlers.at(-1); } },
-    verifyParent() {}, requireLinkedDriver() {}, console,
-    hasValidLiveLocation: () => true,
-    Driver: { findOne: () => query({ driverId: "ASAN-TEST", lastLocation: { lat: 17.1, lng: 78.1 } }) },
-    Trips: { find(filter) {
-      assert.equal(filter.status, "in_transit");
-      assert.equal(filter.driverId, "ASAN-TEST");
-      return query([{ tripType: "afternoon", students: ["child-1", "child-2"] }]);
-    } },
-    Child: { find: () => query(children) },
-  });
-  let status;
-  let payload;
-  await handler({ linkedDriverId: "ASAN-TEST" }, {
-    status(code) { status = code; return this; },
-    json(body) { payload = body; },
-  });
-  assert.equal(status, 200);
-  assert.equal(payload.data.activeTripType, "afternoon");
-  assert.equal(payload.data.routeStops[0].childId, "child-1");
-  assert.equal(payload.data.routeStops[0].status, "onboard");
-  assert.equal(payload.data.routeStops[1].stopOrder, 2);
-  assert.equal(payload.data.routeStops[0].dropLocationCoords.lat, 17.3);
-});
-
-test('institute direct tracking requests are blocked unless an eligible paid trip exists', async () => {
-  for (const canTrack of [false, true]) {
-    let handler, status, payload, driverReads=0;
-    vm.runInNewContext(source.slice(start,end), {
-      router:{get(_path,...handlers){handler=handlers.at(-1);}},verifyParent(){},requireLinkedDriver(){},console,
-      instituteParentTrackingAccess: async (parent,options)=>{assert.equal(parent._id,'parent-a');assert.equal(options.childId,'child-a');assert.equal(options.driverId,'ASAN-TEST');return new Map([['child-a',{canTrack}]]);},
-      hasValidLiveLocation:()=>false,
-      Driver:{findOne(){driverReads++;return query({driverId:'ASAN-TEST'});}},
-      Trips:{find:()=>query([])},Child:{find:()=>query([])},
-    });
-    await handler({parent:{_id:'parent-a',accountSource:'institute'},linkedDriverId:'ASAN-TEST',query:{childId:'child-a'}},{status(code){status=code;return this;},json(body){payload=body;}});
-    assert.equal(status,canTrack?200:403);
-    assert.equal(driverReads,canTrack?1:0);
-    if(!canTrack)assert.equal(payload.data,undefined);
-  }
+test('both regular and Institute parents are denied before reading location when no authorized trip exists',async()=>{
+ for(const accountSource of ['individual','institute']){
+  let handler,status,reads=0;
+  vm.runInNewContext(source.slice(start,end),{router:{get(_path,...handlers){handler=handlers.at(-1);}},verifyParent(){},requireLinkedDriver(){},console,
+   trackingChildren:async()=>[],Driver:{findOne(){reads++;return query({});}}});
+  await handler({parent:{_id:'parent-a',accountSource},linkedDriverId:'DRIVER'},{status(code){status=code;return this;},json(){}});
+  assert.equal(status,403);assert.equal(reads,0);
+ }
 });

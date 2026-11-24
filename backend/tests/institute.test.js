@@ -36,6 +36,13 @@ test('Institute API remains scoped on the shared database', async t => {
       const response = await call('/records/Vehicles'); assert.equal(response.status, 200); assert.deepEqual(await response.json(), []);
     });
     await t.test('viewers cannot write even with direct API requests', async () => { role = 'Viewer'; assert.equal((await call('/records/Vehicles', { data: { x: 1 } })).status, 403); role = 'Institute Admin'; });
+    await t.test('accounts staff cannot bypass the UI and edit transport records', async () => {
+      role = 'Accounts/Admin Staff';
+      for (const path of ['/records/Routes', '/records/Vehicles', '/records/Drivers', '/students/assign', '/telemetry']) assert.equal((await call(path, {data:{x:1}})).status, 403);
+      role = 'Transport Manager';
+      assert.equal((await call('/records/Payments', {data:{x:1}})).status, 403);
+      role = 'Institute Admin';
+    });
     await t.test('membership and role cannot be switched by client input', async () => {
       assert.equal((await call('/user/institute', { instituteName: 'School B' })).status, 403);
       assert.equal((await call('/auth/switch-role', { role: 'Transport Manager' })).status, 403);
@@ -48,8 +55,8 @@ test('Institute API remains scoped on the shared database', async t => {
     });
     await t.test('links drivers by exact email AND phone, without profile writes', async () => {
       Driver.find = filter => { assert.equal(filter.email, 'driver@example.com'); assert.deepEqual(filter.phone.$in, ['9876543210','919876543210','+919876543210']); return { select: () => ({ limit: () => ({ lean: async () => [{ _id: 'existing-driver' }] }) }) }; };
-      assert.deepEqual(await linkRecord('Drivers', { Email: 'DRIVER@example.com', 'Phone number': '+91 98765 43210' }, 'School A'), { model: 'Driver', id: 'existing-driver' });
-      assert.equal(await linkRecord('Drivers', { 'Driver name': 'Any name' }, 'School A'), null);
+      assert.deepEqual(await linkRecord('Drivers', { Email: 'DRIVER@example.com', 'Phone number': '+91 98765 43210' }, 'School A', {_id:'school-a'}), { model: 'Driver', id: 'existing-driver' });
+      assert.equal(await linkRecord('Drivers', { 'Driver name': 'Any name' }, 'School A', {_id:'school-a'}), null);
       assert.equal(normalizePhone('+91 98765 43210'), '9876543210');
     });
   } finally {

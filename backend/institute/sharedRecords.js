@@ -1,3 +1,4 @@
+import Institute from './models/Institute.js';
 import Invoice from '../models/Invoice.js';
 import { instituteBillingMonth } from './fixedFees.js';
 import Driver from '../models/Driver.js';
@@ -18,13 +19,17 @@ const phoneOptions = value => {
 
 // Match exact contact identities, never a name alone. This does not create an
 // app account, approve a driver, assign a ride, or modify an existing profile.
-export async function linkRecord(module, data, instituteName) {
+export async function linkRecord(module, data, instituteName, knownInstitute) {
+  if (!['Drivers', 'Parents', 'Students'].includes(module)) return null;
+  const institute = knownInstitute || await Institute.findOne({name:instituteName}).select('_id').lean();
+  if (!institute?._id) return null;
+  const scope = {instituteId:institute._id, accountSource:'institute'};
   if (module === 'Drivers' || module === 'Parents') {
     const email = text(data.Email);
     const phones = phoneOptions(data[module === 'Drivers' ? 'Phone number' : 'Phone']);
     if (!email || !phones.length) return null;
     const Model = module === 'Drivers' ? Driver : Parent;
-    const matches = await Model.find({ email, phone: { $in: phones } }).select('_id').limit(2).lean();
+    const matches = await Model.find({ ...scope, email, phone: { $in: phones } }).select('_id').limit(2).lean();
     return matches.length === 1 ? { model: module === 'Drivers' ? 'Driver' : 'Parent', id: matches[0]._id } : null;
   }
   if (module !== 'Students') return null;
@@ -35,15 +40,15 @@ export async function linkRecord(module, data, instituteName) {
   const parents = await Record.find({ module: 'Parents', instituteName }).select('coreLink data').lean();
   const ids = [];
   for (const row of parents) {
-    const link = row.coreLink || await linkRecord('Parents', row.data, instituteName);
+    const link = row.coreLink || await linkRecord('Parents', row.data, instituteName, institute);
     if (link?.model === 'Parent') ids.push(link.id);
   }
-  const parent = await Parent.findOne({ _id: { $in: ids }, phone: { $in: phones } }).select('_id').lean();
+  const parent = await Parent.findOne({ ...scope, _id: { $in: ids }, phone: { $in: phones } }).select('_id').lean();
   if (!parent) return null;
-  const children = await Child.find({ parentId: parent._id }).select('_id name school').lean();
+  const children = await Child.find({ ...scope, parentId: parent._id }).select('_id name school').lean();
   const candidates = children.filter(row => text(row.name) === name && text(row.school) === text(instituteName));
   if (candidates.length === 1) return { model: 'Child', id: candidates[0]._id };
-  const students = await Student.find({ parentId: parent._id }).select('_id name schoolName').lean();
+  const students = await Student.find({ ...scope, parentId: parent._id }).select('_id name schoolName').lean();
   const legacy = students.filter(row => text(row.name) === name && text(row.schoolName) === text(instituteName));
   return legacy.length === 1 ? { model: 'Student', id: legacy[0]._id } : null;
 }
@@ -53,28 +58,36 @@ export async function refreshLinkedRecords(module, records, instituteName) {
     Parents: [Parent, 'Parent', 'name phone email accountSource'],
     Students: [Child, 'Child', 'name grade school parentId status instituteReference monthlyTransportFee assignedRouteName assignedVehicleNumber accountSource pickupMode pickupStopId pickupStopName pickupLocation location'] };
   if (!models[module]) return records;
+  const institute = await Institute.findOne({name:instituteName}).select('_id').lean();
+  if (!institute) return [];
+  const scope = {instituteId:institute._id, accountSource:'institute'};
   // Also resolves links for migrated rows and accounts registered after a row
   // was entered. A read never creates or modifies a user's app account.
   for (const row of records) {
-    row.coreLink ||= await linkRecord(module, row.data, instituteName);
+    row.coreLink ||= await linkRecord(module, row.data, instituteName, institute);
     row.data['ASAN app link'] = row.coreLink ? 'Linked' : 'Not linked — matching app account required';
   }
   const [Model, kind, fields] = models[module];
   const ids = records.filter(row => row.coreLink?.model === kind).map(row => row.coreLink.id);
-  const core = new Map((await Model.find({ _id: { $in: ids } }).select(fields).lean()).map(row => [String(row._id), row]));
+  const core = new Map((await Model.find({ ...scope, _id: { $in: ids } }).select(fields).lean()).map(row => [String(row._id), row]));
   if (module === 'Students') {
     const legacyIds = records.filter(row => row.coreLink?.model === 'Student').map(row => row.coreLink.id);
-    const legacy = await Student.find({ _id: { $in: legacyIds } }).select('name className schoolName status').lean();
+    const legacy = await Student.find({ ...scope, _id: { $in: legacyIds } }).select('name className schoolName status').lean();
     for (const student of legacy) core.set(String(student._id), { ...student, school: student.schoolName, grade: student.className });
   }
   const parentIds = module === 'Students' ? [...core.values()].map(item => item.parentId).filter(Boolean) : [];
-  const parents = new Map((parentIds.length ? await Parent.find({ _id: { $in: parentIds } }).select('_id name phone email').lean() : []).map(parent => [String(parent._id), parent]));
+  const parents = new Map((parentIds.length ? await Parent.find({ ...scope, _id: { $in: parentIds } }).select('_id name phone email').lean() : []).map(parent => [String(parent._id), parent]));
   const managed = [...core.values()].filter(item => item.accountSource === 'institute');
   const invoiceFilter = module === 'Students' ? { childId: { $in: managed.map(item => item._id) } } : { parentId: { $in: managed.map(item => item._id) } };
-  const bills = managed.length && ['Students', 'Parents'].includes(module) ? await Invoice.find({ ...invoiceFilter, billingSource: 'institute_fixed', month: instituteBillingMonth() }).select('childId parentId status paymentStatus').lean() : [];
+  const bills = managed.length && ['Students', 'Parents'].includes(module) ? await Invoice.find({ instituteId:institute._id, ...invoiceFilter, billingSource: 'institute_fixed', month: instituteBillingMonth() }).select('childId parentId status paymentStatus').lean() : [];
   for (const row of records) {
     const match = core.get(String(row.coreLink?.id));
-    if (!match) continue;
+    if (!match) {
+      // Old foreign links must never continue returning copied profile enrichment.
+      if (row.coreLink) { row.coreLink = null; row.linkStatus = 'Not linked'; row.data = Object.fromEntries(Object.entries(row.data || {}).filter(([key]) => ['Driver name','Parent name','Student name','Email','Phone','Phone number'].includes(key))); }
+      row.data['ASAN app link'] = 'Not linked';
+      continue;
+    }
     if (module === 'Students' && text(match.school) !== text(instituteName)) continue;
     row.linkStatus = 'Linked to ASAN app';
     if (module === 'Drivers') Object.assign(row.data, { 'Driver name': match.name, Address: match.address, 'Phone number': match.phone, Email: match.email, 'ASAN ID': match.driverId, 'App approval status': match.status });

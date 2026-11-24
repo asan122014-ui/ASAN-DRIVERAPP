@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
+import { privateCloudinaryReference, parsePrivateCloudinary, privateCloudinaryUrl, deletePrivateCloudinary } from './privateCloudinary.js';
+import { mayReadPrivateMedia } from './mediaAuthorization.js';
 
 const envNames = ['R2_ACCOUNT_ID', 'R2_BUCKET_NAME', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'];
 export function r2Enabled(env = process.env) {
@@ -41,11 +43,16 @@ export async function deleteR2Image(reference) {
 
 // Keep persistent provider references in MongoDB; sign copies only after a route
 // has selected the records its caller is entitled to receive.
-export async function resolveMediaReferences(payload, sign = r2ReadUrl) {
+export async function resolveMediaReferences(payload, sign = r2ReadUrl, signCloudinary = privateCloudinaryUrl) {
   if (payload === undefined) return payload;
   const data = JSON.parse(JSON.stringify(payload));
   const urls = new Map();
   async function visit(value, field = '') {
+    if (parsePrivateCloudinary(value)) {
+      if (['publicId', 'public_id', 'filename'].includes(field)) return value;
+      if (!urls.has(value)) urls.set(value, signCloudinary(value));
+      return urls.get(value);
+    }
     if (isR2Reference(value)) {
       if (['publicId', 'public_id', 'filename'].includes(field)) return value;
       if (!urls.has(value)) urls.set(value, sign(value));
@@ -61,9 +68,14 @@ export async function resolveMediaReferences(payload, sign = r2ReadUrl) {
 export function privateMediaResponses(req, res, next) {
   const json = res.json.bind(res);
   res.json = payload => {
-    if (!JSON.stringify(payload)?.includes('r2://')) return json(payload);
-    resolveMediaReferences(payload).then(result => { res.set('Cache-Control','private, no-store'); json(result); }).catch(() => {
-      if (!res.headersSent) res.status(503).send({ success: false, message: 'Documents are temporarily unavailable. Please refresh and try again.' });
+    const encoded = JSON.stringify(payload);
+    if (!encoded?.includes('r2://') && !encoded?.includes('clda://')) return json(payload);
+    const authorize = async (reference, sign) => {
+      if (!await mayReadPrivateMedia(req, reference)) throw Object.assign(new Error('Private document access denied'), {status:403});
+      return sign(reference);
+    };
+    resolveMediaReferences(payload, reference => authorize(reference, r2ReadUrl), reference => authorize(reference, privateCloudinaryUrl)).then(result => { res.set('Cache-Control','private, no-store'); json(result); }).catch(error => {
+      if (!res.headersSent) res.status(error.status || 503).send({ success: false, message: error.status === 403 ? 'You cannot access this private document.' : 'Documents are temporarily unavailable. Please refresh and try again.' });
     });
     return res;
   };
@@ -77,7 +89,16 @@ export function combinedStorage(cloudinaryStorage, folder, { profileOnCloudinary
       const done = (...args) => { if (!completed) { completed = true; callback(...args); } };
       let enabled;
       try { enabled = r2Enabled(); } catch (error) { return callback(error); }
-      if (!enabled || (profileOnCloudinary && file.fieldname === 'profilePhoto')) return cloudinaryStorage._handleFile(req,file,callback);
+      if (profileOnCloudinary && file.fieldname === 'profilePhoto') return cloudinaryStorage._handleFile(req,file,callback);
+      if (!enabled) return cloudinaryStorage._handleFile(req,file,(error, uploaded) => {
+        if (error) return done(error);
+        try {
+          const format = uploaded.format || /\.(jpg|jpeg|png|webp)(?:\?|$)/i.exec(uploaded.path || '')?.[1];
+          if (!format) throw new Error('Private image format could not be determined');
+          const reference = privateCloudinaryReference(uploaded.filename, format);
+          done(null, {...uploaded, path: reference, filename: reference});
+        } catch (failure) { done(failure); }
+      });
       const chunks = [];
       let size = 0;
       file.stream.on('data', chunk => { size += chunk.length; if (size <= 10*1024*1024) chunks.push(chunk); });
@@ -93,6 +114,7 @@ export function combinedStorage(cloudinaryStorage, folder, { profileOnCloudinary
     },
     _removeFile(req,file,callback) {
       if (isR2Reference(file.filename)) return deleteR2Image(file.filename).then(()=>callback(null)).catch(callback);
+      if (parsePrivateCloudinary(file.filename)) return deletePrivateCloudinary(file.filename).then(()=>callback(null)).catch(callback);
       return cloudinaryStorage._removeFile(req,file,callback);
     },
   };

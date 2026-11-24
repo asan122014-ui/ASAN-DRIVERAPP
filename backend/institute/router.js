@@ -1,3 +1,4 @@
+import { canWriteModule, canWritePath } from './permissions.js';
 import { instituteTripRows } from './appTrips.js';
 import {routeDriver,routeFamilies,assignRouteFamilies} from './routeFamilies.js';
 import FinanceInvoice from '../models/Invoice.js';
@@ -149,11 +150,13 @@ async function requireSession(req, res, next) {
   if (!user.instituteName) return res.status(403).json({ message: 'An institute membership is required.' });
   req.user = user;
   if (!['GET', 'HEAD'].includes(req.method) && user.role === 'Viewer' && !['/auth/sign-out','/auth/change-password'].includes(req.path)) return res.status(403).json({ message: 'Viewers have read-only access.' });
+  if (!['GET', 'HEAD'].includes(req.method) && !canWritePath(user.role, req.path)) return res.status(403).json({message:'Your role cannot perform this action.'});
   next();
 }
 
 function requireModule(req, res, next) {
   if (req.params.module === 'Settings' && !['GET','HEAD'].includes(req.method) && req.user.role !== 'Institute Admin') return res.status(403).json({ message: 'Only the Institute Admin can change settings.' });
+  if (!['GET','HEAD'].includes(req.method) && !canWriteModule(req.user.role, req.params.module)) return res.status(403).json({message:'Your role cannot modify this module.'});
   if (!allowedModules.has(req.params.module)) return res.status(404).json({ message: 'Unknown module.' });
   next();
 }

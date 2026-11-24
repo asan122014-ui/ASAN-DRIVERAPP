@@ -2,6 +2,7 @@ import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
 import pkg from "multer-storage-cloudinary";
 import { combinedStorage, isR2Reference, deleteR2Image } from '../services/r2Storage.js';
+import { parsePrivateCloudinary, deletePrivateCloudinary } from '../services/privateCloudinary.js';
 
 const { CloudinaryStorage } = pkg;
 
@@ -123,9 +124,10 @@ const driverStorage =
   new CloudinaryStorage({
     cloudinary,
 
-    params: async () => ({
+    params: async (_req, file) => ({
       folder:
         "asan/drivers",
+      type: file.fieldname === 'profilePhoto' ? 'upload' : 'authenticated',
 
       resource_type:
         "image",
@@ -153,6 +155,7 @@ const studentVerificationStorage =
     params: async () => ({
       folder:
         "asan/student-verification",
+      type: 'authenticated',
 
       resource_type:
         "image",
@@ -237,5 +240,6 @@ export {
 };
 
 export function destroyStoredImage(reference, options) {
+  if (parsePrivateCloudinary(reference)) return deletePrivateCloudinary(reference);
   return isR2Reference(reference) ? deleteR2Image(reference) : cloudinary.uploader.destroy(reference, options);
 }
