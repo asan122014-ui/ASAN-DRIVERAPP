@@ -27,6 +27,20 @@ test('login stores only refresh hash and issues 7-day access with account metada
  assert.equal(result.data.password,undefined);assert.equal(result.data.accountSource,'institute');
  const secret=parseRefresh(result.refreshToken).secret;assert.equal(state.row().currentHash,hash(secret));assert.ok(!JSON.stringify(state.row()).includes(secret));
 });
+test('successful refresh and legacy migration attach only their verified account for private media responses',async t=>{
+ setup(t,'driver');
+ const driver={...account,driverId:'ASAN-SYNTHETIC',licenseFront:'clda://asan%2Fdrivers%2Ftest/jpg'};
+ t.mock.method(Driver,'findById',async()=>driver);
+ const original=await issueSession(driver,'driver');
+ const refresh={body:{refreshToken:original.refreshToken},headers:{}};let body;
+ const res={status(){return this;},json(value){body=value;return value;}};
+ await sessionHandlers('driver').refresh(refresh,res);
+ assert.equal(body.success,true);assert.equal(refresh.driver._id,driver._id);assert.equal(refresh.driver.driverId,driver.driverId);
+ const legacy=jwt.sign({id:driver._id,tokenType:'driver'},process.env.JWT_SECRET);
+ const migrate={headers:{authorization:'Bearer '+legacy},body:{driver:{_id:'foreign-account'}}};
+ await sessionHandlers('driver').migrate(migrate,res);
+ assert.equal(body.success,true);assert.equal(migrate.driver._id,driver._id);assert.notEqual(migrate.driver._id,'foreign-account');
+});
 test('rotation recovers concurrent requests and lost response after grace only with same persisted operation',async t=>{
  const state=setup(t);const original=await issueSession(account,'parent');
  const next=await refreshSession(original.refreshToken,'parent','operation_1234567890');

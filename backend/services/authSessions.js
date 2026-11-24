@@ -78,7 +78,7 @@ export async function revokeRequestSession(req,kind) {
 }
 export function sessionHandlers(kind) {
  return {
-  refresh:async(req,res)=>{try{return res.json(await refreshSession(req.body?.refreshToken,kind,req.body?.rotationId));}catch(error){return res.status(error.status||503).json({success:false,code:error.code||'SESSION_SERVICE_UNAVAILABLE',message:error.status?error.message:'Session renewal temporarily unavailable.'});}},
+  refresh:async(req,res)=>{try{const result=await refreshSession(req.body?.refreshToken,kind,req.body?.rotationId);req[kind]=result.data;return res.json(result);}catch(error){return res.status(error.status||503).json({success:false,code:error.code||'SESSION_SERVICE_UNAVAILABLE',message:error.status?error.message:'Session renewal temporarily unavailable.'});}},
   migrate:async(req,res)=>{
    try {
     const token=req.headers.authorization?.replace(/^Bearer /,'');
@@ -87,7 +87,7 @@ export function sessionHandlers(kind) {
     if(decoded.sid)throw fault('Session credentials missing. Please sign in again.','SESSION_EXISTS',409);
     const account=await(kind==='parent'?Parent:Driver).findById(decoded.id);assertAvailable(account,kind);
     if((decoded.sv||0)!==(account.sessionVersion||0))throw fault('Session revoked.','SESSION_REVOKED');
-    return res.json(await issueSession(account,kind));
+    const result=await issueSession(account,kind);req[kind]=account;return res.json(result);
    }catch(error){return res.status(error.status||(['TokenExpiredError','JsonWebTokenError'].includes(error.name)?401:503)).json({success:false,code:error.code||'SESSION_INVALID',message:'Unable to migrate session. Please sign in again.'});}
   },
   logout:async(req,res)=>{

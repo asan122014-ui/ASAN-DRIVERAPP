@@ -1938,6 +1938,8 @@ export const verifyRegisterOtp =
 
       const session = await issueSession(driver, 'driver');
       const token = session.token;
+      // Only successful server-side authentication may authorize private response media.
+      req.driver = driver;
 
       /* ===================================================
          RESPONSE
@@ -2383,6 +2385,8 @@ export const verifyLoginOtp =
 
       const session = await issueSession(driver, 'driver');
       const token = session.token;
+      // Only successful server-side authentication may authorize private response media.
+      req.driver = driver;
 
       const statusInfo =
         getDriverStatusInfo(

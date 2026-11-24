@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
 import Otp from '../models/Otp.js';
 import {verifiedRegistrationUpload,claimRegistrationOtp,boundedRegistrationMemory,registrationFields} from '../services/verifiedRegistrationUpload.js';
 const query=value=>({lean:async()=>value});
@@ -66,4 +68,19 @@ test('a request that times out during provider work cleans its files and frees t
  const url=await serve(t,verifiedRegistrationUpload({storage,timeoutMs:300,claim:async()=>({email:'driver@example.com'}),complete:async(_q,res)=>res.status(201).end()}));
  await assert.rejects(fetch(url,{method:'POST',body:form()}));await cleanup;slow=false;
  assert.equal((await fetch(url,{method:'POST',body:form()})).status,201);
+});
+test('registration and OTP-login response paths authorize private media only as the verified driver',async()=>{
+ const source=await readFile(new URL('../controllers/driverAuthController.js',import.meta.url),'utf8');
+ for(const controller of ['verifyRegisterOtp','verifyLoginOtp']){
+  const start=source.indexOf("      const session = await issueSession(driver, 'driver');",source.indexOf('export const '+controller));
+  const end=source.indexOf('    } catch (',start);assert.ok(start>0&&end>start);
+  const driver={_id:'verified-driver',driverId:'ASAN-SYNTHETIC',licenseFront:'private-reference'};
+  const req={body:{driver:{_id:'foreign-driver'}}};let result;
+  const res={status(){return this;},json(value){assert.equal(req.driver,driver);result=value;return value;}};
+  await vm.runInNewContext('(async()=>{'+source.slice(start,end)+'})()',{
+   req,res,driver,issueSession:async()=>({token:'synthetic-token',data:driver}),getSafeDriver:value=>value,
+   getDriverStatusInfo:()=>({message:'Ready',status:'approved',nextStep:'app'})
+  });
+  assert.equal(result.data._id,driver._id);assert.equal(req.driver._id,'verified-driver');
+ }
 });
