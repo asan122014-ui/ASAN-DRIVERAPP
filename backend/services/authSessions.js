@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import AuthSession from '../models/AuthSession.js';
 import Parent from '../models/Parent.js';
 import Driver from '../models/Driver.js';
+import Admin from '../models/Admin.js';
 const hash = raw => crypto.createHash('sha256').update(raw).digest('hex');
 const nextSecret = raw => crypto.createHmac('sha256',process.env.JWT_SECRET).update('session-renewal:'+raw).digest('hex');
 export function parseRefresh(raw) {
@@ -59,6 +60,11 @@ export async function checkAccessSession(decoded,kind,res) {
 }
 export async function validateSocketSession(token) {
  const decoded=jwt.verify(token,process.env.JWT_SECRET,{algorithms:['HS256']});
+ if(decoded.tokenType==='admin') {
+  const admin=await Admin.findById(decoded.id).select('_id isActive role sessionVersion');
+  if(!admin || admin.isActive===false || !['superadmin','reviewer'].includes(admin.role) || !Number.isInteger(decoded.sv) || decoded.sv!==(admin.sessionVersion||0))throw fault('Admin session revoked.','SESSION_REVOKED');
+  return decoded;
+ }
  if(!['parent','driver'].includes(decoded.tokenType))return decoded;
  if(decoded.sid && !await AuthSession.exists({_id:decoded.sid,kind:decoded.tokenType,accountId:decoded.id,revokedAt:null}))throw fault('Session revoked.','SESSION_REVOKED');
  const account=await(decoded.tokenType==='parent'?Parent:Driver).findById(decoded.id);

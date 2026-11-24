@@ -67,7 +67,9 @@ test('admin password alone cannot issue access; verified email code succeeds and
  req.body.otp=state.otp(state.mails[0]);res=response();await loginAdmin(req,res);assert.ok(res.body.token);
  const token=res.body.token,authReq={headers:{authorization:'Bearer '+token}};
  let accepted=0;await verifyAdmin(authReq,response(),()=>accepted++);assert.equal(accepted,1);
+ await validateSocketSession(token);
  await logoutAdmin(req,response());const rejected=response();await verifyAdmin(authReq,rejected,()=>accepted++);assert.equal(rejected.code,401);assert.equal(accepted,1);
+ await assert.rejects(validateSocketSession(token),{code:'SESSION_REVOKED'});
  const legacy=jwt.sign({id,tokenType:'admin',role:'superadmin'},process.env.JWT_SECRET);const legacyRes=response();await verifyAdmin({headers:{authorization:'Bearer '+legacy}},legacyRes,()=>accepted++);assert.equal(legacyRes.code,401);
 });
 test('login account budget survives middleware recreation and changing client addresses',async t=>{
