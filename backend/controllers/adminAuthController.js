@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import {startChallenge,consumeChallenge,digest} from "../services/securityChallenges.js";
 
 import Admin from "../models/Admin.js";
 import AdminLog from "../models/AdminLog.js";
@@ -33,6 +34,7 @@ const createAdminToken = (admin) => {
       id: String(admin._id),
 
       tokenType: "admin",
+      sv: admin.sessionVersion || 0,
 
       role: admin.role,
     },
@@ -112,6 +114,7 @@ export const loginAdmin =
          VALIDATE INPUT
       ===================================================== */
 
+      if(typeof email!=="string" || typeof password!=="string" || password.length>1024 || email.length>254) return res.status(400).json({success:false,message:"Invalid login details"});
       const normalizedEmail =
         normalizeEmail(email);
 
@@ -201,6 +204,12 @@ export const loginAdmin =
          UPDATE LAST LOGIN
       ===================================================== */
 
+      const binding=digest(admin.password+':'+(admin.sessionVersion||0));
+      if(!req.body.challengeId) {
+        const challengeId=await startChallenge({purpose:'admin-login',subject:admin._id,binding,email:admin.email});
+        return res.json({success:true,mfaRequired:true,challengeId,message:'Enter the code sent to your admin email.'});
+      }
+      if(!await consumeChallenge({id:req.body.challengeId,purpose:'admin-login',subject:admin._id,binding,otp:req.body.otp})) return res.status(401).json({success:false,message:'Invalid or expired verification code.'});
       admin.lastLoginAt =
         new Date();
 
@@ -354,6 +363,8 @@ export const logoutAdmin =
       if (
         req.admin?._id
       ) {
+        await Admin.updateOne({_id:req.admin._id},{$inc:{sessionVersion:1}});
+        req.app.get("io")?.in(`admin:${req.admin._id}`).disconnectSockets(true);
         await createAdminLog({
           adminId:
             req.admin._id,
@@ -380,10 +391,8 @@ export const logoutAdmin =
       }
 
       /*
-        JWT is stateless.
-
-        Frontend must remove the Admin token
-        after this response.
+        Server-side session version revokes every previous admin token.
+        The frontend also removes its local token after this response.
       */
 
       return res.status(200).json({

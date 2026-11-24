@@ -131,7 +131,7 @@ const validateBodyParentId = (
    BUILD PROFILE UPDATES
 ========================================================= */
 
-const buildParentUpdates =
+export const buildParentUpdates =
   async (
     req,
     res
@@ -234,35 +234,10 @@ const buildParentUpdates =
         return null;
       }
 
-      const existingEmail =
-        await Parent.findOne({
-          email,
-
-          _id: {
-            $ne:
-              req.parent._id,
-          },
-        }).select(
-          "_id"
-        );
-
-      if (
-        existingEmail
-      ) {
-        res
-          .status(409)
-          .json({
-            success: false,
-
-            message:
-              "Email is already registered",
-          });
-
+      if (email !== String(req.parent.email || '').trim().toLowerCase()) {
+        res.status(403).json({success:false,message:'Verify your current and new email using the email-change process.'});
         return null;
       }
-
-      updates.email =
-        email;
     }
 
     /* =====================================================

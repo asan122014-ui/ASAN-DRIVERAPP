@@ -12,6 +12,8 @@ const adminSchema =
          EMAIL
       ===================================================== */
 
+      sessionVersion: {type:Number,default:0},
+
       email: {
         type: String,
         required: true,
@@ -120,6 +122,8 @@ adminSchema.pre(
     ) {
       return;
     }
+
+    this.sessionVersion = (this.sessionVersion || 0) + 1;
 
     const salt =
       await bcrypt.genSalt(

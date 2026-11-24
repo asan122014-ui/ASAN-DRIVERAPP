@@ -12,7 +12,7 @@ const { default: Driver } = await import('../models/Driver.js');
 const { linkRecord, normalizePhone } = await import('../institute/sharedRecords.js');
 
 const token = (domain = 'institute:') => {
-  const payload = Buffer.from(JSON.stringify({ sub: '507f1f77bcf86cd799439011', exp: Date.now() + 60000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: '507f1f77bcf86cd799439011', sv:0, exp: Date.now() + 60000 })).toString('base64url');
   return `${payload}.${crypto.createHmac('sha256', process.env.INSTITUTE_SESSION_SECRET).update(domain + payload).digest('base64url')}`;
 };
 test('Institute API remains scoped on the shared database', async t => {

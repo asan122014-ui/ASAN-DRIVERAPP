@@ -26,7 +26,7 @@ test('route creation endpoint inserts all stops together and rejects invalid req
  User.findById=()=>({lean:async()=>({_id:'507f1f77bcf86cd799439011',role:'Institute Admin',instituteName:'Test School'})});
  Institute.findOne=async()=>({name:'Test School',pickupMode:'route_stops',location:{lat:17.3,lng:78.3,address:'Test campus'}});
  Record.exists=async()=>false;Record.create=async value=>{writes.push(value);return {toObject:()=>value};};
- const payload=Buffer.from(JSON.stringify({sub:'507f1f77bcf86cd799439011',exp:Date.now()+60000})).toString('base64url');const token=payload+'.'+crypto.createHmac('sha256',process.env.INSTITUTE_SESSION_SECRET).update('institute:'+payload).digest('base64url');
+ const payload=Buffer.from(JSON.stringify({sub:'507f1f77bcf86cd799439011',sv:0,exp:Date.now()+60000})).toString('base64url');const token=payload+'.'+crypto.createHmac('sha256',process.env.INSTITUTE_SESSION_SECRET).update('institute:'+payload).digest('base64url');
  const app=express();app.use(router);const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
  const call=stops=>fetch(`http://127.0.0.1:${server.address().port}/records/Routes`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({data:{'Route name':'One request',Destination:'Main Campus'},stops})});
  try{let response=await call([stop('first','Library','07:30'),stop('second','Park','07:40')]);assert.equal(response.status,201);const saved=await response.json();assert.equal(saved.stops.length,2);assert.equal(saved.instituteName,'Test School');assert.equal(saved.data.Destination,'Test campus');assert.equal(writes.length,1);

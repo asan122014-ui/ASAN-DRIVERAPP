@@ -68,6 +68,7 @@ import parentAuthRoutes from "./routes/parentAuthRoutes.js";
 import adminAuthRoutes from "./routes/adminAuthRoutes.js";
 
 import parentRoutes from "./routes/parentRoutes.js";
+import parentEmailChange from "./routes/parentEmailChange.js";
 import driverRoutes from "./routes/driver.js";
 import tripRoutes from "./routes/trip.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
@@ -294,6 +295,7 @@ app.use(
   "/api/parent",
   parentRoutes
 );
+app.use("/api/parent/email", parentEmailChange);
 
 /* =========================================================
    DRIVER ROUTES
@@ -730,7 +732,7 @@ const authenticateAdminSocket =
       await Admin.findById(
         decoded.id
       ).select(
-        "_id email role isActive"
+        "_id email role isActive sessionVersion"
       );
 
     if (
@@ -760,6 +762,7 @@ const authenticateAdminSocket =
       );
     }
 
+    if(!Number.isInteger(decoded.sv) || decoded.sv !== (admin.sessionVersion || 0)) throw new Error("Admin session revoked");
     return {
       role:
         "admin",

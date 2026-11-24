@@ -33,6 +33,7 @@ const parentSchema =
          Email is therefore the primary login identity.
       ===================================================== */
 
+      sessionVersion: {type:Number,default:0},
       email: {
         type: String,
         required: true,

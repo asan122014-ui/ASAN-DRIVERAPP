@@ -21,12 +21,12 @@ export function assertAvailable(account,kind) {
  if(!account || account.isActive===false || (kind==='driver' && ['suspended','blocked','rejected'].includes(account.status)))throw fault('This account cannot renew its session.','SESSION_ACCOUNT_UNAVAILABLE',403);
 }
 function credentials(session,secret,account) {
- const token=jwt.sign({id:String(account._id),tokenType:session.kind,sid:String(session._id)},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'7d'});
+ const token=jwt.sign({id:String(account._id),tokenType:session.kind,sv:account.sessionVersion||0,sid:String(session._id)},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'7d'});
  return {success:true,token,accessToken:token,refreshToken:`${session._id}.${secret}`,sessionId:String(session._id),expiresIn:'7d',data:safeAccount(account)};
 }
 export async function issueSession(account,kind) {
  const secret=crypto.randomBytes(32).toString('hex');
- const session=await AuthSession.create({accountId:account._id,kind,currentHash:hash(secret)});
+ const session=await AuthSession.create({accountId:account._id,kind,accountVersion:account.sessionVersion||0,currentHash:hash(secret)});
  return credentials(session,secret,account);
 }
 export async function refreshSession(raw,kind,rotationId) {
@@ -36,6 +36,7 @@ export async function refreshSession(raw,kind,rotationId) {
  if(!session)throw fault('Session was revoked.','SESSION_REVOKED');
  const account=await (kind==='parent'?Parent:Driver).findById(session.accountId);
  assertAvailable(account,kind);
+ if((session.accountVersion||0)!==(account.sessionVersion||0))throw fault('Session revoked.','SESSION_REVOKED');
  const digest=hash(parsed.secret),now=new Date();
  if(session.currentHash===digest) {
   const secret=nextSecret(parsed.secret);
@@ -48,6 +49,8 @@ export async function refreshSession(raw,kind,rotationId) {
  throw fault('Session credential is no longer valid.','SESSION_INVALID');
 }
 export async function checkAccessSession(decoded,kind,res) {
+ const account=await(kind==='parent'?Parent:Driver).findById(decoded.id);
+ if(!account || (decoded.sv||0)!==(account.sessionVersion||0)){res.status(401).json({success:false,code:"SESSION_REVOKED",message:"Session revoked."});return false;}
  if(!decoded.sid)return true; // Existing signed access tokens can migrate until their expiry.
  try {
   if(!mongoose.Types.ObjectId.isValid(decoded.sid)||!await AuthSession.exists({_id:decoded.sid,kind,accountId:decoded.id,revokedAt:null})) {res.status(401).json({success:false,code:'SESSION_REVOKED',message:'Session was revoked.'});return false;}
@@ -60,6 +63,7 @@ export async function validateSocketSession(token) {
  if(decoded.sid && !await AuthSession.exists({_id:decoded.sid,kind:decoded.tokenType,accountId:decoded.id,revokedAt:null}))throw fault('Session revoked.','SESSION_REVOKED');
  const account=await(decoded.tokenType==='parent'?Parent:Driver).findById(decoded.id);
  assertAvailable(account,decoded.tokenType);
+ if((decoded.sv||0)!==(account.sessionVersion||0))throw fault('Session revoked.','SESSION_REVOKED');
  return decoded;
 }
 export async function revokeRequestSession(req,kind) {
@@ -76,6 +80,7 @@ export function sessionHandlers(kind) {
     if(decoded.tokenType!==kind||!mongoose.Types.ObjectId.isValid(decoded.id))throw fault('Invalid access token.');
     if(decoded.sid)throw fault('Session credentials missing. Please sign in again.','SESSION_EXISTS',409);
     const account=await(kind==='parent'?Parent:Driver).findById(decoded.id);assertAvailable(account,kind);
+    if((decoded.sv||0)!==(account.sessionVersion||0))throw fault('Session revoked.','SESSION_REVOKED');
     return res.json(await issueSession(account,kind));
    }catch(error){return res.status(error.status||(['TokenExpiredError','JsonWebTokenError'].includes(error.name)?401:503)).json({success:false,code:error.code||'SESSION_INVALID',message:'Unable to migrate session. Please sign in again.'});}
   },

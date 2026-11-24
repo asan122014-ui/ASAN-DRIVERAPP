@@ -53,9 +53,10 @@ app.use('/', async (req, res, next) => {
   }
 });
 
-function createSessionToken(userId) {
+function createSessionToken(userId, sessionVersion = 0) {
   const payload = Buffer.from(JSON.stringify({
     sub: String(userId),
+    sv: sessionVersion,
     exp: Date.now() + SESSION_MAX_AGE_MS
   })).toString('base64url');
   const signature = crypto
@@ -129,7 +130,7 @@ async function getSession(req) {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!session.sub || !session.exp || session.exp <= Date.now()) return null;
     const user = await User.findById(session.sub).lean();
-    if (!user) return null;
+    if (!user || !Number.isInteger(session.sv) || session.sv !== (user.sessionVersion || 0)) return null;
     return {
       id: user._id,
       name: user.name,
@@ -149,7 +150,7 @@ async function requireSession(req, res, next) {
   if (!user) return res.status(401).json({ message: 'Your session has expired. Please sign in again.' });
   if (!user.instituteName) return res.status(403).json({ message: 'An institute membership is required.' });
   req.user = user;
-  if (!['GET', 'HEAD'].includes(req.method) && user.role === 'Viewer' && !['/auth/sign-out','/auth/change-password'].includes(req.path)) return res.status(403).json({ message: 'Viewers have read-only access.' });
+  if (!['GET', 'HEAD'].includes(req.method) && user.role === 'Viewer' && !['/auth/sign-out','/auth/change-password','/auth/revoke-all-sessions'].includes(req.path)) return res.status(403).json({ message: 'Viewers have read-only access.' });
   if (!['GET', 'HEAD'].includes(req.method) && !canWritePath(user.role, req.path)) return res.status(403).json({message:'Your role cannot perform this action.'});
   next();
 }
@@ -466,7 +467,7 @@ app.post('/auth/signup', async (req, res) => {
       lastLogin: new Date()
     });
 
-    const token = createSessionToken(newUser._id);
+    const token = createSessionToken(newUser._id, newUser.sessionVersion || 0);
     const userPayload = {
       id: newUser._id,
       name: newUser.name,
@@ -522,7 +523,7 @@ app.post('/auth/sign-in', async (req, res) => {
       }
     }
 
-    const token = createSessionToken(user._id);
+    const token = createSessionToken(user._id, user.sessionVersion || 0);
     const userPayload = {
       id: user._id,
       name: user.name,
@@ -586,10 +587,8 @@ app.post('/auth/reset-password', async (req, res) => {
     });
     if (!user) return res.status(400).json({ message: 'This reset link is invalid or has expired.' });
 
-    user.password = await bcrypt.hash(password, 10);
-    user.passwordResetTokenHash = '';
-    user.passwordResetExpiresAt = null;
-    await user.save();
+    const changed = await User.updateOne({_id:user._id,passwordResetTokenHash:tokenHash,passwordResetExpiresAt:{$gt:new Date()}}, {$set:{password:await bcrypt.hash(password,10),passwordResetTokenHash:'',passwordResetExpiresAt:null},$inc:{sessionVersion:1}});
+    if(changed.modifiedCount !== 1) return res.status(400).json({message:'This reset link is invalid or has expired.'});
     res.json({ message: 'Password changed successfully. You can now sign in.' });
   } catch (err) {
     console.error('Reset password error:', err);
@@ -613,10 +612,8 @@ app.post('/auth/change-password', requireSession, async (req, res) => {
       return res.status(401).json({ message: 'Current password is incorrect.' });
     }
 
-    user.password = await bcrypt.hash(newPassword, 10);
-    user.passwordResetTokenHash = '';
-    user.passwordResetExpiresAt = null;
-    await user.save();
+    const changed = await User.updateOne({_id:user._id,password:user.password},{$set:{password:await bcrypt.hash(newPassword,10),passwordResetTokenHash:'',passwordResetExpiresAt:null},$inc:{sessionVersion:1}});
+    if(changed.modifiedCount !== 1) return res.status(409).json({message:'Account changed. Please sign in again.'});
     res.json({ message: 'Password changed successfully.' });
   } catch (err) {
     console.error('Change password error:', err);
@@ -639,7 +636,8 @@ app.post('/auth/switch-role', requireSession, (req, res) => {
   res.json({ user: req.user });
 });
 
-app.post('/auth/sign-out', requireSession, async (req, res) => {
+app.post(['/auth/sign-out','/auth/revoke-all-sessions'], requireSession, async (req, res) => {
+  await User.updateOne({_id:req.user.id},{$inc:{sessionVersion:1}});
   res.status(204).end();
 });
 

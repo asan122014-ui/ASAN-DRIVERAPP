@@ -7,7 +7,7 @@ export function canWriteModule(role, module) {
   return false;
 }
 export function canWritePath(role, path) {
-  if (['/auth/sign-out', '/auth/change-password', '/auth/switch-role'].includes(path)) return true;
+  if (['/auth/sign-out','/auth/revoke-all-sessions', '/auth/change-password', '/auth/switch-role'].includes(path)) return true;
   if (role === 'Institute Admin') return true;
   if (path.startsWith('/records/')) return canWriteModule(role, decodeURIComponent(path.split('/')[2] || ''));
   if (/^\/(routes|students)(\/|$)/.test(path) || ['/telemetry', '/emergency'].includes(path)) return role === 'Transport Manager';

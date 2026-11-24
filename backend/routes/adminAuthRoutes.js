@@ -1,4 +1,5 @@
 import express from "express";
+import {protectLogin} from "../middleware/adminLoginProtection.js";
 
 import {
   loginAdmin,
@@ -38,6 +39,7 @@ const router =
 
 router.post(
   "/login",
+  protectLogin(),
   loginAdmin
 );
 
@@ -74,7 +76,7 @@ router.get(
 */
 
 router.post(
-  "/logout",
+  ["/logout", "/revoke-all-sessions"],
   verifyAdmin,
   logoutAdmin
 );

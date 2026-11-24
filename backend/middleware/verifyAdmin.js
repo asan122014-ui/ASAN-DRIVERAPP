@@ -213,7 +213,7 @@ const verifyAdmin =
         await Admin.findById(
           decoded.id
         ).select(
-          "_id email role isActive"
+          "_id email role isActive sessionVersion"
         );
 
       if (
@@ -269,6 +269,8 @@ const verifyAdmin =
       /* =====================================================
          ATTACH AUTHENTICATED ADMIN
       ===================================================== */
+
+      if (!Number.isInteger(decoded.sv) || decoded.sv !== (admin.sessionVersion || 0)) return res.status(401).json({success:false,message:"Session revoked. Please sign in again."});
 
       req.admin = {
         _id:
