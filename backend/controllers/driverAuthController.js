@@ -1689,17 +1689,9 @@ export const verifyRegisterOtp =
          VERIFY REGISTRATION OTP
       =================================================== */
 
-      const verification =
-        await verifyStoredDriverOtp({
-          email,
-          otp,
-
-          purpose:
-            DRIVER_REGISTER_PURPOSE,
-
-          consume:
-            false,
-        });
+      const verification = req.registrationProof?.email === email
+        ? {valid:true}
+        : {valid:false,status:401,message:'Registration verification is required before document uploads.'};
 
       if (
         !verification.valid
@@ -1938,12 +1930,7 @@ export const verifyRegisterOtp =
          CONSUME REGISTRATION OTP
       =================================================== */
 
-      await Otp.deleteOne({
-        email,
-
-        purpose:
-          DRIVER_REGISTER_PURPOSE,
-      });
+      await Otp.deleteOne({_id:req.registrationProof.otpId,used:true});
 
       /* ===================================================
          JWT

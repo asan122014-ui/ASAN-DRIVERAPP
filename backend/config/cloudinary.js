@@ -1,10 +1,10 @@
 import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
-import pkg from "multer-storage-cloudinary";
+import {CloudinaryImageStorage as CloudinaryStorage} from "../services/cloudinaryImageStorage.js";
 import { combinedStorage, isR2Reference, deleteR2Image } from '../services/r2Storage.js';
 import { parsePrivateCloudinary, deletePrivateCloudinary } from '../services/privateCloudinary.js';
 
-const { CloudinaryStorage } = pkg;
+
 
 /* =========================================================
    CLOUDINARY ENV VALIDATION

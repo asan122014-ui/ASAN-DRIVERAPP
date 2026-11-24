@@ -46,7 +46,7 @@ async function harness(t,role='superadmin') {
   const app=express();app.use(express.json());app.use('/api/admin/announcements',router);
   const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
-  const token=jwt.sign({id:adminId,tokenType:'admin',role},process.env.JWT_SECRET);
+  const token=jwt.sign({id:adminId,tokenType:'admin',role,sv:0},process.env.JWT_SECRET);
   return async(path,body,withAuth=true)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/api/admin/announcements${path}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(withAuth?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,body:await response.json()};};
 }
 test('announcement APIs reject anonymous and reviewer accounts before accessing recipients',async t=>{

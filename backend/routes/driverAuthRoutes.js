@@ -1,3 +1,4 @@
+import {verifiedRegistrationUpload} from '../services/verifiedRegistrationUpload.js';
 import { sessionHandlers } from '../services/authSessions.js';
 import express from "express";
 
@@ -146,73 +147,7 @@ router.post(
 
   driverOtpVerifyLimiter,
 
-  driverUpload.fields([
-    {
-      name:
-        "licenseFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "licenseBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "rcFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "rcBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "insurance",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "idFront",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "idBack",
-
-      maxCount:
-        1,
-    },
-
-    {
-      name:
-        "profilePhoto",
-
-      maxCount:
-        1,
-    },
-  ]),
-
-  verifyRegisterOtp
+  verifiedRegistrationUpload({storage:driverUpload.storage,complete:verifyRegisterOtp})
 );
 
 /* =========================================================

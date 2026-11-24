@@ -1,4 +1,6 @@
-import admin from "firebase-admin";
+import {initializeApp,getApps,cert} from "firebase-admin/app";
+import {getMessaging} from "firebase-admin/messaging";
+import {getAuth} from "firebase-admin/auth";
 
 /* =========================================================
    DRIVER FIREBASE SERVICE ACCOUNT
@@ -113,7 +115,7 @@ const getOrCreateFirebaseApp =
     serviceAccount
   ) => {
     const existingApp =
-      admin.apps.find(
+      getApps().find(
         (
           app
         ) =>
@@ -132,10 +134,10 @@ const getOrCreateFirebaseApp =
       name
     );
 
-    return admin.initializeApp(
+    return initializeApp(
       {
         credential:
-          admin.credential.cert(
+          cert(
             serviceAccount
           ),
       },
@@ -219,14 +221,14 @@ try {
 
 export const driverMessaging =
   driverApp
-    ? admin.messaging(
+    ? getMessaging(
         driverApp
       )
     : null;
 
 export const parentMessaging =
   parentApp
-    ? admin.messaging(
+    ? getMessaging(
         parentApp
       )
     : null;
@@ -247,7 +249,7 @@ export const parentMessaging =
 
 export const parentAuth =
   parentApp
-    ? admin.auth(
+    ? getAuth(
         parentApp
       )
     : null;
@@ -261,7 +263,7 @@ export const parentAuth =
 
 export const driverAuth =
   driverApp
-    ? admin.auth(
+    ? getAuth(
         driverApp
       )
     : null;
@@ -279,4 +281,4 @@ export {
    DEFAULT EXPORT
 ========================================================= */
 
-export default admin;
+export default {initializeApp,getApps,credential:{cert},messaging:getMessaging,auth:getAuth};

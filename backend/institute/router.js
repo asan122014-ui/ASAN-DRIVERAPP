@@ -323,7 +323,7 @@ async function buildDashboard(req) {
 // Public intake only. Contact details are viewed privately in MongoDB Atlas.
 app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false }));
 app.use('/institutes/verify', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false }));
-app.post('/demo-enquiries', createDemoEnquiryHandler());
+app.post('/demo-enquiries', rateLimit({windowMs:15*60*1000,limit:5,standardHeaders:'draft-8',legacyHeaders:false,message:{message:'Too many enquiries. Please try again later.'}}), createDemoEnquiryHandler());
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', brand: 'Asanrides' }));
 
