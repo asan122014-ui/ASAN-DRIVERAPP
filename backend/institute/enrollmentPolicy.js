@@ -17,12 +17,13 @@ export function normalizeEnrollment(input) {
     row.driverEmail = input.driverEmail ? email(input.driverEmail) : '';
     if (input.monthlyFee !== undefined) row.monthlyFee = input.monthlyFee;
     row.grade = text(input.grade);
+    row.routeId = text(input.routeId).slice(0, 100);
     row.assignedRoute = text(input.assignedRoute).slice(0, 120);
     row.pickupStopId = text(input.pickupStopId).slice(0, 100);
     row.assignedVehicle = text(input.assignedVehicle).slice(0, 30);
     row.pickupTime = text(input.pickupTime);
     row.dropoffTime = text(input.dropoffTime);
-    for (const time of [row.pickupTime, row.dropoffTime]) if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw enrollmentError('Pickup and school return times must use HH:mm (24-hour time).');
+    for (const time of (row.routeId && !row.pickupTime ? [row.dropoffTime] : [row.pickupTime, row.dropoffTime])) if ( !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw enrollmentError('Pickup and school return times must use HH:mm (24-hour time).');
     return row;
   }
   row.email = email(input.email);
